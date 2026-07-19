@@ -257,6 +257,27 @@ def list_uploads(u: U):
         ).fetchall()
 
 
+@app.delete("/api/uploads/{uid}")
+def delete_upload(uid: int, u: Annotated[dict, Depends(admin)]):
+    """Delete one immutable snapshot. Cohort + DQ rows cascade. Never the current one."""
+    with pool.connection() as c:
+        row = c.execute("SELECT is_current FROM uploads WHERE id=%s", (uid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Upload not found.")
+        if row["is_current"]:
+            raise HTTPException(400, "Cannot delete the current upload - it is the active data.")
+        c.execute("DELETE FROM uploads WHERE id=%s", (uid,))
+    return {"ok": True}
+
+
+@app.post("/api/uploads/prune")
+def prune_uploads(u: Annotated[dict, Depends(admin)]):
+    """Delete every snapshot except the current one - a one-click cleanup."""
+    with pool.connection() as c:
+        cur = c.execute("DELETE FROM uploads WHERE is_current IS NOT TRUE")
+    return {"ok": True, "deleted": cur.rowcount}
+
+
 # ── analytics ─────────────────────────────────────────────────────────
 @app.get("/api/summary")
 def summary(u: U, f: F):

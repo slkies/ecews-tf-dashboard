@@ -891,9 +891,13 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       </div>
       <div id="upResult" style="margin-top:16px"></div>
     </div>
-    <div class="panel"><div class="panel-h"><h2>Upload history</h2></div>
+    <div class="panel"><div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><h2>Upload history</h2>
+          <p>Each upload is an immutable snapshot. The <strong>current</strong> one is the live
+             data and cannot be deleted.</p></div>
+        <button class="btn sm" id="btnPrune">Delete all previous</button></div>
       <div class="tw"><table><thead><tr><th>File</th><th>As of</th><th>Uploaded</th>
-        <th class="r">Episodes</th><th>Status</th></tr></thead><tbody id="upB"></tbody></table></div></div>
+        <th class="r">Episodes</th><th>Status</th><th></th></tr></thead><tbody id="upB"></tbody></table></div></div>
 
     <div class="panel"><div class="panel-h"><h2>Users &amp; access</h2>
       <p>Create accounts for the team. <strong>Viewers</strong> and <strong>analysts</strong> see
@@ -2044,7 +2048,12 @@ async function loadUploads(){
       '<td class="r num">'+fmt(u.n_cohort)+'</td>'+
       '<td>'+(u.status==='ready'?'<span class="tag t-g">ready</span>'
         :u.status==='failed'?'<span class="tag t-b">failed</span>'
-        :'<span class="tag t-n">'+u.status+'</span>')+'</td></tr>').join('');
+        :'<span class="tag t-n">'+u.status+'</span>')+'</td>'+
+      '<td class="r">'+(u.is_current?'':'<button class="btn sm" data-del="'+u.id+'">Delete</button>')+'</td></tr>').join('');
+    $$('#upB button[data-del]').forEach(b=>b.onclick=async()=>{
+      if(!confirm('Delete this snapshot and its cohort? This cannot be undone.'))return;
+      try{ await api('/uploads/'+b.dataset.del,{method:'DELETE'}); loadUploads(); }
+      catch(e){ alert(e.message); }});
   }catch(e){}
 }
 async function loadUsers(){
@@ -2149,6 +2158,12 @@ $('#btnTheme').onclick=function(){
 if(localStorage.getItem('tf_theme')==='dark') document.documentElement.dataset.theme='dark';
 $('#btnPick').onclick=()=>$('#file').click();
 $('#nuAdd').onclick=addUser;
+$('#btnPrune').onclick=async function(){
+  if(!confirm('Delete ALL previous snapshots, keeping only the current one? This cannot be undone.'))return;
+  try{ const r=await api('/uploads/prune',{method:'POST'});
+    loadUploads(); alert('Deleted '+r.deleted+' previous upload(s).'); }
+  catch(e){ alert(e.message); }
+};
 $('#file').onchange=e=>{if(e.target.files[0])doUpload(e.target.files[0]);};
 const dz=$('#drop');
 ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{
