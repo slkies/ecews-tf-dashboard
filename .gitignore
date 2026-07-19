@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+
+# Patient data (PPI-removed clinical line lists) - NEVER commit.
+# The admin uploads these through the Admin page after deployment.
+*.xlsx
+*.xlsb
+*.parquet
+*.parquet.zip
+
+# local/editor cruft
+.playwright-mcp/
+*.png
+.DS_Store
+.Rhistory
+.claude/settings.local.json

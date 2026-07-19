@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECEWS-SPEED Treatment Failure Monitoring Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --paper:#FBF8F3; --card:#FFF; --ink:#211E1A; --ink-2:#5C554C; --ink-3:#928A7E;
+  --rule:#E6DFD4; --rule-2:#F0EAE1; --line:#E6DFD4; --bg-2:#F5F1E9;
+  --green:#08684E; --green-d:#05402F; --green-l:#E3F0EA;
+  --honey:#B8860B; --honey-l:#FBF0D8;
+  --brick:#B83B2A; --brick-l:#FAE7E2;
+  --slate:#4A6B7C; --slate-l:#E8EEF1; --violet:#8250C9; --teal:#12A0B8; --r:10px;
+  --sh:0 1px 2px rgba(33,30,26,.05),0 1px 8px rgba(33,30,26,.03);
+}
+[data-theme=dark]{
+  --paper:#1A1815; --card:#232019; --ink:#F0EBE3; --ink-2:#B8AFA2; --ink-3:#8A8175;
+  --rule:#3A3529; --rule-2:#2E2A22; --line:#3A3529; --bg-2:#2A261E;
+  --green:#14CE9D; --green-d:#0D9B75; --green-l:#12302A;
+  --honey:#D4A72C; --honey-l:#33290F; --brick:#E0705C; --brick-l:#3A1F1A;
+  --slate:#7BA0B3; --slate-l:#1E2A30; --violet:#A98BE0; --teal:#3FC3D8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:15px}   /* was 14 - one step up for readability */
+body{background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;line-height:1.5;transition:background .2s,color .2s}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.wrap{max-width:1260px;margin:0 auto;padding:0 24px 64px}
+
+.login{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login-card{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+  padding:38px;width:100%;max-width:390px;box-shadow:var(--sh)}
+.mark{width:38px;height:38px;border-radius:9px;background:var(--green);color:#fff;
+  display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0}
+.login-card h1{font-size:19px;font-weight:600;margin-top:18px;letter-spacing:-.02em}
+.login-card p{font-size:13px;color:var(--ink-3);margin:4px 0 24px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:10px;font-weight:600;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+input,select{font:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--rule);
+  border-radius:8px;background:var(--card);color:var(--ink);width:100%}
+input:focus,select:focus{outline:2px solid var(--green);outline-offset:-1px}
+.err{background:var(--brick-l);color:var(--brick);font-size:12px;padding:9px 11px;
+  border-radius:8px;margin-bottom:14px;display:none}
+
+.top{display:flex;align-items:center;gap:14px;padding:20px 0 18px;
+  border-bottom:1px solid var(--rule);margin-bottom:22px;flex-wrap:wrap}
+.top h1{font-size:15px;font-weight:600}
+.top .sub{font-size:12px;color:var(--ink-3);margin-top:1px}
+.top .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.who{font-size:12px;color:var(--ink-3);text-align:right;line-height:1.3}
+.who b{color:var(--ink);font-weight:600;display:block}
+.btn{font:inherit;font-size:12px;font-weight:600;padding:8px 13px;border-radius:8px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink-2);cursor:pointer;
+  white-space:nowrap;width:auto;transition:.15s}
+.btn:hover{border-color:var(--green);color:var(--green)}
+.btn-solid{background:var(--green);border-color:var(--green);color:#fff}
+.btn-solid:hover{background:var(--green-d);color:#fff}
+.btn.sm{padding:4px 9px;font-size:11px}
+
+nav{display:flex;gap:2px;border-bottom:1px solid var(--rule);margin-bottom:22px;
+  overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{font:inherit;font-size:13px;font-weight:500;color:var(--ink-3);background:none;
+  border:none;border-bottom:2px solid transparent;padding:10px 12px;cursor:pointer;
+  white-space:nowrap;margin-bottom:-1px;width:auto}
+nav button:hover{color:var(--ink)}
+nav button[aria-selected=true]{color:var(--green);border-bottom-color:var(--green);font-weight:600}
+
+.filters{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
+  padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
+.f{display:flex;flex-direction:column;gap:4px}
+.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.f select{min-width:132px;cursor:pointer}
+.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto}
+
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
+  padding:22px;box-shadow:var(--sh);margin-bottom:16px}
+.panel-h{margin-bottom:16px}
+.panel-h h2{font-size:13px;font-weight:600}
+.panel-h p{font-size:12px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.eyebrow{font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:7px}
+/* minmax(0,1fr), not 1fr: a grid child's min-width defaults to its content,
+   so a wide table silently pushes the row past the container and the card
+   edges stop lining up with the full-width panels above/below. */
+.grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.grid>.panel{min-width:0}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:var(--r);
+  overflow:hidden;margin-bottom:16px}
+.stat{background:var(--card);padding:15px 17px}
+.stat .k{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:25px;font-weight:600;margin-top:4px;letter-spacing:-.03em}
+.stat .n{font-size:11px;color:var(--ink-3);margin-top:2px}
+.stat.good .v{color:var(--green)}.stat.warn .v{color:var(--honey)}.stat.bad .v{color:var(--brick)}
+
+.step{display:grid;grid-template-columns:210px 1fr 170px;gap:15px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--rule-2);cursor:pointer}
+.step:last-child{border-bottom:none}
+.step:hover{background:var(--paper)}
+.step.sub{padding-left:24px;opacity:.8}
+.step .lbl{font-size:12px;font-weight:500;display:flex;align-items:center;gap:8px}
+.step .tier{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-3);width:20px}
+.track{position:relative;height:26px;border-radius:5px;overflow:hidden;
+  background:repeating-linear-gradient(-45deg,transparent,transparent 5px,var(--rule-2) 5px,var(--rule-2) 6px)}
+.fill{position:absolute;inset:0 auto 0 0;border-radius:5px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.fill.g{background:var(--green)}.fill.h{background:var(--honey)}
+.fill.b{background:var(--brick)}.fill.s{background:var(--slate)}
+/* cascade bars: thicker, with a female/male stacked split */
+.step .track{height:36px;border-radius:9px}
+.bar{position:absolute;inset:0;display:flex}
+.bar .seg{height:100%;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.casc-leg{display:flex;gap:18px;flex-wrap:wrap;margin:2px 0 16px;font-size:12px;color:var(--ink-2)}
+.casc-leg span{display:flex;align-items:center;gap:6px}
+.casc-leg i{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+.step .fig{text-align:right;font-size:13px;font-weight:600;display:flex;
+  justify-content:flex-end;align-items:baseline;gap:7px}
+.step .pct{font-size:11px;color:var(--ink-3);font-weight:500;min-width:46px}
+.loss{font-size:11px;color:var(--brick);font-weight:500}
+
+.tw{overflow:auto;max-height:470px;border:1px solid var(--rule);border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{position:sticky;top:0;background:var(--card);text-align:left;padding:10px 12px;
+  font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;border-bottom:1px solid var(--rule);white-space:nowrap;z-index:1}
+td{padding:9px 12px;border-bottom:1px solid var(--rule-2);white-space:nowrap}
+tbody tr:hover td{background:var(--paper)}
+td.r,th.r{text-align:right}
+.bar-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.mini{width:52px;height:5px;background:var(--rule-2);border-radius:3px;overflow:hidden}
+.mini i{display:block;height:100%;border-radius:3px}
+
+.notice{border:1px solid;border-radius:var(--r);padding:15px 17px;margin-bottom:14px;
+  font-size:13px;line-height:1.6}
+.notice h3{font-size:12px;font-weight:600;margin-bottom:5px}
+.notice.stop{background:var(--brick-l);border-color:var(--brick);color:var(--brick)}
+.notice.warn{background:var(--honey-l);border-color:var(--honey);color:var(--honey)}
+.notice.ok{background:var(--green-l);border-color:var(--green);color:var(--green)}
+.notice.info{background:var(--slate-l);border-color:var(--slate);color:var(--slate)}
+.notice code{font-family:'IBM Plex Mono',monospace;font-size:11px;
+  background:rgba(128,128,128,.14);padding:1px 5px;border-radius:4px}
+.notice ul{margin:5px 0 0 16px}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px}
+.t-g{background:var(--green-l);color:var(--green)}
+.t-h{background:var(--honey-l);color:var(--honey)}
+.t-b{background:var(--brick-l);color:var(--brick)}
+.t-n{background:var(--rule-2);color:var(--ink-2)}
+
+.plan{display:flex;align-items:center;gap:13px;padding:12px 0;
+  border-bottom:1px solid var(--rule-2);cursor:pointer}
+.plan:last-child{border-bottom:none}
+.plan:hover{background:var(--paper)}
+.plan .code{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  font-weight:700;font-size:12px;color:#fff;flex-shrink:0}
+.plan .txt{flex:1;font-size:13px}
+.plan .cnt{font-size:15px;font-weight:600}
+
+/* doc fills the card; prose keeps a readable measure while the grids and
+   tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
+.doc{max-width:none;font-size:15px;line-height:1.75;color:var(--ink-2)}
+.doc p,.doc h2,.doc h3,.doc ul,.doc ol,.doc .eyebrow,.doc .pull{max-width:84ch}
+.narrative{font-size:15px;line-height:1.72;color:var(--ink-2)}
+.narrative p{margin:0 0 12px;max-width:none}
+.narrative p:last-child{margin-bottom:0}
+.narrative strong{color:var(--ink);font-weight:600}
+.disagg-h{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.doc h2{font-size:17px;font-weight:600;color:var(--ink);margin:30px 0 10px;letter-spacing:-.01em}
+.doc h2:first-of-type{margin-top:0}
+.doc h3{font-size:13px;font-weight:600;color:var(--ink);margin:22px 0 7px}
+.doc p{margin-bottom:13px}
+.doc strong{color:var(--ink);font-weight:600}
+.doc ul,.doc ol{margin:0 0 14px 20px}
+.doc li{margin-bottom:6px}
+.abcde{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:var(--r);overflow:hidden;margin:16px 0}
+.abcde div{background:var(--card);padding:12px 15px;display:flex;gap:13px;align-items:baseline}
+.abcde b{color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:15px;width:16px;flex-shrink:0}
+.thr{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;margin:16px 0}
+.thr div{background:var(--card);padding:15px}
+.thr .v{font-size:19px;font-weight:600;font-family:'IBM Plex Mono',monospace}
+.thr .l{font-size:11px;color:var(--ink-3);margin-top:3px}
+.pull{border-left:3px solid var(--green);padding:3px 0 3px 15px;margin:16px 0;
+  color:var(--ink);font-weight:500}
+
+.drop{border:1.5px dashed var(--rule);border-radius:12px;padding:42px;text-align:center;background:var(--paper)}
+.drop.over{border-color:var(--green);background:var(--green-l)}
+canvas{max-height:270px}
+.view{display:none}.view.on{display:block}
+.spin{width:24px;height:24px;border:2.5px solid var(--rule);border-top-color:var(--green);
+  border-radius:50%;animation:sp .7s linear infinite;margin:36px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
+  font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:880px){.g2,.thr{grid-template-columns:1fr}
+  .step{grid-template-columns:1fr;gap:5px}.step .fig{justify-content:flex-start}}
+
+/* Overview page */
+.foot{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+.foot b{color:var(--ink);font-weight:600}
+.frow{display:grid;grid-template-columns:150px 1fr 96px;gap:10px;align-items:center;
+  padding:7px 0;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:none}
+.flab{font-size:12.5px}
+.ftrack{height:18px;border-radius:5px;background:var(--line);overflow:hidden}
+.ftrack i{display:block;height:100%;background:var(--green);border-radius:5px}
+/* narrative two-column: prose + cohort-at-a-glance side panel */
+.narr-grid{display:grid;grid-template-columns:1fr 288px;gap:30px;align-items:start}
+.narr-side{display:flex;flex-direction:column;border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden}
+.narr-side .eb{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.07em;padding:12px 15px 10px;background:var(--bg-2);border-bottom:1px solid var(--line)}
+.narr-side .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:11px 15px;border-bottom:1px solid var(--line)}
+.narr-side .row:last-child{border-bottom:none}
+.narr-side .row .l{font-size:12px;color:var(--ink-2)}
+.narr-side .row .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.narr-side .row .v em{font-style:normal;font-size:11px;color:var(--ink-3);font-weight:400;margin-left:5px}
+.cohort-list{display:flex;flex-direction:column}
+.cohort-list .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:10px 0;border-bottom:1px solid var(--line)}
+.cohort-list .row:last-child{border-bottom:none}
+.cohort-list .l{font-size:12.5px;color:var(--ink-2)}
+.cohort-list .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cohort-list .v em{font-style:normal;font-size:11px;color:var(--ink-3);font-weight:400;margin-left:5px}
+@media(max-width:880px){.narr-grid{grid-template-columns:1fr;gap:20px}}
+/* EAC & outcome summary — modern meter rows */
+.ofun{display:flex;flex-direction:column;gap:15px}
+.ofun+.disagg-h{margin-top:18px}
+.ofrow .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:7px}
+.ofrow .lbl{font-size:12.5px;color:var(--ink);font-weight:500}
+.ofrow .val{font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ofrow .val em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:6px}
+.otrack{height:8px;border-radius:5px;background:var(--rule-2);overflow:hidden}
+.otrack i{display:block;height:100%;border-radius:5px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.otrack.fat{height:18px;border-radius:8px}
+/* time-metrics box-and-whisker */
+.box-row{display:grid;grid-template-columns:236px 1fr 132px;gap:14px;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--line)}
+.box-row:last-child{border-bottom:none}
+.box-lbl{font-size:12.5px;color:var(--ink)}
+.box-lbl em{display:block;font-style:normal;color:var(--ink-3);font-size:11px;margin-top:1px}
+.box-plot{position:relative;height:30px}
+.bx-whisk{position:absolute;top:50%;height:1.5px;background:var(--ink-3);transform:translateY(-50%)}
+.bx-cap{position:absolute;top:26%;bottom:26%;width:1.5px;background:var(--ink-3)}
+.bx-box{position:absolute;top:5px;bottom:5px;border-radius:4px}
+.bx-med{position:absolute;top:3px;bottom:3px;width:2.5px;background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.bx-tgt{position:absolute;top:-1px;bottom:-1px;width:0;border-left:2px dashed #DC2626}
+.bx-tgt span{position:absolute;top:-14px;left:2px;font-size:9px;color:#DC2626;white-space:nowrap}
+.box-val{text-align:right;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.box-val b{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.box-val em{display:block;font-style:normal;color:var(--ink-3);font-size:11px}
+@media(max-width:640px){.box-row{grid-template-columns:120px 1fr 96px;gap:10px}}
+/* let the weekly chart grow to fill its panel (no dead space beneath it) */
+.panel.col{display:flex;flex-direction:column}
+.panel.col .chart-fill{position:relative;flex:1 1 auto;min-height:236px}
+.panel.col .chart-fill canvas{position:absolute;inset:0;max-height:none!important}
+/* EAC & outcome summary: two donuts + per-state bars */
+.oc-donuts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:6px}
+.oc-d{border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
+.oc-t{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:8px;text-align:center}
+.oc-donut{position:relative;height:158px}
+.oc-center{position:absolute;inset:0 0 0 0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:none}
+.oc-center .big{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.oc-center .sub{font-size:10px;color:var(--ink-3);margin-top:1px}
+.oc-leg{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 14px;margin-top:10px;
+  font-size:11.5px;color:var(--ink-2)}
+.oc-leg span{display:flex;align-items:center;gap:6px}
+.oc-leg i{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+.oc-leg b{font-weight:600;color:var(--ink)}
+.oc-state{display:grid;grid-template-columns:96px 1fr 96px;gap:12px;align-items:center;padding:6px 0}
+.oc-state .sn{font-size:12.5px;color:var(--ink)}
+.oc-state .st{height:8px;border-radius:5px;background:var(--rule-2);overflow:hidden}
+.oc-state .st i{display:block;height:100%;border-radius:5px}
+.oc-state .sv{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.oc-state .sv em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:5px}
+@media(max-width:760px){.oc-donuts{grid-template-columns:1fr}}
+/* methodology & data sources panel */
+.src-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
+.src-meth{margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.src-meth li{margin-bottom:6px}
+.src-meth b{color:var(--ink);font-weight:600}
+.src-note{font-size:12px;color:var(--ink-3);margin-top:10px}
+.src-note b{color:var(--ink-2);font-weight:600}
+.src-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.src-tbl th{text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--ink-3);border-bottom:1px solid var(--line);font-weight:600}
+.src-tbl td{padding:8px 9px;border-bottom:1px solid var(--line)}
+.src-tbl tr:last-child td{border-bottom:none}
+.src-tbl th.r,.src-tbl td.r{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:760px){.src-grid{grid-template-columns:1fr;gap:18px}}
+/* deep-dive: descriptive who/what/when/where infographic */
+.dp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:16px}
+.dp-card{border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;background:var(--bg-2)}
+.dp-card h4{font-size:10.5px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.07em;margin-bottom:11px}
+.dp-row{display:grid;grid-template-columns:104px 1fr 74px;gap:9px;align-items:center;padding:3.5px 0}
+.dp-row .l{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-row .t{height:7px;border-radius:4px;background:var(--rule-2);overflow:hidden}
+.dp-row .t i{display:block;height:100%;border-radius:4px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.dp-row .v{text-align:right;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink);
+  font-weight:600;white-space:nowrap}
+.dp-row .v em{font-style:normal;color:var(--ink-3);font-size:10.5px;font-weight:400;margin-left:4px}
+.dp-donut{position:relative;height:146px;margin-top:2px}
+.dp-donut canvas{max-height:146px}
+.dp-card .oc-leg{margin-top:8px;font-size:11px;gap:5px 12px}
+.dp-card .oc-center .big{font-size:20px}
+.chart-box{position:relative;height:210px;margin-bottom:18px}
+.chart-box canvas{max-height:210px}
+/* residence choropleth (vanilla SVG, boundaries bundled locally) */
+.map-box{margin-bottom:18px}
+.map-box svg{display:block;width:100%;max-height:620px;margin:0 auto}
+.map-lga{stroke:var(--card);stroke-width:.4;transition:opacity .15s}
+.map-lga:hover{opacity:.72}
+.map-ctx{fill:var(--rule-2);stroke:var(--rule);stroke-width:.5;opacity:.5}
+.map-focus{fill:none;stroke:var(--ink);stroke-width:1.4;opacity:.8;pointer-events:none}
+.map-lbl{fill:var(--ink);font-size:17px;font-weight:600;text-anchor:middle;
+  paint-order:stroke;stroke:var(--card);stroke-width:3.5px;pointer-events:none}
+.map-ctxlbl{fill:var(--ink-3);font-size:11px;text-anchor:middle;
+  paint-order:stroke;stroke:var(--card);stroke-width:2.5px;pointer-events:none}
+.map-leg{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-2);
+  margin-top:8px;flex-wrap:wrap}
+.map-leg .grad{width:140px;height:8px;border-radius:4px;
+  background:linear-gradient(90deg,#a9d6e5,#012a4a)}
+.map-leg i{width:11px;height:11px;border-radius:3px;background:var(--rule-2);display:inline-block}
+.map-leg i.ctx{background:var(--rule-2);border:1px solid var(--rule);opacity:.7}
+.map-note{font-size:11px;color:var(--ink-3);margin-top:6px;line-height:1.5}
+/* feedback modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(20,18,15,.45);z-index:50;
+  align-items:center;justify-content:center;padding:20px}
+.modal-bg.on{display:flex}
+.modal{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+  padding:22px;width:100%;max-width:440px;box-shadow:var(--sh)}
+.modal h3{font-size:15px;font-weight:600}
+.modal p{font-size:12.5px;color:var(--ink-3);margin:4px 0 14px}
+.modal textarea{width:100%;font:inherit;font-size:13px;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink);resize:vertical}
+.modal-foot{display:flex;align-items:center;gap:10px;margin-top:14px}
+.modal-foot #fbMsg{font-size:12px;color:var(--ink-3);margin-right:auto}
+.fab{position:fixed;right:22px;bottom:22px;z-index:40;font:inherit;font-size:13px;
+  font-weight:600;padding:11px 17px;border-radius:24px;border:none;cursor:pointer;
+  background:var(--green);color:#fff;box-shadow:0 3px 12px rgba(33,30,26,.22);
+  display:flex;align-items:center;gap:7px;transition:.15s}
+.fab:hover{background:var(--green-d);box-shadow:0 5px 18px rgba(33,30,26,.28)}
+@media(max-width:600px){.fab{right:14px;bottom:14px;padding:10px 14px}}
+/* admin user management */
+.user-form{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.user-form input,.user-form select{width:auto;min-width:130px}
+.user-form #nuName{min-width:150px}
+.user-form #nuMsg{font-size:12px;color:var(--ink-3)}
+@media(max-width:520px){.dp-row{grid-template-columns:84px 1fr 66px}}
+/* deep-dive: forest plot + significance callouts */
+.forest-ax,.frow2{display:grid;grid-template-columns:210px 1fr 150px;gap:12px;align-items:center}
+.forest-ax{font-size:10px;color:var(--ink-3);padding-bottom:8px;
+  border-bottom:1px solid var(--line);margin-bottom:2px}
+.forest-ax .ticks{position:relative;height:12px}
+.forest-ax .ticks span{position:absolute;transform:translateX(-50%)}
+.frow2{padding:7px 0;border-bottom:1px solid var(--line)}
+.frow2:last-child{border-bottom:none}
+.frow2 .flbl{font-size:12.5px;color:var(--ink)}
+.frow2 .flbl em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:5px}
+.fplot{position:relative;height:20px}
+.fplot .one{position:absolute;top:-7px;bottom:-7px;width:1px;background:var(--rule-2)}
+.fplot .ci{position:absolute;top:50%;height:3px;transform:translateY(-50%);border-radius:2px}
+.fplot .dot{position:absolute;top:50%;width:11px;height:11px;border-radius:50%;
+  transform:translate(-50%,-50%);border:2px solid var(--card)}
+.fnum{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fnum em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:5px}
+.dd-cell{display:flex;flex-direction:column;gap:11px}
+.dd-item{display:flex;gap:12px;align-items:baseline}
+.dd-item .b{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;
+  min-width:74px;letter-spacing:-.02em}
+.dd-item .t{font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.dd-item .t b{color:var(--ink);font-weight:600}
+.dd-empty{font-size:12.5px;color:var(--ink-3)}
+.sig{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px}
+.sig.pos{background:var(--green-l);color:var(--green)}
+.sig.neg{background:var(--brick-l);color:#DC2626}
+.sig.ns{background:var(--rule-2);color:var(--ink-3)}
+#ddTable .grp td{background:var(--bg-2);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+#ddTable td .ref{font-size:10px;color:var(--ink-3);font-weight:400}
+@media(max-width:760px){.forest-ax,.frow2{grid-template-columns:120px 1fr 96px}}
+.fval{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.fval em{display:block;font-style:normal;font-weight:400;font-size:11px;color:var(--ink-3)}
+.tbl-wrap{overflow-x:auto;margin-top:8px}
+.tbl-wrap table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:420px}
+.tbl-wrap th{text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--ink-3);border-bottom:1px solid var(--line);font-weight:600}
+.tbl-wrap td{padding:8px 9px;border-bottom:1px solid var(--line)}
+.tbl-wrap tr:last-child td{border-bottom:none}
+.tbl-wrap th.r,.tbl-wrap td.r{text-align:right;font-variant-numeric:tabular-nums}
+.tbl-wrap td em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:4px}
+.prov{font-size:12.5px;color:var(--ink-2);padding:10px 12px;background:var(--bg-2);
+  border-radius:8px;margin-bottom:10px}
+.tag.bad{background:rgba(176,58,40,.12);color:var(--brick);padding:1px 7px;
+  border-radius:10px;font-size:11px;font-weight:600}
+.empty{padding:26px;text-align:center;color:var(--ink-3);font-size:13px}
+@media(max-width:760px){.frow{grid-template-columns:1fr;gap:3px}
+  .fval{text-align:left}.fval em{display:inline;margin-left:6px}}
+</style>
+</head>
+<body>
+
+<div class="login" id="login">
+  <div class="login-card">
+    <div class="mark">EC</div>
+    <h1>Treatment Failure Monitoring Dashboard</h1>
+    <p>ECEWS-SPEED · Delta · Osun · Ekiti</p>
+    <div class="err" id="loginErr"></div>
+    <div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username"></div>
+    <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div>
+    <button class="btn btn-solid" id="btnLogin" style="width:100%;margin-top:8px;padding:11px">Sign in</button>
+  </div>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+  <header class="top">
+    <div class="mark">EC</div>
+    <div><h1>ECEWS-SPEED Treatment Failure Monitoring Dashboard</h1>
+      <div class="sub">Delta &middot; Osun &middot; Ekiti</div></div>
+    <div class="right">
+      <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
+      <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
+      <button class="btn" id="btnExport">Export</button>
+      <button class="btn" id="btnOut">Sign out</button>
+    </div>
+  </header>
+
+  <div class="modal-bg" id="fbModal">
+    <div class="modal">
+      <h3>Send feedback</h3>
+      <p>Bugs, wrong numbers, or ideas — goes straight to the team.</p>
+      <textarea id="fbText" rows="5" placeholder="What did you notice?"></textarea>
+      <div class="modal-foot">
+        <span id="fbMsg"></span>
+        <button class="btn" id="fbCancel">Cancel</button>
+        <button class="btn btn-solid" id="fbSend">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true"  data-v="overview">Overview</button>
+    <button role="tab" aria-selected="false" data-v="cascade">Cascade</button>
+    <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
+    <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
+    <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
+    <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
+    <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
+    <button role="tab" aria-selected="false" data-v="dq">Data quality</button>
+    <button role="tab" aria-selected="false" data-v="guide">Guidelines</button>
+    <button role="tab" aria-selected="false" data-v="method">Methodology</button>
+    <button role="tab" aria-selected="false" data-v="admin" id="tabAdmin" style="display:none">Admin</button>
+  </nav>
+
+  <div class="filters" id="filters">
+    <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
+    <div class="f"><label>Enrolment quarter</label><select id="fQtr"><option>All</option></select></div>
+    <div class="f"><label>State</label><select id="fState"><option>All</option></select></div>
+    <div class="f"><label>LGA</label><select id="fLga"><option>All</option></select></div>
+    <div class="f"><label>Facility</label><select id="fFac"><option>All</option></select></div>
+    <div class="f"><label>Sex</label><select id="fSex"><option>All</option><option>Female</option><option>Male</option></select></div>
+    <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
+    <div class="f"><label>Treatment plan</label><select id="fPlan"><option>All</option></select></div>
+    <div class="f"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
+    <span class="chip" id="chip"></span>
+  </div>
+
+  <div id="alerts"></div>
+  <div id="loading" class="spin" style="display:none"></div>
+
+  <section class="view on" id="v-overview">
+    <div class="stats" id="ovStats"></div>
+    <div class="stats" id="ovTimeStats"></div>
+
+    <div class="panel" id="ovNarr"></div>
+
+    <div class="grid g2">
+      <div class="panel col">
+        <div class="panel-h">
+          <h2>New unsuppressed results by month, by sex</h2>
+          <p>Dated by result received at facility &mdash; the same clock the fiscal
+             quarters use.</p></div>
+        <div class="chart-fill"><canvas id="cWeekly"></canvas></div>
+        <div id="wkFoot" class="foot"></div>
+      </div>
+      <div class="panel" id="ovCohort"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>EAC &amp; outcome summary</h2>
+        <p>How the unsuppressed cohort splits by sex, and how far it has moved through
+           EAC. Follow-up VLs come from the clinical line lists, not the EAC sheet.</p></div>
+      <div id="ovFunnel"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Spec &sect;4</div>
+        <h2>Monthly re-suppression trend</h2>
+        <p>Share of episodes with a follow-up VL that re-suppressed (&lt;&nbsp;1,000), by sex,
+           dated on the follow-up sample. The latest month is <strong>provisional</strong> (dashed) &mdash;
+           its follow-ups are freshly sampled and mostly not yet re-suppressed. Months with fewer than
+           three results are left blank. The quarterly EAC cascade is tabulated below.</p></div>
+      <canvas id="cResupp" style="max-height:290px"></canvas>
+      <div class="disagg-h">EAC cascade by enrolment quarter</div>
+      <div class="tbl-wrap"><table id="ovProg"></table></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-h"><h2>Top 10 facilities by volume</h2>
+          <p>Where the burden sits.</p></div>
+        <div class="tbl-wrap"><table id="ovVol"></table></div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h2>Top 10 by EAC completion</h2>
+          <p id="ovBestNote"></p></div>
+        <div class="tbl-wrap"><table id="ovBest"></table></div>
+      </div>
+    </div>
+
+    <div class="panel" id="ovZeroPanel">
+      <div class="panel-h"><h2>Facilities with volume but no EAC on record</h2>
+        <p>These sites carry real caseload and show <strong>zero</strong> EAC sessions.
+           The export cannot tell us whether the counselling did not happen or was not
+           recorded &mdash; both need a call.</p></div>
+      <div class="tbl-wrap"><table id="ovZero"></table></div>
+    </div>
+
+    <div class="panel">
+      <div id="ovSources"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-cascade">
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Spec &sect;4</div>
+        <h2>The treatment failure cascade</h2>
+        <p>Bars are scaled to the index cohort. The hatched remainder is the loss at that
+           step &mdash; the gap, not the bar, is the finding. Hover for the exact numerator and
+           denominator; click a step to load its clients.</p></div>
+      <div id="casc"></div>
+    </div>
+    <div class="grid g2">
+      <div class="panel"><div class="panel-h"><h2>Where the cohort is lost</h2></div><canvas id="cLoss"></canvas></div>
+      <div class="panel"><div class="panel-h"><h2>Post-EAC VL result</h2>
+        <p>Recomputed from the raw VL value, never the EMR status string.</p></div>
+        <canvas id="cOut"></canvas></div>
+    </div>
+    <div class="panel" id="drillPanel" style="display:none">
+      <div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><h2 id="drillT">Clients</h2><p id="drillS"></p></div>
+        <button class="btn sm" id="drillCsv">Export CSV</button></div>
+      <div class="tw"><table><thead id="drillH"></thead><tbody id="drillB"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-deep">
+    <div class="stats" id="dpTiles"></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Who</div>
+        <h2>The people behind the unsuppressed results</h2>
+        <p>Composition of the cohort. Where a field is blank in the export it is shown as
+           <strong>Not recorded</strong> rather than quietly dropped &mdash; the gap is itself a finding.</p></div>
+      <div id="dpWho"></div></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">What</div>
+        <h2>Their treatment and clinical picture</h2>
+        <p>What they are on, how long for, how high the index viral load was, and how far
+           through EAC they have moved.</p></div>
+      <div id="dpWhat"></div></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">When</div>
+        <h2>Timing &mdash; when they entered and how long they wait</h2>
+        <p>Dated by result received at facility. Time to EAC is measured from the index
+           result; months unsuppressed runs from the index VL to the line-list date.
+           The final month on the trend is <strong>partial</strong> (dashed) &mdash; the line list
+           was drawn mid-month, so it is not a real drop. <strong>Note:</strong> the long
+           ART&nbsp;&rarr;&nbsp;first-VL tail is a pre-2018 cohort &mdash; routine VL scaled up with
+           Test-and-Treat, so clients who started ART earlier have a detection lag, not a real
+           delay (post-2018 starters test at ~6&nbsp;months). See the era-split curve on Time metrics.</p></div>
+      <div id="dpWhen"></div></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Where</div>
+        <h2>Geography &mdash; where the burden sits</h2>
+        <p>The map shades each LGA by the <strong>residence</strong> of unsuppressed clients
+           &mdash; where they live, not where they are served. The cards below use the
+           <strong>service</strong> LGA and facility. Comparing the two shows who travels
+           for care.</p></div>
+      <div id="dpWhere"></div></div>
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;3</div>
+      <h2>Actionable flags</h2>
+      <p>Each row is a facility worklist. Click View to load the clients, then export.</p></div>
+      <div class="tw"><table><thead><tr><th>Flag</th><th class="r">Episodes</th><th></th></tr></thead>
+        <tbody id="flagB"></tbody></table></div></div>
+    <div class="panel"><div class="panel-h"><h2>Facility league table</h2>
+      <p>Ranked by EAC commencement, worst first. Facilities with fewer than 20 episodes are
+         hidden &mdash; the rates are too noisy to act on.</p></div>
+      <div class="tw"><table><thead id="facH"></thead><tbody id="facB"></tbody></table></div></div>
+  </section>
+
+  <section class="view" id="v-dtc">
+    <div class="stats" id="dtcTiles"></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Switch gap</div>
+        <h2>Still unsuppressed after EAC &mdash; the DTC pathway</h2>
+        <p>Every episode still &ge;&nbsp;1,000 on the follow-up VL, split three ways by the
+           regimen line <strong>at the index VL</strong>: <strong>awaiting DTC review</strong>
+           (1st line at index, still 1st &mdash; the true switch backlog); <strong>prior switch</strong>
+           (already 2nd/3rd line at index &mdash; cannot be re-switched without resistance testing,
+           so they need a DTC drug-history &amp; VL review, not a switch); and
+           <strong>genuinely switched</strong> (1st at index, now 2nd/3rd). No switch date in the
+           export &mdash; so this shows <strong>who</strong> is waiting and where, not <em>why</em>.</p></div>
+      <div id="dtcGap"></div>
+      <div class="tbl-wrap" style="margin-top:12px"><table id="dtcGapTbl"></table></div></div>
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Repeat unsuppression</div>
+        <h2>Who unsuppresses more than once</h2>
+        <p>A client with more than one unsuppression episode. Univariate odds ratios for
+           being a repeat-unsuppression episode &mdash; a descriptive signal, not an adjusted
+           model.</p></div>
+      <div id="dtcRepeat"></div></div>
+    <div class="panel">
+      <div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><h2>Intervention worklist</h2>
+          <p>The episodes awaiting DTC review, and the &gt;2-cycle DTC flag. Click to load
+             clients, then export.</p></div></div>
+      <div class="tw"><table><thead><tr><th>Worklist</th><th class="r">Episodes</th><th></th></tr></thead>
+        <tbody id="dtcFlags"></tbody></table></div></div>
+  </section>
+
+  <section class="view" id="v-time">
+    <div class="stats" id="timeStats"></div>
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;5</div>
+      <h2>Time-dependent indicators</h2>
+      <p>The <strong>box</strong> is the interquartile range (25th&ndash;75th percentile), the line
+         inside is the <strong>median</strong>, and the whiskers span the Tukey range. Each indicator
+         has its own scale (units labelled). A dashed <span style="color:#DC2626">red</span> line marks
+         the guideline target where one applies. A negative interval is not an error &mdash; a sample
+         before EAC session&nbsp;1 means that cycle never started (flagged truncated) and carries no
+         lead time.</p></div>
+      <div id="timeBoxes"></div>
+      <div class="notice warn" style="margin-top:16px"><h3>Time to Switch is not computable</h3>
+        The export carries no switch date &mdash; <code>Switched_To_Second_Line</code> reflects only
+        a client's current regimen line. Until a <code>Switch_Date</code> is added this indicator
+        cannot be produced. It is the single highest-value field the HI team could add.</div>
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Time from first EAC session to re-suppression</h2>
+      <p>Kaplan&ndash;Meier. Episodes that have not re-suppressed are censored, not dropped, so this
+         does not flatter the programme.</p></div>
+      <canvas id="cKM" style="max-height:330px"></canvas></div>
+    <div class="panel"><div class="panel-h"><h2>Time on ART to the first unsuppressed VL</h2>
+      <p>Cumulative share reaching the first unsuppressed VL by years on ART, from ART start.
+         Every episode here is unsuppressed, so this is a cumulative-incidence curve, not a
+         censored KM. <strong>Split by ART-start era:</strong> routine VL scaled up with
+         Test-and-Treat around 2017/18, so a pre-2018 client's long lag to their first VL is
+         partly <em>detection</em>, not durability &mdash; the two eras must not be pooled.</p></div>
+      <canvas id="cUnsupp" style="max-height:330px"></canvas>
+      <div id="unsuppFoot" class="foot"></div></div>
+  </section>
+
+  <section class="view" id="v-plans">
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;6</div>
+      <h2>Treatment plan decision engine</h2>
+      <p>Every episode receives exactly one plan from the priority-ordered decision tree.
+         Click a plan to load its clients.</p></div>
+      <div id="planList"></div></div>
+    <div class="panel" id="planPanel" style="display:none">
+      <div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><h2 id="planT">Clients</h2><p id="planS"></p></div>
+        <button class="btn sm" id="planCsv">Export CSV</button></div>
+      <div class="tw"><table><thead id="planH"></thead><tbody id="planB"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-adv">
+    <div id="ddNote"></div>
+    <div class="grid g2">
+      <div class="panel" id="ddPos"></div>
+      <div class="panel" id="ddNeg"></div>
+    </div>
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;7.3</div>
+      <h2>What moves re-suppression &mdash; adjusted odds ratios</h2>
+      <p>Each factor's adjusted odds ratio (AOR) from one logistic model, holding the others
+         constant. Right of the line (AOR&nbsp;&gt;&nbsp;1) is <strong>more</strong> likely to
+         re-suppress; left is less. A whisker that crosses 1 is not statistically significant.</p></div>
+      <div id="ddForest"></div></div>
+    <div class="panel"><div class="panel-h"><h2>Every variable, univariate and adjusted</h2>
+      <p>Group re-suppression rate, unadjusted odds ratio, and adjusted OR with 95&percnt; CI.
+         The per-variable test is chi-square (categorical), a Cochran&ndash;Armitage trend
+         (ordered), or Mann&ndash;Whitney (continuous). Reference level in each block is odds&nbsp;1.</p></div>
+      <div class="tbl-wrap"><table id="ddTable"></table></div></div>
+    <div class="panel" id="ddCd4"></div>
+
+    <div id="riskNote"></div>
+    <div class="stats" id="riskStats"></div>
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;7.1</div>
+      <h2>Model calibration</h2>
+      <p>The scoring model above predicts an individual's chance of re-suppressing.
+         Predicted against observed, by decile &mdash; close to the diagonal means the model is
+         honest about its own uncertainty.</p></div>
+      <canvas id="cCal" style="max-height:300px"></canvas></div>
+    <div class="panel"><div class="panel-h">
+      <h2>Least likely to re-suppress &mdash; still awaiting a post-EAC VL</h2>
+      <p>Scored by the model above. Chase these for a repeat sample first, and prepare them
+         for switch review.</p></div>
+      <div class="tw"><table><thead id="riskH"></thead><tbody id="riskB"></tbody></table></div></div>
+    <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;7.2</div>
+      <h2>Mortality in the unsuppressed cohort</h2></div>
+      <div class="stats" id="mortStats" style="margin-bottom:0"></div></div>
+  </section>
+
+  <section class="view" id="v-dq"><div id="dqOut"></div></section>
+
+  <section class="view" id="v-guide">
+    <div class="panel">
+      <div class="doc">
+        <div class="eyebrow">2024 Nigerian National Guidelines for HIV Prevention, Treatment and Care</div>
+        <h2>Enhanced Adherence Counselling</h2>
+
+        <h3>Why it matters</h3>
+        <p>EAC is a critical component of the HIV continuum of care. It ensures that diagnosis is
+        followed by retention and sustained virological suppression, thereby reducing morbidity,
+        mortality, and transmission risk. It proactively addresses adherence challenges to
+        <strong>prevent treatment failure, HIV drug resistance, and opportunistic infections</strong>.</p>
+
+        <div class="pull">EAC is a <strong>mandatory intervention</strong> before any clinical
+        decision to switch ART regimens.</div>
+
+        <h3>Definition</h3>
+        <p>An intensive, individualised adherence support intervention for <strong>non-stable
+        recipients of care</strong> who have adherence issues, poor treatment response, or clinical
+        or virological signs of treatment failure.</p>
+
+        <h2>Who needs EAC</h2>
+        <p>Any one of the following:</p>
+        <div class="thr">
+          <div><div class="v" style="color:var(--brick)">&ge; 1,000</div>
+            <div class="l">Unsuppressed viral load (copies/ml)</div></div>
+          <div><div class="v" style="color:var(--honey)">50 &ndash; 999</div>
+            <div class="l">Suppressed but detectable &mdash; low-level viraemia</div></div>
+          <div><div class="v" style="color:var(--slate)">WHO 3&ndash;4</div>
+            <div class="l">Clinical failure: new or recurrent Stage 3/4 after &ge;6 months on effective ART</div></div>
+        </div>
+
+        <h2>The four-step process</h2>
+        <ol>
+          <li><strong>Structured assessment</strong> &mdash; formal evaluation of current ART adherence.</li>
+          <li><strong>Barrier exploration</strong> using the ABCDE framework.</li>
+          <li><strong>Collaborative identification of solutions.</strong></li>
+          <li><strong>Joint development of an individualised adherence intervention plan.</strong></li>
+        </ol>
+
+        <h3>The ABCDE framework</h3>
+        <div class="abcde">
+          <div><b>A</b><span><strong>Adherence problems</strong> &mdash; missed doses, timing, and other lapses.</span></div>
+          <div><b>B</b><span><strong>Bugs</strong> &mdash; intercurrent or opportunistic infections.</span></div>
+          <div><b>C</b><span><strong>Correct ART dosage</strong> &mdash; especially weight-based dosing in children.</span></div>
+          <div><b>D</b><span><strong>Drug&ndash;drug interactions.</strong></span></div>
+          <div><b>E</b><span><strong>r<u>E</u>sistance</strong> &mdash; potential HIV drug resistance.</span></div>
+        </div>
+
+        <h3>Duration and modality</h3>
+        <p>A minimum of <strong>3 structured sessions over a 3-month period</strong>. For clients with
+        low-level viraemia (50&ndash;999 copies/ml), sessions may be delivered <strong>in person or
+        virtually</strong> (telephone or similar).</p>
+
+        <h2>Expected outcomes and monitoring</h2>
+        <p><strong>Repeat viral load</strong> is taken only after <strong>3 consecutive months of
+        documented good adherence</strong> (more than 95% of doses taken) following EAC completion.</p>
+
+        <div class="pull">If the repeat VL remains &ge; 1,000 copies/ml, a <strong>multidisciplinary
+        switch committee</strong> is required &mdash; doctor, nurse, and adherence counsellor.</div>
+
+        <h3>Managing persistent low-level viraemia</h3>
+        <ul>
+          <li><strong>200&ndash;999 copies/ml</strong> &mdash; high risk of treatment failure.
+              <strong>Recommend switching to second-line.</strong></li>
+          <li><strong>50&ndash;199 copies/ml</strong> &mdash; high likelihood of re-suppression.
+              Continue frequent monitoring.</li>
+        </ul>
+
+        <h3>Documentation</h3>
+        <p>Use the standard PMM tools: the <strong>EAC Form</strong> and the
+        <strong>EAC Monitoring Register</strong>.</p>
+
+        <h2>How this dashboard applies the guidelines</h2>
+        <p>Each rule above maps to something measured here, so the cascade is not an abstraction
+        &mdash; it is the guideline, counted.</p>
+        <div class="tw" style="margin-top:12px"><table>
+          <thead><tr><th>Guideline</th><th>How it is measured here</th></tr></thead>
+          <tbody>
+            <tr><td>EAC is mandatory before switching</td><td>Step 6 (EAC completed) gates plan F</td></tr>
+            <tr><td>Minimum 3 sessions over 3 months</td><td>Steps 3&ndash;4; completion = sessions 1&ndash;3 plus &ge;30 days since session 3</td></tr>
+            <tr><td>Repeat VL only after documented adherence</td><td>Steps 7&ndash;8; EAC lead time in &sect;5</td></tr>
+            <tr><td>Switch committee if repeat VL &ge; 1,000</td><td>The <code>awaiting_switch</code> worklist</td></tr>
+            <tr><td>200&ndash;999 &rarr; recommend switch</td><td>LLV is a distinct outcome band, never merged into "suppressed"</td></tr>
+            <tr><td>&gt;2 EAC cycles still unsuppressed</td><td>The <code>dtc_review</code> flag</td></tr>
+          </tbody></table></div>
+
+        <h2>Source references</h2>
+        <div class="tw" style="margin-top:12px"><table>
+          <thead><tr><th>Section</th><th>Topic</th><th class="r">Page</th></tr></thead>
+          <tbody>
+            <tr><td class="num">3.6.2</td><td>Monitoring children &amp; adolescents (EAC triggers)</td><td class="r num">35</td></tr>
+            <tr><td class="num">3.7.2</td><td>Management of HIV treatment failure (EAC steps)</td><td class="r num">37</td></tr>
+            <tr><td class="num">3.7.4</td><td>Management of suppressed but detectable VL (ABCDE)</td><td class="r num">41</td></tr>
+            <tr><td class="num">3.8.1</td><td>Criteria for switch to third-line ART</td><td class="r num">41</td></tr>
+            <tr><td class="num">3.10.4</td><td>Aim &amp; focus of EAC for special populations</td><td class="r num">63&ndash;64</td></tr>
+            <tr><td class="num">8.1.3</td><td>Differentiated ART service delivery (virtual EAC)</td><td class="r num">187</td></tr>
+            <tr><td class="num">9.2.1</td><td>Patient management &amp; monitoring tools (EAC forms)</td><td class="r num">227</td></tr>
+          </tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-method">
+    <div class="panel"><div class="doc">
+      <div class="eyebrow">Data Analysis Plan v3.0</div>
+      <h2>The unit of analysis is a failure episode</h2>
+      <p>A client may fail, complete EAC, re-suppress, and <strong>fail again</strong>. That is two
+      index events and two trips through the cascade &mdash; one client, two episodes. The primary key
+      is <code>(S/N, index VL date, index VL value)</code>, never <code>S/N</code> alone.</p>
+      <div class="pull">De-duplicating on <code>S/N</code> would delete 294 second failures &mdash;
+      the highest-priority switch candidates in the programme.</div>
+      <p>Rates are computed <strong>per episode</strong>. Distinct client counts are shown alongside
+      so no headline double-counts a person.</p>
+
+      <h2>The index cohort is an open cohort with quarterly enrolment</h2>
+      <p>A snapshot of clients whose <em>current</em> VL is &ge; 1,000, drawn on the same day as the
+      line list, cannot support the outcome half of the cascade. A post-EAC VL <em>becomes</em> the
+      current VL, so a client who re-suppresses leaves the cohort, and one who is still failing has no
+      later result. Steps 7&ndash;10 compute to exactly zero.</p>
+      <p>Building the index list <strong>quarterly</strong> freezes each index event at the quarter it
+      occurred, so a post-EAC VL can land after it. That is why the cascade has an outcome arm at all.</p>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Definitions</h2></div>
+      <div class="tw"><table><thead><tr><th>Term</th><th>Definition</th></tr></thead><tbody>
+        <tr><td>Unsuppressed</td><td>VL &ge; 1,000 copies/ml</td></tr>
+        <tr><td>Low-level viraemia</td><td>VL 50&ndash;999 copies/ml</td></tr>
+        <tr><td>Undetectable</td><td>VL &lt; 50 copies/ml</td></tr>
+        <tr><td>Re-suppressed</td><td>Post-EAC VL &lt; 1,000 (includes LLV, per spec &sect;4)</td></tr>
+        <tr><td>Valid EAC cycle</td><td>Session 1 on or after the index VL date</td></tr>
+        <tr><td>EAC completed</td><td>Sessions 1, 2 &amp; 3 all recorded and &ge;30 days elapsed since session 3</td></tr>
+        <tr><td>Post-EAC VL</td><td>Sessions 1&ndash;3 recorded and a VL sample collected on/after session 3, irrespective of the 30-day rule</td></tr>
+        <tr><td>Failure episode</td><td>One index VL &ge; 1,000 and everything that follows from it</td></tr>
+        <tr><td>Fiscal year</td><td>1 Oct &ndash; 30 Sep. Q1 Oct&ndash;Dec &hellip; Q4 Jul&ndash;Sep</td></tr>
+      </tbody></table></div></div>
+    <div class="panel"><div class="panel-h"><h2>Known data gaps</h2>
+      <p>Raised with the HI team. The dashboard degrades honestly rather than hiding these.</p></div>
+      <div class="tw"><table><thead><tr><th>Gap</th><th>Effect</th></tr></thead><tbody>
+        <tr><td>No switch date in the export</td><td>Time to Switch not computable; step 10 cannot be attributed to a cycle</td></tr>
+        <tr><td>May &amp; June EAC lists success-censored</td><td>Outcomes unusable there; excluded automatically</td></tr>
+        <tr><td><code>S/N</code> exported as a float</td><td>Joins break silently on any Excel re-save; handled as text here</td></tr>
+        <tr><td>State casing inconsistent</td><td>Normalised on ingest; open since February</td></tr>
+      </tbody></table></div></div>
+  </section>
+
+  <section class="view" id="v-admin">
+    <div id="adminBanners"></div>
+    <div class="panel"><div class="panel-h"><h2>Upload the bi-weekly workbook</h2>
+      <p>Parsed here on the server. Everyone else just sees the result. Each upload is an immutable
+         snapshot. Parquet is strongly preferred &mdash; 96&times; faster, and it protects the client key.</p></div>
+      <div class="drop" id="drop">
+        <p style="font-size:13px;color:var(--ink-2);margin-bottom:14px">Drop the workbook here, or choose a file.</p>
+        <button class="btn btn-solid" id="btnPick">Choose file</button>
+        <input type="file" id="file" accept=".xlsx,.xlsb,.zip,.parquet" hidden>
+        <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
+          <label style="font-size:11px;color:var(--ink-3)">Line-list date</label>
+          <input type="date" id="asof" style="width:auto" required></div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:8px;max-width:420px;margin-left:auto;margin-right:auto">
+          The date the export was drawn. It anchors the 12-month VL-validity window &mdash;
+          leave it wrong and the cohort silently shrinks.</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:12px">
+          Accepts .xlsx, .parquet, or a .zip of parquets.</div>
+      </div>
+      <div id="upResult" style="margin-top:16px"></div>
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Upload history</h2></div>
+      <div class="tw"><table><thead><tr><th>File</th><th>As of</th><th>Uploaded</th>
+        <th class="r">Episodes</th><th>Status</th></tr></thead><tbody id="upB"></tbody></table></div></div>
+
+    <div class="panel"><div class="panel-h"><h2>Users &amp; access</h2>
+      <p>Create accounts for the team. <strong>Viewers</strong> and <strong>analysts</strong> see
+         every page except this Admin tab; only <strong>admins</strong> can upload and manage users.
+         A read-only <code>viewer@ecews.org</code> is seeded for quick testing.</p></div>
+      <div class="user-form">
+        <input id="nuName" placeholder="Full name">
+        <input id="nuEmail" type="email" placeholder="email@ecews.org">
+        <select id="nuRole"><option value="viewer">Viewer</option>
+          <option value="analyst">Analyst</option><option value="admin">Admin</option></select>
+        <select id="nuState"><option>All</option></select>
+        <input id="nuPw" type="text" placeholder="Password (min 6)">
+        <button class="btn btn-solid" id="nuAdd">Add user</button>
+        <span id="nuMsg"></span>
+      </div>
+      <div class="tw" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Email</th>
+        <th>Role</th><th>Scope</th><th>Status</th><th></th></tr></thead>
+        <tbody id="userB"></tbody></table></div></div>
+  </section>
+
+  <footer><span>ECEWS-SPEED Treatment Failure Monitoring Dashboard &middot; DAP v3.0</span><span id="foot"></span></footer>
+  <button id="btnFeedback" class="fab" title="Send feedback">&#128172; Feedback</button>
+</div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>(n==null||isNaN(n))?'\u2014':Math.round(n).toLocaleString();
+const pc=v=>(v==null||isNaN(v))?'\u2014':v.toFixed(1)+'%';
+const C={green:'#08684E',honey:'#EBA01E',honeyInk:'#9C6B08',
+         brick:'#E24B3B',brickInk:'#B83B2A',slate:'#5B7FA6',rule:'#E6DFD4',
+         female:'#1b4965',male:'#62b6cb',maleInk:'#256d80',other:'#00b4d8',
+         violet:'#8250C9',violetInk:'#6A44A8',teal:'#12A0B8',tealInk:'#0B7C8C',plum:'#8250C9'};
+const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#fff';
+let TOKEN=localStorage.getItem('tf_token'), ME=null, CH={}, LAST=null;
+
+Chart.defaults.font.family="'IBM Plex Sans',sans-serif";
+Chart.defaults.font.size=11;
+Chart.defaults.plugins.legend.labels.usePointStyle=true;
+Chart.defaults.plugins.legend.labels.boxWidth=10;
+Chart.defaults.maintainAspectRatio=false;
+
+async function api(p,o){
+  o=o||{};
+  const r=await fetch('/api'+p,Object.assign({},o,{headers:Object.assign({},o.headers||{},
+    TOKEN?{Authorization:'Bearer '+TOKEN}:{})}));
+  if(r.status===401){signOut();throw new Error('Session expired');}
+  if(!r.ok){const j=await r.json().catch(()=>({})); throw new Error(j.detail||r.statusText);}
+  return r.json();
+}
+function qs(extra){
+  const p=new URLSearchParams();
+  const add=(k,el)=>{const n=$(el); if(n&&n.value&&n.value!=='All')p.set(k,n.value);};
+  add('fy','#fFy'); add('quarter','#fQtr'); add('state','#fState'); add('lga','#fLga');
+  add('facility','#fFac'); add('sex','#fSex'); add('age_band','#fAge'); add('plan','#fPlan');
+  if(extra) Object.keys(extra).forEach(k=>p.set(k,extra[k]));
+  const s=p.toString(); return s?'?'+s:'';
+}
+
+async function signIn(){
+  const e=$('#loginErr'); e.style.display='none';
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:$('#em').value,password:$('#pw').value})});
+    if(!r.ok){const j=await r.json(); throw new Error(j.detail||'Sign-in failed');}
+    const d=await r.json(); TOKEN=d.token; localStorage.setItem('tf_token',TOKEN); boot();
+  }catch(err){e.textContent=err.message;e.style.display='block';}
+}
+function signOut(){localStorage.removeItem('tf_token');TOKEN=null;
+  $('#app').style.display='none';$('#login').style.display='grid';}
+
+async function boot(){
+  try{ME=await api('/me');}catch(e){return signOut();}
+  $('#login').style.display='none'; $('#app').style.display='block';
+  $('#uName').textContent=ME.name||ME.email;
+  $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
+  if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();}
+
+  try{
+    const f=await api('/filters');
+    const fill=(sel,vals)=>{const s=$(sel); if(!s)return; const cur=s.value;
+      s.innerHTML='<option>All</option>'+(vals||[]).map(v=>'<option>'+esc(v)+'</option>').join('');
+      if([].slice.call(s.options).some(o=>o.value===cur)) s.value=cur;};
+    fill('#fFy',f.fys); fill('#fQtr',f.quarters); fill('#fState',f.states);
+    fill('#fAge',f.age_bands); fill('#fPlan',f.plans);
+    // LGA + facility cascade off the selected state
+    const geo=()=>{const st=$('#fState').value;
+      const pick=(all,map)=>st==='All'?all:(all||[]).filter(v=>map[v]===st);
+      fill('#fLga',pick(f.lgas,f.lga_state||{}));
+      fill('#fFac',pick(f.facilities,f.facility_state||{}));};
+    geo(); window.__geoFill=geo;   // Reset needs it to restore the full lists
+    $('#fState').onchange=()=>{ $('#fLga').selectedIndex=0; $('#fFac').selectedIndex=0;
+      geo(); refresh(); };
+    $('#filters').style.display='flex';
+  }catch(e){
+    // Never silently hide the UI. Say what went wrong.
+    $('#filters').style.display='none';
+    $('#alerts').innerHTML='<div class="notice warn"><h3>No data loaded</h3>'+
+      (ME.role==='admin'?'Upload a workbook on the Admin tab to get started.'
+        :'An administrator needs to upload a workbook.')+
+      '<div style="margin-top:6px;font-size:12px;opacity:.8">('+e.message+')</div></div>';
+    return;
+  }
+  refresh();
+}
+
+async function refresh(){
+  $('#loading').style.display='block';
+  try{
+    const q=qs();
+    const res=await Promise.all([
+      api('/summary'+q),api('/cascade'+q),api('/dq'),api('/plans'+q),
+      api('/time-metrics'+q),api('/survival'+q),
+      api('/breakdown/enrol_quarter'+q),api('/breakdown/state'+q),
+      api('/breakdown/vl_magnitude'+q),api('/breakdown/age_band'+q),
+      api('/breakdown/sex'+q),api('/breakdown/regimen_line'+q),
+      api('/breakdown/facility'+q),api('/risk'+q),api('/mortality'+q),
+      api('/overview'+q),api('/deep-dive'+q),api('/profile'+q),api('/dtc'+q),
+      api('/unsupp-curve'+q)]);
+    const sum=res[0],casc=res[1],dq=res[2],plans=res[3],times=res[4],km=res[5],
+          byQ=res[6],byState=res[7],byMag=res[8],byAge=res[9],bySex=res[10],
+          byReg=res[11],byFac=res[12],risk=res[13],mort=res[14],ov=res[15],dd=res[16],
+          prof=res[17],dtc=res[18],ucurve=res[19];
+    const asof=sum.as_of? new Date(sum.as_of).toLocaleDateString('en-GB',
+      {day:'numeric',month:'short',year:'numeric'}) : '\u2014';
+    const cnt=fmt(sum.n)+' episodes \u00b7 '+fmt(sum.clients)+' clients';
+    $('#foot').textContent=cnt; $('#chip').textContent='Line list as of '+asof+' \u00b7 '+cnt;
+    banners(sum); overview(ov); overviewTime(times); cascade(casc);
+    deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
+    advanced(risk,mort,dd); dqView(dq);
+  }catch(e){
+    $('#alerts').innerHTML='<div class="notice stop"><h3>Could not load</h3>'+e.message+'</div>';
+  }
+  $('#loading').style.display='none';
+}
+
+function banners(s){
+  const w=s.warnings||[]; let h='';
+  const cen=w.filter(x=>/censor/i.test(x));
+  const ep =w.filter(x=>/unsuppression episode/i.test(x));
+  const oth=w.filter(x=>!/censor|unsuppression episode/i.test(x));
+  if(cen.length) h+='<div class="notice info"><h3>Success-censored EAC list excluded from outcomes</h3>'+
+    cen.join('<br>')+'<ul><li>EAC <em>initiation</em> is still comparable across lists; only outcome '+
+    'fields are affected.</li></ul></div>';
+  if(ep.length) h+='<div class="notice ok"><h3>Repeat unsuppression episodes are tracked separately</h3>'+
+    ep.join('<br>')+'</div>';
+  if(oth.length) h+='<div class="notice warn"><h3>Ingest notes</h3>'+oth.join('<br>')+'</div>';
+  // Data-quality / ingest notices live on the Admin page only - they are noise on
+  // every other view. #alerts stays reserved for genuine load errors.
+  const box=$('#adminBanners'); if(box) box.innerHTML=h;
+}
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const stat=(k,v,n,cl)=>'<div class="stat '+(cl||'')+'"><div class="k">'+k+'</div>'+
+  '<div class="v num">'+v+'</div><div class="n">'+n+'</div></div>';
+const gx={grid:{display:false},ticks:{font:{size:10}}};
+const gy={grid:{display:false},border:{display:false},ticks:{font:{size:10}}};
+const gyPct=Object.assign({},gy,{max:100,ticks:{callback:v=>v+'%',font:{size:10}}});
+
+function overview(o){
+ try{
+  if(!o || !o.n){ $('#ovStats').innerHTML='<div class="empty">No data for this filter.</div>'; return; }
+
+  const pctOrNA = v => (v===null||v===undefined) ? '\u2014' : v.toFixed(1)+'%';
+  const d=o.demo||{}, dg=o.disagg||{sex:{},state:{}};
+  const period = periodLabel(o);
+
+  $('#ovStats').innerHTML=[
+    stat('Index cohort',fmt(o.n),fmt(o.clients)+' clients \u00b7 '+fmt(o.repeats)+' repeat unsuppression episodes'),
+    stat('Commenced EAC',pctOrNA(o.eac1_pct),fmt(o.eac1)+' of '+fmt(o.n)+' \u00b7 '+fmt(o.never_eac)+' never started',
+      o.eac1_pct<70?'bad':'good'),
+    stat('Completed EAC',pctOrNA(o.completed_pct),fmt(o.completed)+' of '+fmt(o.eac1)+' commenced',
+      o.completed_pct<50?'warn':'good'),
+    stat('Follow-up VL done',pctOrNA(o.retest_pct),fmt(o.awaiting_retest)+' episodes with no later VL',
+      o.retest_pct<50?'bad':'good'),
+    stat('Re-suppressed',pctOrNA(o.resupp_pct),fmt(o.resuppressed)+' of '+fmt(o.retested)+' with a follow-up VL',
+      o.resupp_pct<70?'warn':'good'),
+    stat('Awaiting DTC review',fmt(o.awaiting_switch),'of '+fmt(o.still_unsuppressed)+' still \u2265 1,000 \u00b7 '
+      +fmt(o.prior_switch)+' prior-switch \u00b7 '+fmt(o.switched)+' switched',
+      o.awaiting_switch?'bad':'good')
+  ].join('');
+
+  // ---- narrative: a cohort story, not a headline ----------------------
+  const mo = d.median_months_art, yrs = mo? (mo/12).toFixed(1) : null;
+  const sx = dg.sex||{}, mResupp=(sx.Male||{}).pct, fResupp=(sx.Female||{}).pct;
+  const stateBits = Object.entries(dg.state||{})
+    .map(([k,v])=>k+' '+pctOrNA(v.pct)).join(', ');
+  const srow=(l,v,e)=>'<div class="row"><span class="l">'+l+'</span>'
+    +'<span class="v num">'+v+(e?'<em>'+e+'</em>':'')+'</span></div>';
+  $('#ovNarr').innerHTML =
+    '<div class="panel-h"><div class="eyebrow">Programme narrative</div>'
+    +'<h2>Treatment-failure cohort \u2014 '+period+'</h2></div>'
+    +'<div class="narrative">'
+    +'<p>In '+period+', <strong>'+fmt(o.n)+' treatment-failure episodes</strong> were recorded '
+    +'across <strong>'+fmt(o.clients)+' clients</strong> ('+fmt(o.repeat_clients)+' unsuppressed more than once). '
+    +'The cohort is <strong>'+pctOrNA(d.female_pct)+' female</strong> ('+fmt(d.female)+') and '
+    +pctOrNA(d.male_pct)+' male ('+fmt(d.male)+'); '
+    +'<strong>'+pctOrNA(d.adolescents_pct)+' are adolescents</strong> (10\u201319, '+fmt(d.adolescents)+') '
+    +'and '+pctOrNA(d.paeds_pct)+' are children under 10 ('+fmt(d.paeds)+'). '
+    +'Median time on ART is <strong>'+(mo?mo+' months':'\u2014')+(yrs?' ('+yrs+' years)':'')+'</strong>, '
+    +'and <strong>'+pctOrNA(d.first_line_pct)+' are on a first-line regimen</strong> '
+    +'with '+pctOrNA(d.second_line_pct)+' ('+fmt(d.second_line)+') already on second-line.</p>'
+
+    +'<p><strong>'+pctOrNA(o.eac1_pct)+'</strong> ('+fmt(o.eac1)+') have commenced EAC, and '
+    +'<strong>'+pctOrNA(o.completed_pct)+'</strong> ('+fmt(o.completed)+') of those have completed it. '
+    +'Median time to EAC commencement is <strong>'+(d.median_time_to_eac!=null?d.median_time_to_eac+' days':'\u2014')+'</strong>, '
+    +'with an EAC lead time (commencement to follow-up sample) of about '
+    +'<strong>'+(d.median_lead_months!=null?d.median_lead_months+' months':'\u2014')+'</strong>.</p>'
+
+    +'<p>Among episodes with a follow-up viral load, the re-suppression rate is '
+    +'<strong>'+pctOrNA(o.resupp_pct)+'</strong>. '
+    +'<strong>'+fmt(o.awaiting_switch)+' episodes remain \u2265 1,000 copies/ml and are awaiting DTC review</strong> '
+    +'(switch-committee candidates); '+fmt(o.switched)+' have moved to second- or third-line. '
+    +'Re-suppression is <strong>'+pctOrNA(fResupp)+' in females</strong> versus '
+    +pctOrNA(mResupp)+' in males'
+    +(stateBits? ', and by state runs '+stateBits+'.' : '.')+' '
+    +'The clearest gap is coverage, not efficacy: only <strong>'+pctOrNA(o.retest_pct)+'</strong> '
+    +'of episodes have any follow-up VL on record, leaving '+fmt(o.awaiting_retest)+' untested.</p>'
+    +'</div>';
+
+  $('#ovCohort').innerHTML =
+    '<div class="panel-h"><div class="eyebrow">Demographics</div><h2>Cohort at a glance</h2></div>'
+    +'<div class="cohort-list">'
+    + srow('Female', pctOrNA(d.female_pct), fmt(d.female))
+    + srow('Adolescents 10–19', pctOrNA(d.adolescents_pct), fmt(d.adolescents))
+    + srow('Children under 10', pctOrNA(d.paeds_pct), fmt(d.paeds))
+    + srow('Median on ART', (mo?mo+' mo':'—'), (yrs?yrs+' yr':''))
+    + srow('First-line', pctOrNA(d.first_line_pct), fmt(d.first_line))
+    + srow('Second-line', pctOrNA(d.second_line_pct), fmt(d.second_line))
+    +'</div>';
+
+  // ---- monthly incidence by sex, MM-YY axis ---------------------------
+  const w=o.weekly, lab=(w.months||[]).map(fmtMonYY);
+  chart('cWeekly',{type:'line',data:{labels:lab,datasets:[
+    {label:'Female',data:w.female,borderColor:C.female,
+     backgroundColor:'rgba(27,73,101,.10)',fill:true,tension:.3,pointRadius:3,
+     pointBackgroundColor:C.female,borderWidth:2.5},
+    {label:'Male',data:w.male,borderColor:C.male,
+     backgroundColor:'rgba(98,182,203,.18)',fill:true,tension:.3,pointRadius:3,
+     pointBackgroundColor:C.male,borderWidth:2.5}]},
+    options:{interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom'},
+        tooltip:{callbacks:{footer:i=>'Total '+(i[0].parsed.y+i[1].parsed.y)}}},
+      scales:{x:Object.assign({},gx,{ticks:{font:{size:10}}}),
+              y:Object.assign({},gy,{beginAtZero:true,
+                title:{display:true,text:'New unsuppressed results',font:{size:10}}})}}});
+  const F=w.female.reduce((a,b)=>a+b,0), M=w.male.reduce((a,b)=>a+b,0), T=F+M||1;
+  const peak=Math.max(...w.female.map((v,i)=>v+w.male[i]),0);
+  $('#wkFoot').innerHTML=
+    '<span><b style="color:'+C.female+'">Female</b> '+fmt(F)+' ('+(F/T*100).toFixed(1)+'%)</span>'
+    +'<span><b style="color:'+C.maleInk+'">Male</b> '+fmt(M)+' ('+(M/T*100).toFixed(1)+'%)</span>'
+    +'<span><b>Mean/month</b> '+Math.round(T/(w.months.length||1))+'</span>'
+    +'<span><b>Peak</b> '+peak+'</span>';
+
+  // ---- outcome card: two donuts (sex split, EAC commenced) + state bars -
+  const CARD=cssVar('--card'), RULE2=cssVar('--rule-2');
+  const uk=Math.max(0,o.n-(d.female||0)-(d.male||0));
+  const mfLabels=['Female','Male'].concat(uk?['Unknown']:[]);
+  const mfData=[d.female||0,d.male||0].concat(uk?[uk]:[]);
+  const mfCols=[C.female,C.male].concat(uk?[C.rule]:[]);
+  const commenced=o.eac1||0, notC=Math.max(0,o.n-commenced);
+  const bstates=o.by_state||[];
+  const donut=(id,title,big,sub)=>'<div class="oc-d"><div class="oc-t">'+title+'</div>'
+    +'<div class="oc-donut"><canvas id="'+id+'"></canvas>'
+    +'<div class="oc-center"><div class="big num">'+big+'</div><div class="sub">'+sub+'</div></div></div>'
+    +'<div class="oc-leg" id="'+id+'Leg"></div></div>';
+  $('#ovFunnel').innerHTML='<div class="oc-donuts">'
+    + donut('cMF','Total unsuppressed by sex',fmt(o.n),'episodes')
+    + donut('cCommenced','Commenced EAC',pctOrNA(o.eac1_pct),fmt(commenced)+' of '+fmt(o.n))
+    +'</div>'
+    +'<div class="disagg-h">EAC commenced by state</div>'
+    +(bstates.length
+      ? '<div>'+bstates.map(function(s){const p=s.eac1_pct||0;
+          return '<div class="oc-state"><span class="sn">'+esc(s.state)+'</span>'
+            +'<span class="st"><i style="width:'+Math.min(p,100).toFixed(1)+'%;background:'+C.other+'"></i></span>'
+            +'<span class="sv">'+pctOrNA(s.eac1_pct)+'<em>'+fmt(s.n)+'</em></span></div>';
+        }).join('')+'</div>'
+      : '<div class="empty">No state breakdown for this filter.</div>');
+
+  chart('cMF',{type:'doughnut',data:{labels:mfLabels,
+    datasets:[{data:mfData,backgroundColor:mfCols,borderWidth:0}]},
+    options:{cutout:'70%',plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>i.label+' '+fmt(i.parsed)
+        +' ('+(o.n?i.parsed/o.n*100:0).toFixed(1)+'%)'}}}}});
+  // same theme as the sex donut: deep blue achievement, light blue gap
+  const ACH=C.female, GAP=C.male;
+  chart('cCommenced',{type:'doughnut',data:{labels:['Commenced','Not yet'],
+    datasets:[{data:[commenced,notC],backgroundColor:[ACH,GAP],borderWidth:0}]},
+    options:{cutout:'70%',plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>i.label+' '+fmt(i.parsed)}}}}});
+  $('#cMFLeg').innerHTML=mfLabels.map((l,i)=>'<span><i style="background:'+mfCols[i]+'"></i>'
+    +l+' <b>'+(o.n?(mfData[i]/o.n*100).toFixed(1):'0')+'%</b></span>').join('');
+  $('#cCommencedLeg').innerHTML=
+    '<span><i style="background:'+ACH+'"></i>Commenced <b>'+fmt(commenced)+'</b></span>'
+    +'<span><i style="background:'+GAP+'"></i>Not yet <b>'+fmt(notC)+'</b></span>';
+
+  // ---- monthly re-suppression trend by sex (latest month provisional) --
+  const q=o.progress, rt=o.resupp_trend||{months:[],female:[],male:[],female_n:[],male_n:[]};
+  const rlab=(rt.months||[]).map(fmtMonYY);
+  const lastIdx=rlab.length-1, GREY=cssVar('--ink-3');
+  // dash + grey the final segment: the latest month's follow-ups are freshly
+  // sampled and mostly not yet re-suppressed, so its rate is provisional.
+  const prov=col=>({borderColor:c=>c.p1DataIndex===lastIdx?GREY:col,
+    borderDash:c=>c.p1DataIndex===lastIdx?[6,4]:undefined});
+  const rline=(lab,data,col)=>({label:lab,data:data,borderColor:col,backgroundColor:col,
+    tension:.3,pointRadius:3,pointBackgroundColor:col,borderWidth:2.5,spanGaps:true,
+    segment:prov(col)});
+  chart('cResupp',{type:'line',data:{labels:rlab,datasets:[
+    rline('Female',rt.female,C.female),rline('Male',rt.male,C.male)]},
+    options:{interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom'},
+        tooltip:{callbacks:{
+          label:i=>i.dataset.label+': '+(i.parsed.y==null?'\u2014':i.parsed.y.toFixed(1)+'%')
+            +(i.dataIndex===lastIdx?' (provisional)':''),
+          afterLabel:i=>{const nn=(i.dataset.label==='Female'?rt.female_n:rt.male_n)||[];
+            return 'n = '+fmt(nn[i.dataIndex]);}}}},
+      scales:{x:Object.assign({},gx,{grid:{display:false}}),
+        y:Object.assign({},gyPct,{grid:{display:false},border:{display:false},
+          title:{display:true,text:'Re-suppressed',font:{size:10}}})}}});
+
+  $('#ovProg').innerHTML='<thead><tr><th>Quarter</th><th class="r">Episodes</th>'
+    +'<th class="r">EAC commenced</th><th class="r">EAC completed</th>'
+    +'<th class="r">Follow-up VL</th><th class="r">Re-suppressed</th></tr></thead><tbody>'
+    +q.map(r=>'<tr><td>'+r.quarter+'</td><td class="r">'+fmt(r.n)+'</td>'
+      +'<td class="r">'+fmt(r.eac1)+' <em>'+pctOrNA(r.eac1_pct)+'</em></td>'
+      +'<td class="r">'+fmt(r.completed)+' <em>'+pctOrNA(r.completed_pct)+'</em></td>'
+      +'<td class="r">'+fmt(r.retested)+' <em>'+pctOrNA(r.retest_pct)+'</em></td>'
+      +'<td class="r">'+fmt(r.resuppressed)+' <em>'+pctOrNA(r.resupp_pct)+'</em></td></tr>').join('')
+    +'</tbody>';
+
+  // ---- facility tables --------------------------------------------------
+  const facRows=(rows,showVol)=>'<thead><tr><th>Facility</th><th class="r">Episodes</th>'
+    +'<th class="r">EAC commenced</th><th class="r">EAC completed</th></tr></thead><tbody>'
+    +rows.map(r=>'<tr><td>'+esc(r.facility||'\u2014')+'</td>'
+      +'<td class="r">'+fmt(r.n)+'</td>'
+      +'<td class="r">'+fmt(r.eac1)+' <em>'+pctOrNA(r.eac1_pct)+'</em></td>'
+      +'<td class="r">'+fmt(r.completed)+' <em>'+pctOrNA(r.completed_pct)+'</em></td></tr>').join('')
+    +'</tbody>';
+  $('#ovVol').innerHTML=facRows(o.by_volume);
+  $('#ovBest').innerHTML=facRows(o.best);
+  $('#ovBestNote').textContent='Ranked among facilities with at least '+o.min_vol
+    +' episodes \u2014 completion rates on a handful of clients are noise, not signal.';
+
+  if(o.zero_eac && o.zero_eac.length){
+    $('#ovZeroPanel').style.display='';
+    $('#ovZero').innerHTML='<thead><tr><th>Facility</th><th class="r">Episodes</th>'
+      +'<th class="r">EAC sessions</th></tr></thead><tbody>'
+      +o.zero_eac.map(r=>'<tr><td>'+esc(r.facility||'\u2014')+'</td>'
+        +'<td class="r">'+fmt(r.n)+'</td><td class="r"><span class="tag bad">0</span></td></tr>').join('')
+      +'</tbody>';
+  } else { $('#ovZeroPanel').style.display='none'; }
+
+  // ---- methodology + data sources --------------------------------------
+  const srcKind={total:'Total Unsuppressed register',treatment:'Treatment line list',
+                 eac:'EAC line list'};
+  const sources=o.sources||[];
+  const asof=o.as_of? new Date(o.as_of)
+    .toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}):'\u2014';
+  const dh='disagg-h" style="margin-top:0;border-top:none;padding-top:0';
+  // Title + subtitle live INSIDE the left column so the right column (source
+  // line lists) starts flush with the top of the card instead of being pushed
+  // down by the full-width header.
+  $('#ovSources').innerHTML=
+    '<div class="src-grid"><div>'
+    +'<div class="panel-h" style="margin-bottom:14px"><h2>Methodology &amp; data sources</h2>'
+    +'<p>How the numbers on this page are built, and the line lists they rest on. '
+    +'Per-sheet data-quality checks live on the Data quality tab.</p></div>'
+    +'<div class="'+dh+'">How these numbers are built</div>'
+    +'<ul class="src-meth">'
+    +'<li>The unit of analysis is the failure <b>episode</b> (S/N + index VL date + value), '
+      +'never the client \u2014 '+fmt(o.repeat_clients)+' clients unsuppressed more than once.</li>'
+    +'<li>The cohort is a <b>quarterly open cohort</b> drawn from the Total Unsuppressed register.</li>'
+    +'<li><b>All viral loads</b>, index and follow-up, come from the clinical line lists \u2014 '
+      +'never the EAC sheet.</li>'
+    +'<li>The <b>follow-up VL</b> is the next VL sampled after the index result was received.</li>'
+    +'<li><b>EAC completed</b> = sessions 1–3 recorded plus ≥30 days since session 3; '
+      +'<b>post-EAC VL</b> = sessions 1–3 plus a sample on/after session 3.</li>'
+    +'</ul>'
+    +'<p class="src-note">Full definitions on the <b>Methodology</b> tab; per-sheet '
+      +'data-quality checks on the <b>Data quality</b> tab.</p>'
+    +'</div><div>'
+    +'<div class="'+dh+'">Source line lists</div>'
+    +'<div class="prov"><b>Line list as of</b> '+asof
+      +' \u00b7 sets the fiscal quarter and the follow-up window.</div>'
+    +(sources.length
+      ? '<table class="src-tbl"><thead><tr><th>Sheet</th><th>Type</th>'
+        +'<th class="r">Rows</th></tr></thead><tbody>'
+        +sources.map(s=>'<tr><td>'+esc(s.name)+'</td><td>'+(srcKind[s.kind]||esc(s.kind))
+          +(s.censored?' <span class="tag bad">censored</span>':'')+'</td>'
+          +'<td class="r num">'+fmt(s.rows)+'</td></tr>').join('')
+        +'</tbody></table>'
+      : '<p class="src-note">Source sheet list is unavailable for this upload.</p>')
+    +'</div></div>';
+ }catch(err){
+   // A render failure must degrade to a visible message in THIS card, never
+   // take down the page. (This is the permanent guard against the recurring
+   // "X is not defined" crash.)
+   const box=$('#ovStats')||document.body;
+   box.innerHTML='<div class="err">Overview render error: '+esc(err&&err.message||err)
+     +'. The data loaded correctly; this is a display fault.</div>';
+   console.error('overview render:',err);
+ }
+}
+
+// Time-to-event summary strip on the Overview (from /time-metrics).
+function overviewTime(t){
+  const box=$('#ovTimeStats'); if(!box) return;
+  if(!t){ box.innerHTML=''; return; }
+  const md=k=>(t[k]&&t[k].median!=null)?fmt(t[k].median):'—';
+  const iqr=k=>t[k]?('IQR '+t[k].q1+'–'+t[k].q3):'';
+  box.innerHTML=[
+    stat('Median time to EAC',md('time_to_eac')+' d','index result → session 1 · '+iqr('time_to_eac'),
+      (t.time_to_eac&&t.time_to_eac.median>30)?'warn':'good'),
+    stat('EAC lead time',md('eac_lead_time')+' d','session 1 → follow-up sample · '+iqr('eac_lead_time'),
+      (t.eac_lead_time&&t.eac_lead_time.median>120)?'warn':''),
+    stat('Time to re-suppression',md('time_to_resuppression')+' d','session 1 → suppressed VL · '+iqr('time_to_resuppression')),
+    stat('Months unsuppressed',(t.months_unsuppressed?t.months_unsuppressed.median:'—'),
+      'index VL → line-list date · '+iqr('months_unsuppressed'),'warn')
+  ].join('');
+}
+
+// Month label as MM-YY (e.g. "Jul-25"). Input is an ISO date string.
+function fmtMonYY(iso){
+  const d=new Date(iso), m=d.toLocaleDateString('en-GB',{month:'short'});
+  return m+'-'+String(d.getFullYear()).slice(-2);
+}
+// Human period label from the loaded cohort's month span.
+function periodLabel(o){
+  const m=(o.weekly&&o.weekly.months)||[];
+  if(!m.length) return 'the current period';
+  return fmtMonYY(m[0])+' to '+fmtMonYY(m[m.length-1]);
+}
+
+// sequential blue ramp (coolors) \u2014 one shade per cascade step, dark at the top.
+const CBLU=['#012a4a','#013a63','#01497c','#014f86','#2a6f97','#2c7da0','#468faf',
+            '#61a5c2','#89c2d9','#a9d6e5'];
+const CRED='#DC2626';
+const CBASE={1:'#012a4a',2:'#013a63',3:'#01497c',4:'#014f86',5:'#2a6f97',6:'#2c7da0',
+             61:'#468faf',7:'#468faf',8:'#61a5c2',9:'#2c7da0',91:'#468faf',92:'#89c2d9',
+             93:CRED,10:'#014f86'};
+// lighten a hex toward white by amt (0..1) \u2014 used for the male segment tint.
+function lighten(hex,amt){const v=parseInt(hex.slice(1),16),r=v>>16,g=(v>>8)&255,b=v&255,
+  L=x=>Math.round(x+(255-x)*amt); return 'rgb('+L(r)+','+L(g)+','+L(b)+')';}
+
+function cascade(steps){
+  if(!steps.length)return;
+  // clicking a cascade bar opens the worklist of clients lost at that step.
+  const STEP_FLAG={2:'no_eac',6:'eac_incomplete',61:'awaiting_vl',
+                   93:'awaiting_switch',10:'awaiting_switch'};
+  const N=steps[0].n, spine=[1,2,3,4,5,6,7,8];
+  const seg=(w,c)=> w>0?'<span class="seg" style="width:'+w.toFixed(2)+'%;background:'+c+'"></span>':'';
+  const legend='<div class="casc-leg">'
+    +'<span><i style="background:#2a6f97"></i>Female (solid)</span>'
+    +'<span><i style="background:'+lighten('#2a6f97',.45)+'"></i>Male (lighter tint)</span>'
+    +'<span><i style="background:'+CRED+'"></i>Still unsuppressed</span></div>';
+  $('#casc').innerHTML=legend+steps.map(function(s,i){
+    const inSpine=spine.indexOf(s.step)>=0;
+    const prev=(i>0&&inSpine&&spine.indexOf(steps[i-1].step)>=0)?steps[i-1].n:null;
+    const lost=prev!=null?prev-s.n:null, sub=(s.step===91||s.step===92);
+    const base=CBASE[s.step]||'#2a6f97', male=lighten(base,.45), unk=lighten(base,.8);
+    const fP=N?s.n_female/N*100:0, mP=N?s.n_male/N*100:0,
+          uP=N?Math.max(0,(s.n-(s.n_female||0)-(s.n_male||0)))/N*100:0;
+    const t=fmt(s.n)+' of '+fmt(s.denominator)+' ('+s.denominator_label+') \u2014 F '
+      +fmt(s.n_female)+' / M '+fmt(s.n_male)+(s.note?' \u2014 '+s.note:'');
+    return '<div class="step '+(sub?'sub':'')+'" data-step="'+s.step+'" title="'+esc(t)+'">'+
+      '<div class="lbl"><span class="tier num">'+(sub?'':String(s.step).padStart(2,'0'))+'</span>'+s.label+'</div>'+
+      '<div class="track"><div class="bar">'+seg(fP,base)+seg(mP,male)+seg(uP,unk)+'</div></div>'+
+      '<div class="fig">'+(lost>0?'<span class="loss">\u2212'+fmt(lost)+'</span>':'')+
+      '<span class="num">'+fmt(s.n)+'</span><span class="pct num">'+pc(s.pct)+'</span></div></div>';
+  }).join('');
+  $$('#casc .step').forEach(el=>el.onclick=function(){
+    const f=STEP_FLAG[+el.dataset.step]; if(f) loadClients(f);
+  });
+
+  // where the cohort is lost \u2014 the clinically meaningful gaps, two highlighted.
+  const g=k=>{const s=steps.filter(x=>x.step===k)[0]; return s?s.n:0;};
+  const HN='#2c7da0', HH='#EBA01E', HB='#DC2626';   // neutral / amber / red
+  const gaps=[
+    ['Never commenced EAC', g(1)-g(2), HN],
+    ['Started, stopped before session 3', Math.max(0,g(2)-g(4)), HN],
+    ['At session 3, not yet completed (<30 d)', Math.max(0,g(4)-g(6)), HH],
+    ['Completed, no post-EAC VL sample', Math.max(0,g(6)-g(61)), HB],
+    ['Still \u22651,000, awaiting DTC review', Math.max(0,g(93)-g(10)), HN],
+  ];
+  chart('cLoss',{type:'bar',data:{labels:gaps.map(x=>x[0]),
+    datasets:[{label:'Episodes',data:gaps.map(x=>x[1]),backgroundColor:gaps.map(x=>x[2]),
+      borderRadius:6,borderSkipped:false,barThickness:18}]},
+    options:{indexAxis:'y',plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>fmt(i.parsed.x)+' episodes'}}},
+      scales:{x:Object.assign({},gy,{grid:{display:false},border:{display:false},beginAtZero:true}),
+        y:Object.assign({},gx,{grid:{display:false},ticks:{font:{size:10}}})}}});
+  const CARD=cssVar('--card');
+  chart('cOut',{type:'doughnut',
+    data:{labels:['Undetectable (<50)','LLV (50\u2013999)','Still unsuppressed (\u22651,000)','No post-EAC VL'],
+      datasets:[{data:[g(91),g(92),g(93),N-g(8)],
+        backgroundColor:['#2c7da0','#89c2d9',CRED,cssVar('--rule-2')],borderWidth:0}]},
+    options:{cutout:'62%',plugins:{legend:{position:'right'}}}});
+}
+
+const FLAG_LABEL={
+  no_eac:'Unsuppressed with no valid EAC record',
+  eac_incomplete:'Started EAC but not completed',
+  awaiting_vl:'Completed EAC 30+ days ago, no post-EAC VL sample',
+  awaiting_switch:'Still unsuppressed after EAC — awaiting DTC review',
+  long_unsuppressed:'Unsuppressed for more than 6 months',
+  dtc_review:'More than 2 EAC cycles, still failing (DTC review)',
+  trunc_pre:'Sample taken before EAC session 1 — cycle never started',
+  trunc_mid:'Sample taken mid-cycle, before EAC session 3',
+  prior_cycle:'EAC session predates the index VL (excluded)'
+};
+async function loadClients(flag){
+  const rows=await api('/clients'+qs({flag:flag,limit:500}));
+  LAST={flag:flag};
+  $('#drillPanel').style.display='block';
+  $('#drillT').textContent=FLAG_LABEL[flag]||flag;
+  $('#drillS').textContent=fmt(rows.length)+' shown (max 500) \u2014 use Export CSV for the full list';
+  $('#drillH').innerHTML='<tr><th>Client</th><th>Facility</th><th>State</th><th>Sex</th>'+
+    '<th class="r">Age</th><th class="r">Index VL</th><th>Index date</th><th class="r">Sessions</th>'+
+    '<th class="r">Post-EAC VL</th><th class="r">Months</th><th>Plan</th></tr>';
+  $('#drillB').innerHTML=rows.map(r=>'<tr>'+
+    '<td class="num" style="font-size:11px;color:var(--ink-3)">'+String(r.sn).slice(0,9)+'\u2026</td>'+
+    '<td>'+(r.facility||'\u2014')+'</td><td>'+(r.state||'\u2014')+'</td><td>'+(r.sex||'\u2014')+'</td>'+
+    '<td class="r num">'+(r.age!=null?r.age:'\u2014')+'</td>'+
+    '<td class="r num">'+(r.idx_vl!=null?fmt(r.idx_vl):'\u2014')+'</td>'+
+    '<td class="num" style="font-size:11px">'+String(r.idx_date||'\u2014').slice(0,10)+'</td>'+
+    '<td class="r num">'+(r.sessions||0)+'</td>'+
+    '<td class="r num" style="'+(r.still_unsuppressed?'color:var(--brick);font-weight:600':'')+'">'+
+      (r.fu_vl!=null?fmt(r.fu_vl):'\u2014')+'</td>'+
+    '<td class="r num">'+(r.months_unsuppressed!=null?r.months_unsuppressed:'\u2014')+'</td>'+
+    '<td><span class="tag t-n">'+String(r.treatment_plan||'\u2014').slice(0,2)+'</span></td></tr>').join('')
+    ||'<tr><td colspan="11" style="text-align:center;padding:26px;color:var(--ink-3)">No episodes match.</td></tr>';
+  switchTo('cascade');
+  $('#drillPanel').scrollIntoView({block:'nearest'});
+}
+
+async function deep(prof,dd,byFac){
+  dpRender(prof);
+
+  // ---- actionable flags (kept) ---------------------------------------
+  const flags=Object.keys(FLAG_LABEL);
+  const counts=await Promise.all(flags.map(f=>
+    api('/clients'+qs({flag:f,limit:5000})).then(r=>r.length).catch(()=>null)));
+  $('#flagB').innerHTML=flags.map((f,i)=>'<tr><td style="font-weight:500">'+FLAG_LABEL[f]+'</td>'+
+    '<td class="r num" style="'+(counts[i]?'font-weight:600':'color:var(--ink-3)')+'">'+fmt(counts[i])+'</td>'+
+    '<td class="r"><button class="btn sm" data-flag="'+f+'">View</button></td></tr>').join('');
+  $$('#flagB button').forEach(b=>b.onclick=()=>loadClients(b.dataset.flag));
+
+  // ---- facility league (kept) ----------------------------------------
+  const fac=byFac.filter(f=>f.n>=20).sort((a,b)=>(a.eac1_pct||0)-(b.eac1_pct||0));
+  $('#facH').innerHTML='<tr><th>Facility</th><th class="r">Episodes</th>'+
+    '<th class="r" style="width:160px">EAC commenced</th><th class="r">Post-EAC VL</th>'+
+    '<th class="r">Re-suppressed</th><th class="r">Awaiting DTC review</th></tr>';
+  $('#facB').innerHTML=fac.map(function(f){
+    const r=(f.eac1_pct||0)/100, col=r<.5?C.brick:r<.75?C.honey:C.green;
+    const aw=Math.max(0,f.still_unsuppressed-f.switched);
+    return '<tr><td style="font-weight:500">'+f.group+'</td>'+
+      '<td class="r num">'+fmt(f.n)+'</td>'+
+      '<td class="r"><div class="bar-cell">'+
+        '<span class="num" style="font-weight:600;color:'+col+'">'+pc(f.eac1_pct)+'</span>'+
+        '<span class="mini"><i style="width:'+(r*100)+'%;background:'+col+'"></i></span></div></td>'+
+      '<td class="r num">'+fmt(f.post_result)+'</td>'+
+      '<td class="r num">'+pc(f.resupp_pct)+'</td>'+
+      '<td class="r num" style="'+(aw?'color:var(--brick);font-weight:600':'')+'">'+aw+'</td></tr>';
+  }).join('')||'<tr><td colspan="6" style="text-align:center;padding:26px;color:var(--ink-3)">'+
+    'No facility has 20+ episodes in this selection.</td></tr>';
+}
+
+// ---- deep-dive: descriptive who / what / when / where ---------------
+function dpRender(p){
+ try{
+  const slots=['#dpWho','#dpWhat','#dpWhen','#dpWhere'];
+  if(!p||!p.n){
+    $('#dpTiles').innerHTML='<div class="empty">No data for this filter.</div>';
+    slots.forEach(s=>$(s)&&($(s).innerHTML='')); return;
+  }
+  const w=p.who,wt=p.what,wn=p.when,wr=p.where;
+  const nOf=(d,lv)=>{const r=(d||[]).find(x=>x.level===lv); return r?r.n:0;};
+  $('#dpTiles').innerHTML=[
+    stat('Episodes',fmt(p.n),fmt(p.clients)+' distinct clients'),
+    stat('Median age',fmt(w.median_age)+' yr','of the unsuppressed'),
+    stat('Female',w.female_pct+'%',fmt(nOf(w.sex,'Female'))+' episodes'),
+    stat('Adolescents 10–19',w.adolescent_pct+'%',w.paed_pct+'% are under 10',
+      w.adolescent_pct>10?'warn':''),
+    stat('Median on ART',wt.median_years_art+' yr','at the index VL'),
+    stat('Median months unsupp.',wn.mu_stats?wn.mu_stats.median:'—','since the index VL','warn')
+  ].join('');
+
+  const card=(title,dist,col)=>'<div class="dp-card"><h4>'+esc(title)+'</h4>'
+    +(dist&&dist.length?dist.map(r=>'<div class="dp-row">'
+      +'<span class="l" title="'+esc(r.level)+'">'+esc(r.level)+'</span>'
+      +'<span class="t"><i style="width:'+Math.min(r.pct,100)+'%;background:'+col+'"></i></span>'
+      +'<span class="v">'+fmt(r.n)+'<em>'+r.pct+'%</em></span></div>').join('')
+      :'<div class="dd-empty">Not available.</div>')+'</div>';
+  // donut card: markup now, chart + legend wired after the DOM exists
+  const dcard=(id,title,big,sub)=>'<div class="dp-card"><h4>'+esc(title)+'</h4>'
+    +'<div class="dp-donut"><canvas id="'+id+'"></canvas>'
+    +'<div class="oc-center"><div class="big num">'+big+'</div><div class="sub">'+esc(sub)+'</div></div></div>'
+    +'<div class="oc-leg" id="'+id+'Leg"></div></div>';
+  const grid=c=>'<div class="dp-grid">'+c.join('')+'</div>';
+  const short=d=>(d||[]).map(r=>Object.assign({},r,{level:String(r.level).split(',')[0]}));
+  const CARD=cssVar('--card');
+  const donut=(id,dist,cols)=>{
+    if(!dist||!dist.length) return;
+    chart(id,{type:'doughnut',data:{labels:dist.map(r=>r.level),
+      datasets:[{data:dist.map(r=>r.n),backgroundColor:dist.map((r,i)=>cols[i%cols.length]),
+        borderWidth:0}]},
+      options:{cutout:'68%',plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:i=>i.label+' '+fmt(i.parsed)
+          +' ('+(dist[i.dataIndex]||{}).pct+'%)'}}}}});
+    const leg=$('#'+id+'Leg');
+    if(leg) leg.innerHTML=dist.map((r,i)=>'<span><i style="background:'+cols[i%cols.length]+'"></i>'
+      +esc(r.level)+' <b>'+r.pct+'%</b></span>').join('');
+  };
+
+  const WHO='#01497c', WHAT='#2c7da0', WHEN='#2a6f97', WHERE='#468faf';
+  const RAMP=['#01497c','#2c7da0','#61a5c2','#a9d6e5','#cfd8dd'];
+
+  const u20=(w.paed_pct||0)+(w.adolescent_pct||0);
+  $('#dpWho').innerHTML=grid([
+    dcard('dpSex','Sex',w.female_pct+'%','female'),
+    dcard('dpAgeGrp','Age group',u20.toFixed(1)+'%','under 20'),
+    card('Age band',w.age_band,WHO),
+    card('Marital status',w.marital,WHO), card('Education',w.education,WHO),
+    card('Employment',w.job,WHO),
+    card('Pregnancy (women)',w.pregnancy,WHO)]);
+  donut('dpSex',w.sex,['#01497c','#61a5c2','#cfd8dd']);
+  donut('dpAgeGrp',w.age_group,['#DC2626','#EBA01E','#2c7da0']);  // peds/adol flagged
+
+  const compl=(wt.eac_status||[]).find(x=>x.level==='Completed EAC');
+  $('#dpWhat').innerHTML=grid([
+    dcard('dpReg','Regimen line',(wt.regimen[0]||{}).pct+'%','on 1st line'),
+    dcard('dpEac','EAC status',(compl?compl.pct:0)+'%','completed EAC'),
+    card('Index VL magnitude',wt.vl_magnitude,WHAT),
+    card('Years on ART',wt.years_art,WHAT),
+    card('WHO stage',wt.who_stage,WHAT), card('BMI',wt.bmi,WHAT),
+    card('Baseline CD4',wt.cd4,WHAT), card('Treatment plan',short(wt.plan),WHAT)]);
+  donut('dpReg',wt.regimen,['#2c7da0','#014f86']);
+  // never-commenced is the gap that matters, so it carries the red
+  donut('dpEac',wt.eac_status,['#DC2626','#89c2d9','#2c7da0']);
+
+  const ttfv=wn.ttfv_months, ttfu=wn.ttfu_years;
+  $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'
+    +grid([card('Enrolment quarter',wn.quarter,WHEN),
+      card('Months unsuppressed',wn.months_unsupp,WHEN),
+      card('ART start → first VL'+(ttfv?' · median '+ttfv.median+' mo':''),
+        wn.time_to_first_vl,WHEN),
+      card('ART start → first unsuppressed VL'+(ttfu?' · median '+ttfu.median+' yr':''),
+        wn.yrs_to_unsupp,WHEN)]);
+  const mo=wn.monthly||{months:[],n:[]};
+  // the line list is drawn mid-month, so the final month is partial - dash and
+  // grey it exactly as the Overview trend does rather than let it read as a crash.
+  const mLast=(mo.months||[]).length-1, MGREY=cssVar('--ink-3');
+  chart('dpTrend',{type:'line',data:{labels:(mo.months||[]).map(fmtMonYY),
+    datasets:[{label:'New unsuppressed results',data:mo.n,borderColor:WHEN,
+      backgroundColor:'rgba(42,111,151,.12)',fill:true,tension:.3,pointRadius:2.5,
+      pointBackgroundColor:WHEN,borderWidth:2.5,
+      segment:{borderColor:c=>c.p1DataIndex===mLast?MGREY:WHEN,
+               borderDash:c=>c.p1DataIndex===mLast?[6,4]:undefined}}]},
+    options:{plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>fmt(i.parsed.y)+' episodes entered the cohort'
+        +(i.dataIndex===mLast?' (partial month)':'')}}},
+      scales:{x:Object.assign({},gx,{grid:{display:false}}),
+        y:Object.assign({},gy,{grid:{display:false},border:{display:false},beginAtZero:true,
+          title:{display:true,text:'Episodes per month',font:{size:10}}})}}});
+
+  $('#dpWhere').innerHTML='<div id="dpMap" class="map-box"><div class="dd-empty">Loading map…</div></div>'
+    +grid([
+    dcard('dpState','State',fmt(p.n),'episodes'),
+    card('Top 10 LGAs (service)',wr.lga,WHERE), card('Top 10 facilities',wr.facility,WHERE)]);
+  donut('dpState',wr.state,RAMP);
+  drawLgaMap(wr.lga_res);
+ }catch(err){
+   $('#dpTiles').innerHTML='<div class="err">Profile render error: '+esc(err&&err.message||err)+'</div>';
+   console.error('profile render:',err);
+ }
+}
+
+// ---- deep-dive: LGA-of-residence choropleth -------------------------
+// Vanilla SVG over real geoBoundaries polygons bundled at
+// /nga_lga_3states.geojson (Delta, Osun, Ekiti - 71 LGAs). The region is
+// small enough that a plain equirectangular projection is visually exact.
+async function drawLgaMap(res){
+  const box=document.getElementById('dpMap'); if(!box) return;
+  try{
+    if(!window.__LGA_GEO){
+      const r=await fetch('/nga_lga_3states.geojson');
+      if(!r.ok) throw new Error('boundary file not found');
+      window.__LGA_GEO=await r.json();
+    }
+    if(window.__CTX_GEO===undefined){
+      try{const rc=await fetch('/nga_context_states.geojson');
+        window.__CTX_GEO=rc.ok?await rc.json():null;}catch(e){window.__CTX_GEO=null;}
+    }
+    const geo=window.__LGA_GEO, ctx=window.__CTX_GEO,
+          counts=(res&&res.counts)||{}, total=(res&&res.total)||0;
+    const ctxFeats=(ctx&&ctx.features)?ctx.features:[];
+    const bgStates=ctxFeats.filter(f=>!f.properties.focus);
+    const focusStates=ctxFeats.filter(f=>f.properties.focus);
+    const rings=g=>(g.type==='MultiPolygon'?g.coordinates:[g.coordinates])
+      .flatMap(p=>p);
+    // Frame tightly on the FOCUS states so their LGAs are large. Neighbouring
+    // states are still drawn but crop at the viewBox edge (the outer SVG clips),
+    // giving context without shrinking the three states.
+    let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+    const grow=g=>rings(g).forEach(ring=>ring.forEach(pt=>{
+      if(pt[0]<minX)minX=pt[0]; if(pt[0]>maxX)maxX=pt[0];
+      if(pt[1]<minY)minY=pt[1]; if(pt[1]>maxY)maxY=pt[1];}));
+    (focusStates.length?focusStates:ctxFeats).forEach(f=>grow(f.geometry));
+    const padX=(maxX-minX)*0.10, padY=(maxY-minY)*0.10;
+    minX-=padX; maxX+=padX; minY-=padY; maxY+=padY;
+    const W=1000, H=Math.round(W*(maxY-minY)/(maxX-minX));
+    const sx=x=>((x-minX)/(maxX-minX)*W).toFixed(1);
+    const sy=y=>((maxY-y)/(maxY-minY)*H).toFixed(1);
+    const dOf=g=>rings(g).map(ring=>'M'+ring.map(pt=>sx(pt[0])+','+sy(pt[1])).join('L')+'Z').join('');
+    let max=0, matched=0;
+    geo.features.forEach(f=>{const b=counts[f.properties.key], n=b?b.n:0;
+      if(n>max)max=n; matched+=n;});
+    const lerp=(a,b,t)=>Math.round(a+(b-a)*t);
+    const colAt=t=>'rgb('+lerp(169,1,t)+','+lerp(214,42,t)+','+lerp(229,74,t)+')';
+    const ZERO=cssVar('--rule-2');
+    const bgPaths=bgStates.map(f=>
+      '<path class="map-ctx" d="'+dOf(f.geometry)+'"><title>'
+      +esc(f.properties.state+' State')+'</title></path>').join('');
+    const paths=geo.features.map(f=>{
+      const b=counts[f.properties.key]||{}, n=b.n||0,
+        t=max?Math.sqrt(n/max):0;
+      const det=n?' — '+fmt(b.n)+' residing ('+fmt(b.f)+'F / '+fmt(b.m)+'M · CALHIV <20: '
+        +fmt((b.peds||0)+(b.adol||0))+', of which '+fmt(b.peds)+' under 10)':' — no matched entries';
+      return '<path class="map-lga" fill-rule="evenodd" d="'+dOf(f.geometry)+'" fill="'
+        +(n?colAt(t):ZERO)+'"><title>'
+        +esc(f.properties.lga+' ('+f.properties.state+')'+det)+'</title></path>';
+    }).join('');
+    // context-state labels (small, grey) so the neighbours are named
+    const ctxLabels=bgStates.map(f=>{const c=f.properties.c||[0,0];
+      return '<text class="map-ctxlbl" x="'+sx(c[0])+'" y="'+sy(c[1])+'">'
+        +esc(f.properties.state)+'</text>';}).join('');
+    // focus-state outlines + labels, drawn on top so the three states stand out
+    const focusPaths=focusStates.map(f=>
+      '<path class="map-focus" d="'+dOf(f.geometry)+'"></path>').join('');
+    const labels=focusStates.map(f=>{const c=f.properties.c||[0,0];
+      return '<text class="map-lbl" x="'+sx(c[0])+'" y="'+sy(c[1])+'">'
+        +esc(f.properties.state)+'</text>';}).join('');
+    const pctM=total?Math.round(matched/total*100):0;
+    box.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" role="img" '
+      +'aria-label="Choropleth of unsuppressed clients by LGA of residence across Delta, Osun and Ekiti, with neighbouring states greyed for context">'
+      +bgPaths+paths+focusPaths+ctxLabels+labels+'</svg>'
+      +'<div class="map-leg"><span>0</span><span class="grad"></span>'
+      +'<span>'+fmt(max)+' residing</span><span><i></i>No matched entries</span>'
+      +'<span><i class="ctx"></i>Neighbouring state</span></div>'
+      +'<div class="map-note">'+fmt(matched)+' of '+fmt(total)+' residence entries ('
+      +pctM+'%) matched one of the 71 LGAs in Delta, Osun and Ekiti. The EMR field is '
+      +'free text — unmatched entries are towns, misspellings, or residences outside '
+      +'the three states, and are counted honestly rather than forced onto the map.</div>';
+  }catch(err){
+    box.innerHTML='<div class="dd-empty">Map unavailable: '+esc(err&&err.message||err)+'</div>';
+  }
+}
+
+// ---- deep-dive: baseline CD4, descriptive only ----------------------
+function ddCd4(c){
+  const box=$('#ddCd4'); if(!box) return;
+  if(!c){ box.innerHTML=''; return; }
+  const pT=p=>p==null?'—':(p<0.001?'<0.001':p.toFixed(3));
+  const COL={'<200':'#DC2626','>=200':'#2c7da0','Not recorded':cssVar('--ink-3')};
+  box.innerHTML='<div class="panel-h"><h2>Baseline CD4 at ART start (binary)</h2>'
+    +'<p>Measured at ART initiation, so it <strong>predates the index viral load</strong> — it cannot '
+    +'have been caused by this failure. Merges the old quantitative assay with the new VISITEC '
+    +'semi-quantitative LFA (both valid) onto a <strong>&lt;200 vs ≥200</strong> split. It is '
+    +'<strong>not in the model</strong>: only <strong>'+c.coverage_pct+'%</strong> of episodes '
+    +'carry a CD4 ('+fmt(c.n_known)+' of '+fmt(c.levels.reduce((a,b)=>a+b.n,0))+'), so modelling it '
+    +'would gut the sample or smuggle in a "missing" stratum. Crude rates only.</p></div>'
+    +'<div class="ofun">'+c.levels.map(function(L){
+      const p=L.rate||0;
+      return '<div class="ofrow"><div class="top">'
+        +'<span class="lbl">'+esc(L.level)+(L.level==='Not recorded'?'':' cells/mm³')+'</span>'
+        +'<span class="val">'+(L.rate==null?'—':L.rate+'%')+'<em>'+fmt(L.resupp)+'/'+fmt(L.n)+'</em></span></div>'
+        +'<div class="otrack"><i style="width:'+Math.min(p,100).toFixed(1)+'%;background:'
+        +(COL[L.level]||'#2a6f97')+'"></i></div></div>';
+    }).join('')+'</div>'
+    +'<p class="src-note">'+esc(c.test)+' across the recorded bands: <strong>p='+pT(c.test_p)+'</strong>'
+    +(c.test_p!=null&&c.test_p<0.05
+      ? ' — lower baseline CD4 tracks with lower re-suppression. Worth confirming once CD4 coverage improves.'
+      : ' — no significant difference across bands.')+'</p>';
+}
+
+// ---- DTC review: switch gap + repeat unsuppression ------------------
+function dtcView(d){
+ try{
+  if(!d||!d.ok){
+    $('#dtcTiles').innerHTML='<div class="empty">No data for this filter.</div>';
+    ['#dtcGap','#dtcGapTbl','#dtcRepeat','#dtcFlags'].forEach(s=>$(s)&&($(s).innerHTML=''));
+    return;
+  }
+  const s=d.summary;
+  $('#dtcTiles').innerHTML=[
+    stat('Repeat-unsuppression clients',fmt(s.repeat_clients),
+      fmt(s.repeat_episodes)+' episodes · '+fmt(s.repeat_occurrences)+' repeat occurrences','warn'),
+    stat('Still ≥ 1,000',fmt(s.still),'after the follow-up VL'),
+    stat('Awaiting DTC review',fmt(s.awaiting),'1st line at index, still 1st','bad'),
+    stat('Prior switch — DTC review',fmt(s.prior),'2nd/3rd line already at index','warn'),
+    stat('Genuinely switched',fmt(s.switched),'1st at index → now 2nd/3rd'),
+    stat('>2 cycles, still failing',fmt(s.dtc_flag),'DTC flag',s.dtc_flag?'warn':'good')
+  ].join('');
+
+  // switch gap: awaiting (red) / prior-switch (amber) / genuinely switched (teal)
+  const RED='#DC2626', AMB='#EBA01E', TEAL='#2c7da0';
+  const seg=(w,c)=> w>0?'<span class="seg" style="width:'+w.toFixed(1)+'%;background:'+c+'"></span>':'';
+  const gapRow=r=>{const tot=r.still||1;
+    return '<div class="ofrow"><div class="top"><span class="lbl">'+esc(r.level)+'</span>'
+      +'<span class="val">'+fmt(r.awaiting)+' awaiting<em>of '+fmt(r.still)+'</em></span></div>'
+      +'<div class="otrack fat" style="display:flex">'
+      +seg(r.awaiting/tot*100,RED)+seg((r.prior||0)/tot*100,AMB)
+      +seg(r.switched/tot*100,TEAL)+'</div></div>'; };
+  const gap=d.switch_gap;
+  $('#dtcGap').innerHTML='<div class="casc-leg"><span><i style="background:'+RED+'"></i>Awaiting DTC review</span>'
+    +'<span><i style="background:'+AMB+'"></i>Prior switch (drug-history review)</span>'
+    +'<span><i style="background:'+TEAL+'"></i>Genuinely switched</span></div>'
+    +'<div class="disagg-h" style="margin-top:2px;border-top:none;padding-top:0">By state</div>'
+    +'<div class="ofun">'+(gap.by_state||[]).map(gapRow).join('')+'</div>';
+
+  const grp=(title,rows)=>'<tr class="grp"><td colspan="6">'+esc(title)+'</td></tr>'
+    +rows.map(r=>'<tr><td>'+esc(r.level)+'</td><td class="r num">'+fmt(r.still)+'</td>'
+      +'<td class="r num" style="color:#DC2626;font-weight:600">'+fmt(r.awaiting)+'</td>'
+      +'<td class="r num">'+fmt(r.prior||0)+'</td>'
+      +'<td class="r num">'+fmt(r.switched)+'</td><td class="r num">'+pc(r.pct_awaiting)+'</td></tr>').join('');
+  $('#dtcGapTbl').innerHTML='<thead><tr><th>Group</th><th class="r">Still ≥1,000</th>'
+    +'<th class="r">Awaiting</th><th class="r">Prior switch</th><th class="r">Switched</th>'
+    +'<th class="r">% awaiting</th></tr></thead><tbody>'
+    +grp('By regimen line',gap.by_regimen||[])+grp('By months unsuppressed',gap.by_months||[])
+    +grp('By baseline CD4',gap.by_cd4||[])+'</tbody>';
+
+  // repeat-unsuppression univariate ORs
+  const ra=d.repeat_assoc, orT=(o,lo,hi)=>o==null?'—':(lo==null?'1.00 (ref)':
+    o.toFixed(2)+' ('+lo.toFixed(2)+'–'+hi.toFixed(2)+')');
+  const pT=p=>p==null?'':(p<0.001?'<0.001':p.toFixed(3));
+  let rr='<div class="prov" style="margin-bottom:10px"><b>'+ra.pct+'%</b> of episodes ('+fmt(ra.n)
+    +') belong to one of the '+fmt(s.repeat_clients)+' clients who have unsuppressed more than once.</div>'
+    +'<div class="tbl-wrap"><table><thead><tr><th>Variable / level</th><th class="r">n</th>'
+    +'<th class="r">% repeat</th><th class="r">Odds ratio</th><th class="r">p</th></tr></thead><tbody>';
+  (ra.variables||[]).forEach(v=>{
+    rr+='<tr class="grp"><td colspan="5">'+esc(v.label)+'</td></tr>';
+    v.levels.forEach(L=>{ rr+='<tr><td>'+esc(L.level)+(L.ref?' <span class="ref">(ref)</span>':'')+'</td>'
+      +'<td class="r num">'+fmt(L.n)+'</td><td class="r num">'+pc(L.pct)+'</td>'
+      +'<td class="r num">'+orT(L.or_,L.or_lo,L.or_hi)+'</td>'
+      +'<td class="r num">'+pT(L.or_p)+'</td></tr>'; });
+  });
+  $('#dtcRepeat').innerHTML=rr+'</tbody></table></div>';
+
+  // intervention worklist
+  const wl=[['awaiting_switch','Awaiting DTC review (1st line at index, still 1st, still ≥1,000)',s.awaiting],
+            ['prior_switch','Prior switch — 2nd/3rd line at index (drug-history + VL review)',s.prior],
+            ['dtc_review','More than 2 EAC cycles, still failing',s.dtc_flag]];
+  $('#dtcFlags').innerHTML=wl.map(w=>'<tr><td style="font-weight:500">'+esc(w[1])+'</td>'
+    +'<td class="r num" style="font-weight:600">'+fmt(w[2])+'</td>'
+    +'<td class="r"><button class="btn sm" data-flag="'+w[0]+'">View</button></td></tr>').join('');
+  $$('#dtcFlags button').forEach(b=>b.onclick=()=>loadClients(b.dataset.flag));
+ }catch(err){
+   $('#dtcTiles').innerHTML='<div class="err">DTC render error: '+esc(err&&err.message||err)+'</div>';
+   console.error('dtc render:',err);
+ }
+}
+
+// ---- deep-dive: forest plot + significance of re-suppression --------
+function ddRender(dd){
+ try{
+  if(!dd||!dd.ok){
+    $('#ddNote').innerHTML='<div class="notice warn"><h3>Deep-dive model not available</h3>'+
+      esc((dd&&dd.reason)||'No data for this filter.')+'</div>';
+    ['#ddPos','#ddNeg','#ddForest','#ddTable','#ddCd4'].forEach(s=>$(s)&&($(s).innerHTML=''));
+    return;
+  }
+  ddCd4(dd.cd4);
+  $('#ddNote').innerHTML='<div class="notice info"><h3>Outcome — re-suppression among the retested</h3>'+
+    'Modelled on the <strong>'+fmt(dd.n_model)+'</strong> episodes with a follow-up VL '+
+    '(<strong>'+dd.resupp_pct+'%</strong> re-suppressed). Because only the retested enter the model, '+
+    'it describes who re-suppresses <em>among those who were tested</em>, not everyone. Repeat-failure '+
+    'is excluded as a predictor — it is the outcome restated.</div>';
+
+  // forest x-scale: log2, 0.25..4 -> 0..100%
+  const LO=0.25,HI=4,l2=Math.log2,xpos=x=>(l2(Math.min(HI,Math.max(LO,x)))-l2(LO))/(l2(HI)-l2(LO))*100;
+  const colf=fl=>fl==='pos'?'var(--green)':fl==='neg'?'#DC2626':'var(--ink-3)';
+
+  const eff=[];
+  dd.variables.forEach(v=>{
+    if(v.type==='continuous'){
+      if(v.aor!=null) eff.push({lab:v.label,sub:'per year',aor:v.aor,lo:v.aor_lo,hi:v.aor_hi,fl:v.flag});
+    }else v.levels.forEach(L=>{ if(!L.ref&&L.aor!=null)
+      eff.push({lab:v.label,sub:L.level,aor:L.aor,lo:L.aor_lo,hi:L.aor_hi,fl:L.flag}); });
+  });
+  const ax='<div class="forest-ax"><div>Factor</div><div class="ticks">'+
+    '<span style="left:'+xpos(0.5)+'%">0.5</span><span style="left:50%">1.0</span>'+
+    '<span style="left:'+xpos(2)+'%">2.0</span></div><div style="text-align:right">AOR (95% CI)</div></div>';
+  $('#ddForest').innerHTML=ax+eff.map(e=>{
+    const c=colf(e.fl),x=xpos(e.aor),xl=xpos(e.lo),xh=xpos(e.hi);
+    return '<div class="frow2"><div class="flbl">'+esc(e.lab)+'<em>'+esc(e.sub)+'</em></div>'+
+      '<div class="fplot"><div class="one" style="left:50%"></div>'+
+      '<div class="ci" style="left:'+xl+'%;width:'+Math.max(0,xh-xl)+'%;background:'+c+'"></div>'+
+      '<div class="dot" style="left:'+x+'%;background:'+c+'"></div></div>'+
+      '<div class="fnum">'+e.aor.toFixed(2)+'<em>('+e.lo.toFixed(2)+'–'+e.hi.toFixed(2)+')</em></div></div>';
+  }).join('');
+
+  // positives / negatives callouts (adjusted-sig, plus notable unadjusted)
+  const pos=[],neg=[],mk=(lab,num,lo,hi,kind,metric)=>({lab,num,
+    ci:'('+lo.toFixed(2)+'–'+hi.toFixed(2)+')',kind,metric});
+  dd.variables.forEach(v=>{
+    if(v.type==='continuous'){
+      if(v.flag==='pos') pos.push(mk(v.label+' (per year)',v.aor,v.aor_lo,v.aor_hi,'adjusted','AOR'));
+      else if(v.flag==='neg') neg.push(mk(v.label+' (per year)',v.aor,v.aor_lo,v.aor_hi,'adjusted','AOR'));
+      return;
+    }
+    v.levels.forEach(L=>{ if(L.ref)return;
+      const uniPos=L.or_lo!=null&&L.or_lo>1, uniNeg=L.or_hi!=null&&L.or_hi<1;
+      if(L.flag==='pos') pos.push(mk(v.label+': '+L.level,L.aor,L.aor_lo,L.aor_hi,'adjusted','AOR'));
+      else if(uniPos) pos.push(mk(v.label+': '+L.level,L.or_,L.or_lo,L.or_hi,'unadjusted','OR'));
+      if(L.flag==='neg') neg.push(mk(v.label+': '+L.level,L.aor,L.aor_lo,L.aor_hi,'adjusted','AOR'));
+      else if(uniNeg) neg.push(mk(v.label+': '+L.level,L.or_,L.or_lo,L.or_hi,'unadjusted','OR'));
+    });
+  });
+  const cell=(arr,eyebrow,empty)=>'<div class="panel-h"><div class="eyebrow">'+eyebrow+'</div></div>'+
+    (arr.length?'<div class="dd-cell">'+arr.map(it=>'<div class="dd-item">'+
+      '<span class="b">'+it.num.toFixed(2)+'</span><span class="t"><b>'+esc(it.lab)+'</b> — '+
+      it.metric+' '+it.num.toFixed(2)+' '+it.ci+(it.kind==='unadjusted'?' <em style="color:var(--ink-3)">(unadjusted)</em>':'')+
+      '</span></div>').join('')+'</div>':'<div class="dd-empty">'+empty+'</div>');
+  $('#ddPos').innerHTML=cell(pos,'Protective — more re-suppression','No factor was significantly protective.');
+  $('#ddNeg').innerHTML=cell(neg,'Lower re-suppression — focus here','No factor significantly lowered re-suppression.');
+
+  // full table
+  const pT=p=>p==null?'':(p<0.001?'<0.001':p.toFixed(3));
+  const orT=(o,lo,hi)=>o==null?'—':(lo==null?'1.00 (ref)':o.toFixed(2)+' ('+lo.toFixed(2)+'–'+hi.toFixed(2)+')');
+  const badge=fl=>fl==='pos'?'<span class="sig pos">↑ sig</span>':fl==='neg'?'<span class="sig neg">↓ sig</span>':fl==='ref'?'<span class="ref">ref</span>':'<span class="sig ns">ns</span>';
+  let rows='<thead><tr><th>Variable / level</th><th class="r">n</th><th class="r">Re-supp&nbsp;%</th>'+
+    '<th class="r">Unadjusted OR</th><th class="r">Adjusted OR</th><th class="r">p (adj)</th><th></th></tr></thead><tbody>';
+  dd.variables.forEach(v=>{
+    rows+='<tr class="grp"><td colspan="7">'+esc(v.label)+' · '+esc(v.test)+' p='+pT(v.test_p)+'</td></tr>';
+    if(v.type==='continuous'){
+      rows+='<tr><td>per year on ART <span class="ref">(median '+v.median_resupp+' vs '+v.median_not+' yr)</span></td>'+
+        '<td class="r num">'+fmt(dd.n_model)+'</td><td class="r">—</td><td class="r">—</td>'+
+        '<td class="r num">'+orT(v.aor,v.aor_lo,v.aor_hi)+'</td><td class="r num">'+pT(v.aor_p)+'</td>'+
+        '<td>'+badge(v.flag)+'</td></tr>';
+    }else v.levels.forEach(L=>{
+      rows+='<tr><td>'+esc(L.level)+(L.ref?' <span class="ref">(ref)</span>':'')+'</td>'+
+        '<td class="r num">'+fmt(L.n)+'</td><td class="r num">'+(L.rate==null?'—':L.rate+'%')+'</td>'+
+        '<td class="r num">'+orT(L.or_,L.or_lo,L.or_hi)+'</td>'+
+        '<td class="r num">'+orT(L.aor,L.aor_lo,L.aor_hi)+'</td>'+
+        '<td class="r num">'+pT(L.aor_p)+'</td><td>'+badge(L.flag)+'</td></tr>';
+    });
+  });
+  $('#ddTable').innerHTML=rows+'</tbody>';
+ }catch(err){
+   $('#ddNote').innerHTML='<div class="err">Deep-dive render error: '+esc(err&&err.message||err)+'</div>';
+   console.error('deep-dive render:',err);
+ }
+}
+
+const TIME_LABEL={time_to_eac:'Time to EAC commencement',eac_lead_time:'EAC lead time',
+  time_to_resuppression:'Time to re-suppression',months_unsuppressed:'Months unsuppressed'};
+function timeView(t,km,ucurve){
+  const md=k=>t[k]?fmt(t[k].median):'\u2014';
+  $('#timeStats').innerHTML=[
+    stat('Median to EAC',t.time_to_eac?md('time_to_eac')+' d':'\u2014','from index VL result',
+      (t.time_to_eac&&t.time_to_eac.median>30)?'warn':'good'),
+    stat('Median lead time',t.eac_lead_time?md('eac_lead_time')+' d':'\u2014','session 1 \u2192 sample'),
+    stat('Median to re-suppression',t.time_to_resuppression?md('time_to_resuppression')+' d':'\u2014',
+      'session 1 \u2192 suppressed VL'),
+    stat('Median months unsupp.',t.months_unsuppressed?t.months_unsuppressed.median:'\u2014',
+      'since index VL','warn')
+  ].join('');
+  // box-and-whisker per indicator, each on its own scale, with guideline targets
+  const BOX=[
+    ['Time to EAC start','time_to_eac','days',30],
+    ['EAC lead time (session 1 \u2192 sample)','eac_lead_time','days',null],
+    ['Time to re-suppression (session 1 \u2192 VL)','time_to_resuppression','days',null],
+    ['Months unsuppressed (index \u2192 line list)','months_unsuppressed','months',null],
+    ['ART start \u2192 first VL','time_to_first_vl','months',6],
+    ['ART start \u2192 first unsuppressed VL','time_to_first_unsupp','years',null],
+  ];
+  const box=(lab,v,unit,target)=>{
+    if(!v) return '';
+    const axMax=(Math.max(v.whi,v.median,target||0)*1.08)||1, x=n=>(n/axMax*100).toFixed(1);
+    const good=target!=null?(v.median<=target):null;
+    const col=good===true?'var(--green)':good===false?'#DC2626':'#2a6f97';
+    return '<div class="box-row"><div class="box-lbl">'+esc(lab)+'<em>'+unit+' \u00b7 n='+fmt(v.n)+'</em></div>'
+      +'<div class="box-plot">'
+      +'<div class="bx-whisk" style="left:'+x(v.wlo)+'%;width:'+(x(v.whi)-x(v.wlo)).toFixed(1)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+x(v.wlo)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+x(v.whi)+'%"></div>'
+      +'<div class="bx-box" style="left:'+x(v.q1)+'%;width:'+Math.max(0.6,x(v.q3)-x(v.q1)).toFixed(1)+'%;background:'+col+'"></div>'
+      +'<div class="bx-med" style="left:'+x(v.median)+'%"></div>'
+      +(target!=null?'<div class="bx-tgt" style="left:'+x(target)+'%"><span>target '+target+'</span></div>':'')
+      +'</div>'
+      +'<div class="box-val"><b>'+v.median+'</b> '+unit+'<em>IQR '+v.q1+'\u2013'+v.q3+'</em></div></div>';
+  };
+  $('#timeBoxes').innerHTML=BOX.map(b=>box(b[0],t[b[1]],b[2],b[3])).join('')
+    ||'<div class="empty">No time data for this filter.</div>';
+
+  if(!km.length){if(CH.cKM)CH.cKM.destroy();return;}
+  chart('cKM',{type:'line',data:{datasets:[{label:'Not yet re-suppressed (%)',
+    data:km.map(p=>({x:p.t,y:p.survival*100})),borderColor:C.green,
+    backgroundColor:'rgba(8,104,78,.07)',fill:true,stepped:'after',pointRadius:0,borderWidth:2}]},
+    options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{
+      title:i=>'Day '+i[0].parsed.x,
+      label:i=>i.parsed.y.toFixed(1)+'% not yet re-suppressed'}}},
+      scales:{x:Object.assign({},gy,{type:'linear',min:0,max:365,
+        title:{display:true,text:'Days since first EAC session',font:{size:10}}}),y:gyPct}}});
+
+  // cumulative % reaching first unsuppressed VL by years on ART, by era
+  const strata=ucurve?Object.keys(ucurve):[];
+  if(!strata.length){if(CH.cUnsupp)CH.cUnsupp.destroy();$('#unsuppFoot').innerHTML='';return;}
+  const eraCol=[C.female,C.other];   // ≤2017 deep navy, ≥2018 cyan
+  chart('cUnsupp',{type:'line',data:{datasets:strata.map((k,i)=>({
+      label:k,data:ucurve[k].points.map(p=>({x:p.t,y:p.pct})),
+      borderColor:eraCol[i%eraCol.length],backgroundColor:eraCol[i%eraCol.length],
+      tension:.2,pointRadius:0,borderWidth:2.5,fill:false}))},
+    options:{interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom'},tooltip:{callbacks:{
+        title:i=>i[0].parsed.x+' years on ART',
+        label:i=>i.dataset.label+': '+i.parsed.y.toFixed(1)+'% unsuppressed'}}},
+      scales:{x:Object.assign({},gy,{type:'linear',min:0,max:15,grid:{display:false},
+        title:{display:true,text:'Years on ART',font:{size:10}}}),
+        y:Object.assign({},gyPct,{grid:{display:false},
+          title:{display:true,text:'Cumulative % unsuppressed',font:{size:10}}})}}});
+  $('#unsuppFoot').innerHTML=strata.map((k,i)=>'<span><b style="color:'+eraCol[i%eraCol.length]
+    +'">'+esc(k)+'</b> median '+ucurve[k].median+' yr · n='+fmt(ucurve[k].n)+'</span>').join('');
+}
+
+const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',R:'#8A8175'};
+function plansView(plans){
+  const max=Math.max.apply(null,plans.map(p=>p.n).concat([1]));
+  $('#planList').innerHTML=plans.map(function(p){
+    const code=/^[A-F]\./.test(p.plan)?p.plan[0]:'R';
+    return '<div class="plan" data-plan="'+p.plan.replace(/"/g,'&quot;')+'">'+
+      '<div class="code" style="background:'+PCOL[code]+'">'+code+'</div>'+
+      '<div class="txt">'+p.plan.replace(/^[A-F]\. /,'')+
+        '<div class="track" style="height:5px;margin-top:6px">'+
+        '<div class="fill" style="width:'+(p.n/max*100)+'%;background:'+PCOL[code]+'"></div></div></div>'+
+      '<div style="text-align:right"><div class="cnt num">'+fmt(p.n)+'</div>'+
+        '<div style="font-size:11px;color:var(--ink-3)" class="num">'+pc(p.pct)+'</div></div></div>';
+  }).join('');
+  $$('#planList .plan').forEach(el=>el.onclick=async function(){
+    const plan=el.dataset.plan;
+    const rows=await api('/clients'+qs({plan:plan,limit:500}));
+    LAST={plan:plan};
+    $('#planPanel').style.display='block';
+    $('#planT').textContent=plan;
+    $('#planS').textContent=fmt(rows.length)+' shown (max 500)';
+    $('#planH').innerHTML='<tr><th>Client</th><th>Facility</th><th>State</th><th class="r">Age</th>'+
+      '<th class="r">Index VL</th><th class="r">Sessions</th><th class="r">Post-EAC VL</th>'+
+      '<th>ART status</th></tr>';
+    $('#planB').innerHTML=rows.map(r=>'<tr>'+
+      '<td class="num" style="font-size:11px;color:var(--ink-3)">'+String(r.sn).slice(0,9)+'\u2026</td>'+
+      '<td>'+(r.facility||'\u2014')+'</td><td>'+(r.state||'\u2014')+'</td>'+
+      '<td class="r num">'+(r.age!=null?r.age:'\u2014')+'</td>'+
+      '<td class="r num">'+(r.idx_vl!=null?fmt(r.idx_vl):'\u2014')+'</td>'+
+      '<td class="r num">'+(r.sessions||0)+'</td>'+
+      '<td class="r num">'+(r.fu_vl!=null?fmt(r.fu_vl):'\u2014')+'</td>'+
+      '<td>'+(r.art_status||'\u2014')+'</td></tr>').join('');
+    $('#planPanel').scrollIntoView({block:'nearest'});
+  });
+}
+
+function advanced(r,m,dd){
+  // Inference (which factors matter, with CIs) lives here in the forest plot.
+  // The /risk model below does a different job: scoring individuals who are
+  // still awaiting a VL. Two jobs, two displays - never one OR chart doing both.
+  ddRender(dd);
+  ddCd4(dd&&dd.cd4);
+  if(!r||!r.ok){
+    $('#riskNote').innerHTML='<div class="notice warn"><h3>Model not fitted</h3>'+
+      ((r&&r.reason)||'')+'</div>';
+    if(CH.cCal)CH.cCal.destroy();
+    $('#riskStats').innerHTML=''; $('#riskB').innerHTML=''; $('#riskH').innerHTML='';
+  }else{
+    $('#riskNote').innerHTML='<div class="notice warn"><h3>Read this before acting on the scores</h3>'+
+      'The model is fitted only on the '+fmt(r.n_train)+' episodes that <em>have</em> a post-EAC VL '+
+      'result. Only about a third of episodes ever get one, so the model is conditioned on having '+
+      'been tested \u2014 it describes who re-suppresses <em>among those who were retested</em>, not '+
+      'among everyone.</div>';
+    $('#riskStats').innerHTML=[
+      stat('Model AUC',r.auc.toFixed(3),
+        r.auc>.7?'good discrimination':r.auc>.6?'modest':'weak',
+        r.auc>.7?'good':r.auc>.6?'warn':'bad'),
+      stat('Baseline re-suppression',r.baseline+'%',fmt(r.n_train)+' episodes with a result'),
+      stat('Episodes scored',fmt(r.n_scored),'awaiting a post-EAC VL','warn')
+    ].join('');
+    chart('cCal',{type:'scatter',data:{datasets:[
+      {label:'Observed',data:r.calibration.map(c=>({x:c.predicted,y:c.observed})),
+        backgroundColor:C.green,pointRadius:5},
+      {label:'Perfect',type:'line',data:[{x:0,y:0},{x:100,y:100}],borderColor:C.rule,
+        borderDash:[5,4],pointRadius:0,borderWidth:1.5}]},
+      options:{plugins:{legend:{position:'bottom'}},
+        scales:{x:Object.assign({},gy,{min:0,max:100,
+          title:{display:true,text:'Predicted %',font:{size:10}}}),
+          y:Object.assign({},gy,{min:0,max:100,
+          title:{display:true,text:'Observed %',font:{size:10}}})}}});
+    $('#riskH').innerHTML='<tr><th>Client</th><th>Facility</th><th class="r">Age</th>'+
+      '<th class="r">Index VL</th><th class="r">Sessions</th><th>Plan</th>'+
+      '<th class="r" style="width:170px">Chance of re-suppression</th></tr>';
+    $('#riskB').innerHTML=r.lowest_chance.map(function(x){
+      const p=x.p_resupp, col=p<70?C.brick:(p<88?C.honey:C.slate);
+      return '<tr><td class="num" style="font-size:11px;color:var(--ink-3)">'+
+        String(x.sn).slice(0,9)+'\u2026</td>'+
+        '<td>'+(x.facility||'\u2014')+'</td><td class="r num">'+(x.age!=null?x.age:'\u2014')+'</td>'+
+        '<td class="r num">'+(x.idx_vl!=null?fmt(x.idx_vl):'\u2014')+'</td>'+
+        '<td class="r num">'+x.sessions+'</td>'+
+        '<td><span class="tag t-n">'+String(x.plan||'\u2014').slice(0,2)+'</span></td>'+
+        '<td class="r"><div class="bar-cell">'+
+          '<span class="num" style="font-weight:600;color:'+col+'">'+p+'%</span>'+
+          '<span class="mini"><i style="width:'+p+'%;background:'+col+'"></i></span></div></td></tr>';
+    }).join('')||'<tr><td colspan="7" style="text-align:center;padding:26px;color:var(--ink-3)">'+
+      'Every episode here already has a post-EAC VL.</td></tr>';
+  }
+  if(m&&m.ok){
+    $('#mortStats').innerHTML=[
+      stat('Deaths',fmt(m.deaths),'of '+fmt(m.n)+' episodes','bad'),
+      stat('Crude mortality',m.crude_pct+'%','in the unsuppressed cohort','warn')
+    ].concat(m.by_eac.map(g=>stat(g.group,g.pct+'%',g.deaths+' of '+fmt(g.n)))).join('');
+  }
+}
+
+function dqView(rows){
+  const crit=rows.filter(r=>r.severity==='critical'&&r.n_records>0);
+  $('#dqOut').innerHTML=
+    (crit.length?'<div class="notice stop"><h3>'+crit.length+' critical issue'+
+      (crit.length>1?'s':'')+'</h3>'+crit.map(r=>'<strong>'+r.check_name+'</strong> \u2014 '+
+      fmt(r.n_records)+' records. '+r.detail).join('<br><br>')+'</div>':'')+
+    '<div class="panel"><div class="panel-h"><h2>Data quality checks</h2>'+
+    '<p>Run automatically on every upload. This tab is how the HI team learns what to fix.</p></div>'+
+    '<div class="tw"><table><thead><tr><th>Check</th><th>Sheet</th><th class="r">Records</th>'+
+    '<th>Severity</th><th>What it means</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr><td style="font-weight:500">'+r.check_name+'</td>'+
+      '<td style="font-size:11px;color:var(--ink-3)">'+(r.sheet||'cohort')+'</td>'+
+      '<td class="r num" style="'+(r.n_records?'font-weight:600':'color:var(--ink-3)')+'">'+
+        fmt(r.n_records)+'</td>'+
+      '<td>'+(r.severity==='clear'?'<span class="tag t-g">clear</span>'
+        :'<span class="tag '+((r.severity==='critical'||r.severity==='high')?'t-b':'t-h')+'">'+
+          r.severity+'</span>')+'</td>'+
+      '<td style="white-space:normal;color:var(--ink-2);max-width:430px">'+(r.detail||'')+'</td></tr>'
+    ).join('')+'</tbody></table></div></div>';
+}
+
+async function loadUploads(){
+  try{
+    const ups=await api('/uploads');
+    $('#upB').innerHTML=ups.map(u=>'<tr>'+
+      '<td style="font-weight:500">'+u.filename+
+        (u.is_current?' <span class="tag t-g">current</span>':'')+'</td>'+
+      '<td class="num">'+u.as_of+'</td>'+
+      '<td class="num" style="font-size:11px">'+new Date(u.uploaded_at).toLocaleString()+'</td>'+
+      '<td class="r num">'+fmt(u.n_cohort)+'</td>'+
+      '<td>'+(u.status==='ready'?'<span class="tag t-g">ready</span>'
+        :u.status==='failed'?'<span class="tag t-b">failed</span>'
+        :'<span class="tag t-n">'+u.status+'</span>')+'</td></tr>').join('');
+  }catch(e){}
+}
+async function loadUsers(){
+  try{
+    const us=await api('/users');
+    const roleTag={admin:'t-b',analyst:'t-h',viewer:'t-g'};
+    $('#userB').innerHTML=us.map(u=>'<tr>'+
+      '<td style="font-weight:500">'+esc(u.full_name||'—')
+        +(u.id===ME.id?' <span class="tag t-n">you</span>':'')+'</td>'+
+      '<td>'+esc(u.email)+'</td>'+
+      '<td><span class="tag '+(roleTag[u.role]||'t-n')+'">'+esc(u.role)+'</span></td>'+
+      '<td>'+esc(u.scope_state||'All states')+'</td>'+
+      '<td>'+(u.is_active?'<span class="tag t-g">active</span>':'<span class="tag t-n">disabled</span>')+'</td>'+
+      '<td class="r">'+(u.id===ME.id?'':'<button class="btn sm" data-uid="'+u.id+'">'
+        +(u.is_active?'Disable':'Enable')+'</button>')+'</td></tr>').join('');
+    $$('#userB button').forEach(b=>b.onclick=async()=>{
+      try{ await api('/users/'+b.dataset.uid,{method:'PATCH'}); loadUsers(); }catch(e){ alert(e.message); }});
+    // populate the scope-state dropdown from the loaded filters
+    const st=$('#fState'); if(st) $('#nuState').innerHTML=[...st.options].map(o=>'<option>'+o.value+'</option>').join('');
+  }catch(e){}
+}
+async function addUser(){
+  const msg=$('#nuMsg');
+  const body={full_name:$('#nuName').value.trim(),email:$('#nuEmail').value.trim(),
+    role:$('#nuRole').value,scope_state:$('#nuState').value,password:$('#nuPw').value};
+  msg.textContent='Adding…';
+  try{
+    await api('/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    msg.textContent='Added.'; $('#nuName').value='';$('#nuEmail').value='';$('#nuPw').value='';
+    loadUsers();
+  }catch(e){ msg.textContent=e.message; }
+}
+async function doUpload(file){
+  const out=$('#upResult'); out.innerHTML='<div class="spin"></div>';
+  const fd=new FormData(); fd.append('file',file); fd.append('cohort_mode','snapshot'); fd.append('as_of',$('#asof').value);
+  try{
+    const r=await fetch('/api/uploads',{method:'POST',
+      headers:{Authorization:'Bearer '+TOKEN},body:fd});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||'Upload failed');
+    out.innerHTML='<div class="notice ok"><h3>Loaded '+fmt(d.cohort)+' episodes</h3>'+
+      'Outcomes computed from <code>'+d.primary_eac_sheet+'</code>.<ul>'+
+      d.sheets.map(s=>'<li><code>'+s.name+'</code> \u2014 '+s.kind+', '+fmt(s.rows)+' rows '+
+        (s.censored?'<span class="tag t-b">success-censored, excluded</span>':'')+'</li>').join('')+
+      '</ul>'+(d.warnings.length?'<p style="margin-top:8px">'+d.warnings.join('<br>')+'</p>':'')+'</div>';
+    loadUploads(); boot();
+  }catch(e){out.innerHTML='<div class="notice stop"><h3>Upload failed</h3>'+e.message+'</div>';}
+}
+
+function chart(id,cfg){
+  if(CH[id])CH[id].destroy();
+  const el=document.getElementById(id); if(!el)return;
+  const dark=document.documentElement.dataset.theme==='dark';
+  Chart.defaults.color=dark?'#B8AFA2':'#5C554C';
+  CH[id]=new Chart(el,Object.assign({},cfg,
+    {options:Object.assign({responsive:true},cfg.options||{})}));
+}
+function switchTo(v){
+  $$('nav button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.v===v)));
+  $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
+  const hide=['guide','method','admin','dq'].indexOf(v)>=0;
+  $('#filters').style.display=hide?'none':'flex';
+}
+async function download(extra){
+  const r=await fetch('/api/export'+qs(extra),{headers:{Authorization:'Bearer '+TOKEN}});
+  const b=await r.blob(), a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download='ecews_tf.csv'; a.click(); URL.revokeObjectURL(a.href);
+}
+
+$$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
+$('#btnLogin').onclick=signIn;
+$('#pw').onkeydown=e=>{if(e.key==='Enter')signIn();};
+$('#btnOut').onclick=signOut;
+$('#btnReset').onclick=()=>{$$('#filters select').forEach(s=>s.selectedIndex=0);
+  if(window.__geoFill)window.__geoFill(); refresh();};
+$$('#filters select').forEach(s=>s.onchange=refresh);
+$('#btnExport').onclick=()=>download(null);
+// feedback modal
+const fbClose=()=>{$('#fbModal').classList.remove('on');$('#fbMsg').textContent='';};
+$('#btnFeedback').onclick=()=>{$('#fbText').value='';$('#fbMsg').textContent='';
+  $('#fbModal').classList.add('on');$('#fbText').focus();};
+$('#fbCancel').onclick=fbClose;
+$('#fbModal').onclick=e=>{if(e.target===$('#fbModal'))fbClose();};
+$('#fbSend').onclick=async function(){
+  const msg=$('#fbText').value.trim();
+  if(!msg){$('#fbMsg').textContent='Please type something first.';return;}
+  const page=($$('nav button[aria-selected=true]')[0]||{}).textContent||'';
+  this.disabled=true; $('#fbMsg').textContent='Sending…';
+  try{ await api('/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:msg,page:page})});
+    $('#fbMsg').textContent='Thank you — sent.'; setTimeout(fbClose,900);
+  }catch(e){ $('#fbMsg').textContent='Could not send: '+e.message; }
+  this.disabled=false;
+};
+$('#drillCsv').onclick=()=>download(LAST&&LAST.flag?{flag:LAST.flag}:null);
+$('#planCsv').onclick=()=>download(LAST&&LAST.plan?{plan:LAST.plan}:null);
+$('#btnTheme').onclick=function(){
+  const d=document.documentElement;
+  const next=d.dataset.theme==='dark'?'light':'dark';
+  d.dataset.theme=next; localStorage.setItem('tf_theme',next); refresh();
+};
+if(localStorage.getItem('tf_theme')==='dark') document.documentElement.dataset.theme='dark';
+$('#btnPick').onclick=()=>$('#file').click();
+$('#nuAdd').onclick=addUser;
+$('#file').onchange=e=>{if(e.target.files[0])doUpload(e.target.files[0]);};
+const dz=$('#drop');
+['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{
+  e.preventDefault();dz.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{
+  e.preventDefault();dz.classList.remove('over');}));
+dz.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)doUpload(f);});
+
+if(TOKEN) boot(); else $('#login').style.display='grid';
+</script>
+</body>
+</html>
