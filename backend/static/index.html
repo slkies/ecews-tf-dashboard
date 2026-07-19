@@ -165,7 +165,6 @@ td.r,th.r{text-align:right}
 /* doc fills the card; prose keeps a readable measure while the grids and
    tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
 .doc{max-width:none;font-size:15px;line-height:1.75;color:var(--ink-2)}
-.doc p,.doc h2,.doc h3,.doc ul,.doc ol,.doc .eyebrow,.doc .pull{max-width:84ch}
 .narrative{font-size:15px;line-height:1.72;color:var(--ink-2)}
 .narrative p{margin:0 0 12px;max-width:none}
 .narrative p:last-child{margin-bottom:0}
@@ -200,6 +199,30 @@ canvas{max-height:270px}
 @keyframes sp{to{transform:rotate(360deg)}}
 footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* mobile: tighten chrome and stack the two-up rows so nothing overflows */
+@media(max-width:640px){
+  .wrap{padding:0 12px 60px}
+  .panel{padding:16px 15px}
+  .top{padding:16px 0 14px}
+  .top h1{font-size:14px;line-height:1.25}
+  .stat{padding:13px 14px}.stat .v{font-size:22px}
+  .filters{padding:12px 13px}.f select{min-width:118px}
+  .box-row{grid-template-columns:1fr;gap:5px}
+  .box-row .box-val{text-align:left}.box-row .box-plot{height:26px}
+  .dp-grid{grid-template-columns:1fr}
+  .oc-state{grid-template-columns:74px 1fr 78px;gap:9px}
+  /* Let tables WRAP and fit the screen rather than force a sideways scroll.
+     The global td{white-space:nowrap} otherwise pushes them to ~600px. */
+  td,th{white-space:normal}
+  .tbl-wrap table,.tw table,.src-tbl{min-width:0;font-size:12px}
+  .tbl-wrap td,.tbl-wrap th,.tw td,.tw th{padding:7px 6px}
+  .forest-ax,.frow2{grid-template-columns:96px 1fr 84px;gap:8px}
+  .narr-side,.cohort-list .row{font-size:12.5px}
+  .modal{padding:18px 16px}
+}
+/* nothing may push the document sideways */
+.wrap,.panel,.grid>*{min-width:0;max-width:100%}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media(max-width:880px){.g2,.thr{grid-template-columns:1fr}
   .step{grid-template-columns:1fr;gap:5px}.step .fig{justify-content:flex-start}}
@@ -1282,12 +1305,12 @@ function overview(o){
     +'<div class="prov"><b>Line list as of</b> '+asof
       +' \u00b7 sets the fiscal quarter and the follow-up window.</div>'
     +(sources.length
-      ? '<table class="src-tbl"><thead><tr><th>Sheet</th><th>Type</th>'
+      ? '<div class="tbl-scroll"><table class="src-tbl"><thead><tr><th>Sheet</th><th>Type</th>'
         +'<th class="r">Rows</th></tr></thead><tbody>'
         +sources.map(s=>'<tr><td>'+esc(s.name)+'</td><td>'+(srcKind[s.kind]||esc(s.kind))
           +(s.censored?' <span class="tag bad">censored</span>':'')+'</td>'
           +'<td class="r num">'+fmt(s.rows)+'</td></tr>').join('')
-        +'</tbody></table>'
+        +'</tbody></table></div>'
       : '<p class="src-note">Source sheet list is unavailable for this upload.</p>')
     +'</div></div>';
  }catch(err){
