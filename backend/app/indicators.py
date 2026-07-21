@@ -68,6 +68,22 @@ _PREG = {
     "not pregnant": "Not pregnant", "pregnant": "Pregnant",
     "breastfeeding": "Breastfeeding", "pmtct": "Pregnant",
 }
+# CurrentARTStatus -> care outcome. Anything not Active/blank is a NEGATIVE
+# outcome: the client has left care, so a post-EAC VL was never going to happen.
+# IIT / Stopped are mapped defensively - they are absent from the Jul-26 export
+# but appear in other EMR exports.
+_ART_STATUS = {
+    "active": "Active",
+    "ltfu": "LTFU", "lost to followup": "LTFU", "lost to follow-up": "LTFU",
+    "death": "Died", "dead": "Died", "deceased": "Died",
+    "transferred out": "Transferred out", "transfer out": "Transferred out",
+    "transferred-out": "Transferred out",
+    "discontinued care": "Discontinued care",
+    "iit": "IIT", "interruption in treatment": "IIT",
+    "stopped": "Stopped treatment", "stopped treatment": "Stopped treatment",
+}
+_NEG_OUTCOMES = ["LTFU", "IIT", "Stopped treatment", "Died",
+                 "Transferred out", "Discontinued care"]
 _WHO = {
     "1": "Stage 1", "2": "Stage 2", "3": "Stage 3", "4": "Stage 4",
     "who stage 1 peds": "Stage 1", "who stage 2 peds": "Stage 2",
@@ -924,6 +940,7 @@ def profile(df: pd.DataFrame) -> dict:
             "lead_stats": _quart(df.get("eac_lead_time")),
             "mu_stats": _quart(mu),
         },
+        "care": _care_outcomes(df),
         "where": {
             "state": _dist(df.get("state"), na="Unknown"),
             "lga": _dist(df.get("lga"), top=10, na="Unknown"),
@@ -946,6 +963,47 @@ _LGA_ALIAS = {
     "sepele": "sapele", "ikire": "irewole",
     "iseeleuku": "aniochanorth", "isseleuku": "aniochanorth",
 }
+
+
+def care_status(df) -> pd.Series:
+    """CurrentARTStatus normalised to a care outcome (Active / LTFU / Died / ...)."""
+    s = df.get("art_status")
+    if s is None:
+        return pd.Series("Not recorded", index=df.index)
+    return (s.astype(str).str.strip().str.lower().map(_ART_STATUS)
+             .fillna("Not recorded"))
+
+
+def _care_outcomes(df) -> dict:
+    """Negative ART outcomes, and how many left care WITHOUT being retested.
+
+    CAVEAT: CurrentARTStatus is the status as of the line list and carries no
+    date, so we cannot prove the outcome preceded the VL. For episodes with NO
+    follow-up/post-EAC VL the negative status is the standing explanation for
+    the missing test - that is the actionable group and the one reported here.
+    """
+    st = care_status(df)
+    neg = st.isin(_NEG_OUTCOMES)
+    no_fu = ~df["post_result"].fillna(False).astype(bool)
+    no_peac = ~df["post_eac_vl"].fillna(False).astype(bool)
+    n = len(df)
+    rows = []
+    for lv in _NEG_OUTCOMES:
+        m = st == lv
+        k = int(m.sum())
+        if not k:
+            continue
+        rows.append({"level": lv, "n": k,
+                     "no_followup_vl": int((m & no_fu).sum()),
+                     "no_post_eac_vl": int((m & no_peac).sum())})
+    return {
+        "status": _dist(st, ["Active"] + _NEG_OUTCOMES + ["Not recorded"]),
+        "neg_total": int(neg.sum()),
+        "neg_pct": round(float(neg.mean()) * 100, 1) if n else None,
+        "neg_no_followup": int((neg & no_fu).sum()),
+        "neg_no_post_eac": int((neg & no_peac).sum()),
+        "breakdown": rows,
+    }
 
 
 def _lga_res_map(df) -> dict:

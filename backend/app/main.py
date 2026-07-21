@@ -357,6 +357,9 @@ FLAGS = {
     "awaiting_vl": lambda d: d["eac_completed"] & ~d["post_eac_vl"],
     "awaiting_switch": lambda d: d["awaiting_switch"],
     "prior_switch": lambda d: d["prior_switch"],
+    # left care (LTFU/died/IIT/stopped/transferred out) and never retested
+    "exited_no_vl": lambda d: ind.care_status(d).isin(ind._NEG_OUTCOMES)
+                              & ~d["post_result"].fillna(False).astype(bool),
     "long_unsuppressed": lambda d: d["months_unsuppressed"] > 6,
     "dtc_review": lambda d: d["dtc_review"],
     # two separate truncation cohorts - see indicators.build_cohort
