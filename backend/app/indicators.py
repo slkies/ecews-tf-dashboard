@@ -354,6 +354,11 @@ def build_cohort(
              "cd4LfaResult": "cd4_lfa",
              "currentPregnancyStatus": "pregnancy", "whostage": "who_stage",
              "bmi": "bmi",
+             # exit dating: outcomesDate covers death/TO/discontinued (~99%),
+             # but LTFU is only ~4% dated - derived from pickup + refill + 28d.
+             "outcomesDate": "outcome_date",
+             "pharmacyLastPickupdate": "last_pickup",
+             "daysOfArvRefill": "days_refill",
              # residence (free-text in the EMR - normalised only at map time)
              "lgaOfResidence": "lga_res", "stateOfResidence": "state_res"}
     keep = ["sn"] + [c for c in tcols if c in t]
@@ -434,6 +439,18 @@ def build_cohort(
     # Test-and-Treat around 2017/18, so pre-2018 starters have a long lag to
     # their first VL that is detection, not durability.
     df["art_year"] = art0.dt.year
+
+    # ── EXIT DATE (when the client actually left care) ────────────────────
+    # Outcomes_Date covers death / transferred out / discontinued (~99%), but
+    # LTFU is only ~4% dated. For those, the exit is 28 days after the expected
+    # return: last pharmacy pickup + days of ARV refill + 28 (LTFU definition).
+    odate = pd.to_datetime(df.get("outcome_date"), errors="coerce")
+    pickup = pd.to_datetime(df.get("last_pickup"), errors="coerce")
+    refill = pd.to_numeric(df.get("days_refill"), errors="coerce")
+    derived = pickup + pd.to_timedelta(refill.fillna(0), unit="D") + pd.Timedelta(days=28)
+    neg = care_status(df).isin(_NEG_OUTCOMES)
+    df["exit_date"] = odate.where(odate.notna(), derived).where(neg)
+    df["exit_dated"] = df["exit_date"].notna()
 
     df["fy_quarter"] = df["enrol_quarter"]
     df["vl_magnitude"] = pd.cut(
@@ -974,19 +991,43 @@ def care_status(df) -> pd.Series:
              .fillna("Not recorded"))
 
 
-def _care_outcomes(df) -> dict:
-    """Negative ART outcomes, and how many left care WITHOUT being retested.
+_EXIT_WHEN = ["Before the index VL", "Before EAC commencement",
+              "During EAC, before the repeat VL", "After the repeat VL",
+              "Exit date unknown"]
 
-    CAVEAT: CurrentARTStatus is the status as of the line list and carries no
-    date, so we cannot prove the outcome preceded the VL. For episodes with NO
-    follow-up/post-EAC VL the negative status is the standing explanation for
-    the missing test - that is the actionable group and the one reported here.
+
+def _care_outcomes(df) -> dict:
+    """Negative ART outcomes, dated, and WHEN the exit happened.
+
+    Exit date = Outcomes_Date where present (death / transferred out /
+    discontinued are ~99% dated); for LTFU, which is only ~4% dated, it is the
+    expected return plus the LTFU grace period: last pharmacy pickup + days of
+    ARV refill + 28 days. That lets us place the exit against EAC commencement
+    (session 1) and the repeat VL sample, instead of only saying "never tested".
     """
     st = care_status(df)
     neg = st.isin(_NEG_OUTCOMES)
     no_fu = ~df["post_result"].fillna(False).astype(bool)
     no_peac = ~df["post_eac_vl"].fillna(False).astype(bool)
     n = len(df)
+
+    exit_d = pd.to_datetime(df.get("exit_date"), errors="coerce")
+    idx = pd.to_datetime(df.get("idx_date"), errors="coerce")
+    s1 = pd.to_datetime(df.get("s1_date", df.get("Session_1_Date")), errors="coerce")
+    fu = pd.to_datetime(df.get("fu_samp"), errors="coerce")
+
+    when = pd.Series("Exit date unknown", index=df.index, dtype=object)
+    dated = neg & exit_d.notna()
+    # order matters: earliest reference point wins
+    after_vl = dated & fu.notna() & (exit_d >= fu)
+    during = dated & s1.notna() & (exit_d >= s1) & ~after_vl
+    before_eac = dated & ~after_vl & ~during
+    before_idx = dated & idx.notna() & (exit_d < idx)
+    when[before_eac] = "Before EAC commencement"
+    when[during] = "During EAC, before the repeat VL"
+    when[after_vl] = "After the repeat VL"
+    when[before_idx] = "Before the index VL"      # already out of care at index
+
     rows = []
     for lv in _NEG_OUTCOMES:
         m = st == lv
@@ -994,6 +1035,7 @@ def _care_outcomes(df) -> dict:
         if not k:
             continue
         rows.append({"level": lv, "n": k,
+                     "dated": int((m & exit_d.notna()).sum()),
                      "no_followup_vl": int((m & no_fu).sum()),
                      "no_post_eac_vl": int((m & no_peac).sum())})
     return {
@@ -1002,6 +1044,8 @@ def _care_outcomes(df) -> dict:
         "neg_pct": round(float(neg.mean()) * 100, 1) if n else None,
         "neg_no_followup": int((neg & no_fu).sum()),
         "neg_no_post_eac": int((neg & no_peac).sum()),
+        "neg_dated": int(dated.sum()),
+        "exit_when": _dist(when[neg], _EXIT_WHEN),
         "breakdown": rows,
     }
 

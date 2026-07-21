@@ -1592,10 +1592,12 @@ function dpRender(p){
       +'ART status (LTFU, died, IIT, stopped, transferred out or discontinued). Of those, '
       +'<strong>'+fmt(care.neg_no_followup)+'</strong> have <strong>no follow-up VL</strong> and '
       +fmt(care.neg_no_post_eac)+' have no post-EAC VL &mdash; they left care before they could be '
-      +'retested, so they can never re-suppress in this cohort. '
-      +'<em>Caveat: CurrentARTStatus carries no date, so we cannot prove the exit preceded the VL; '
-      +'for those never retested it is the standing explanation.</em></p></div>'
+      +'retested, so they can never re-suppress in this cohort.</p>'
+      +'<p><strong>'+fmt(care.neg_dated)+' of '+fmt(care.neg_total)+'</strong> exits are dated, so we '
+      +'can place them against the cascade. Exit date = <em>Outcomes_Date</em> where recorded; for '
+      +'LTFU (rarely dated) it is last pharmacy pickup + days of ARV refill + 28 days.</p></div>'
       +'<div class="dp-grid">'
+      + card('When the exit happened',care.exit_when,CB)
       + card('ART status (all episodes)',care.status,CN)
       +'<div class="dp-card"><h4>Negative outcome · never retested</h4>'
       +((care.breakdown||[]).length? care.breakdown.map(r=>'<div class="dp-row">'

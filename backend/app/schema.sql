@@ -103,6 +103,8 @@ ALTER TABLE cohort ADD COLUMN IF NOT EXISTS time_to_first_unsupp INTEGER;
 -- Prior-switch cohort (already 2nd/3rd line at index) + ART-start year (era).
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS prior_switch BOOLEAN;
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS art_year     INTEGER;
+-- When the client left care (Outcomes_Date, or pickup+refill+28d for LTFU).
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS exit_date DATE;
 
 CREATE INDEX IF NOT EXISTS cohort_upload   ON cohort(upload_id);
 CREATE INDEX IF NOT EXISTS cohort_geo      ON cohort(upload_id, state, lga, facility);

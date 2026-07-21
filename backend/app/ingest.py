@@ -262,7 +262,7 @@ COHORT_COLS = [
     "marital", "job", "education", "first_cd4",
     "post_eac_vl", "pregnancy", "who_stage", "bmi", "lga_res", "state_res",
     "cd4_band", "age_group", "time_to_first_vl", "time_to_first_unsupp",
-    "prior_switch", "art_year",
+    "prior_switch", "art_year", "exit_date",
     "idx_vl", "idx_date", "recv_date", "idx_samp", "vl_magnitude", "fy_quarter",
     "eac_valid", "eac_prior_cycle", "eac1", "eac2", "eac3",
     "eac_extended", "eac_completed", "eac_truncated",
