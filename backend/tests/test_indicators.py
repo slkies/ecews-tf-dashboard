@@ -108,7 +108,11 @@ def test_plan_e_wins_for_inactive_clients_even_if_failing():
 
 
 def test_plan_f_switch_committee_when_failed_after_completed_eac():
-    c = cohort([mk(Session_1_Date="2026-03-05", Session_3_Date="2026-04-05",
+    # Session_2_Date is required: the team redefined "completed EAC" as sessions
+    # 1 AND 2 AND 3 plus 30 days, so a session COUNT of 3 no longer implies it.
+    # This test predated that change and was asserting the old definition.
+    c = cohort([mk(Session_1_Date="2026-03-05", Session_2_Date="2026-03-20",
+                   Session_3_Date="2026-04-05",
                    Total_EAC_Sessions_All_Cycles=3)],
                fu_vl=8000, fu_samp="2026-06-01")
     assert bool(c.df.loc[0, "still_unsuppressed"]) is True

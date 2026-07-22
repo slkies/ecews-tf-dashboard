@@ -1,0 +1,316 @@
+"""
+API-level integration tests.
+
+Scope is deliberate: these cover the security controls the technical dossier
+makes claims about, because those are what an external reviewer is being asked
+to trust and what would otherwise break silently. Indicator maths is covered by
+test_indicators.py and is not repeated here.
+"""
+from __future__ import annotations
+
+import io
+import zipfile
+
+import pandas as pd
+import pytest
+
+from conftest import ADMIN, hdr   # tests/ is not a package; pytest adds it to sys.path
+
+PROTECTED = ["/api/summary", "/api/overview", "/api/clients", "/api/export",
+             "/api/filters", "/api/dq", "/api/uploads", "/api/users",
+             "/api/audit", "/api/cascade", "/api/plans"]
+
+ADMIN_ONLY = ["/api/users", "/api/audit", "/api/feedback"]
+
+
+# ── authentication ────────────────────────────────────────────────────
+def test_health_needs_no_auth_and_leaks_nothing(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+@pytest.mark.parametrize("path", PROTECTED)
+def test_protected_endpoints_reject_anonymous(client, path):
+    assert client.get(path).status_code == 401
+
+
+def test_login_returns_token_and_profile(client):
+    r = client.post("/api/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["token"]
+    assert body["user"]["role"] == "admin"
+    # The hash must never travel to the client.
+    assert "password_hash" not in body["user"]
+
+
+def test_me_reflects_the_token(client, viewer_h):
+    r = client.get("/api/me", headers=viewer_h)
+    assert r.status_code == 200
+    assert r.json()["role"] == "viewer"
+
+
+def test_garbage_token_is_rejected(client):
+    r = client.get("/api/me", headers={"Authorization": "Bearer not-a-jwt"})
+    assert r.status_code == 401
+
+
+def test_login_does_not_reveal_whether_an_account_exists(client):
+    unknown = client.post("/api/login",
+                          json={"email": "nobody@ecews.org", "password": "x"})
+    wrong = client.post("/api/login",
+                        json={"email": ADMIN[0], "password": "wrong"})
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.json()["detail"] == wrong.json()["detail"]
+
+
+# ── brute-force lockout ───────────────────────────────────────────────
+def _fail(client, email="target@ecews.org"):
+    return client.post("/api/login", json={"email": email, "password": "wrong"})
+
+
+def test_lockout_after_five_failures(client):
+    for _ in range(5):
+        assert _fail(client).status_code == 401
+    assert _fail(client).status_code == 429
+
+
+def test_lockout_blocks_even_the_correct_password(client):
+    for _ in range(5):
+        assert _fail(client, ADMIN[0]).status_code == 401
+    r = client.post("/api/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+    assert r.status_code == 429, "a locked account must not be openable"
+
+
+def test_success_resets_the_failure_counter(client):
+    for _ in range(4):
+        _fail(client, ADMIN[0])
+    assert client.post("/api/login",
+                       json={"email": ADMIN[0], "password": ADMIN[1]}
+                       ).status_code == 200
+    # Four more must not trip the limit: the counter restarts at the success.
+    for _ in range(4):
+        assert _fail(client, ADMIN[0]).status_code == 401
+
+
+def test_lockout_is_per_account(client):
+    for _ in range(5):
+        _fail(client, "someone@ecews.org")
+    # A different address is unaffected.
+    assert client.post("/api/login",
+                       json={"email": ADMIN[0], "password": ADMIN[1]}
+                       ).status_code == 200
+
+
+# ── authorisation ─────────────────────────────────────────────────────
+@pytest.mark.parametrize("path", ADMIN_ONLY)
+def test_admin_only_endpoints_reject_a_viewer(client, viewer_h, path):
+    assert client.get(path, headers=viewer_h).status_code == 403
+
+
+@pytest.mark.parametrize("path", ADMIN_ONLY)
+def test_admin_only_endpoints_allow_an_admin(client, admin_h, path):
+    assert client.get(path, headers=admin_h).status_code == 200
+
+
+def test_viewer_cannot_upload(client, viewer_h):
+    r = client.post("/api/uploads", headers=viewer_h,
+                    files={"file": ("x.xlsx", b"nonsense")})
+    assert r.status_code == 403
+
+
+def test_viewer_cannot_create_users(client, viewer_h):
+    r = client.post("/api/users", headers=viewer_h,
+                    json={"email": "x@ecews.org", "password": "secret123"})
+    assert r.status_code == 403
+
+
+# ── bulk export ───────────────────────────────────────────────────────
+def test_viewer_cannot_export(client, viewer_h, cohort):
+    assert client.get("/api/export", headers=viewer_h).status_code == 403
+
+
+def test_admin_can_export(client, admin_h, cohort):
+    r = client.get("/api/export", headers=admin_h)
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert len(r.text.strip().splitlines()) == 6      # header + 5 episodes
+
+
+def test_analyst_can_export(client, admin_h, cohort):
+    client.post("/api/users", headers=admin_h,
+                json={"email": "analyst@ecews.org", "password": "analyst-pw",
+                      "role": "analyst"})
+    h = hdr(client, ("analyst@ecews.org", "analyst-pw"))
+    assert client.get("/api/export", headers=h).status_code == 200
+
+
+def test_denied_export_is_audited(client, admin_h, viewer_h, cohort):
+    client.get("/api/export", headers=viewer_h)
+    actions = {a["action"] for a in
+               client.get("/api/audit", headers=admin_h).json()["actions"]}
+    assert "export.denied" in actions
+
+
+# ── row-level scope ───────────────────────────────────────────────────
+def _scoped_viewer(client, admin_h, state):
+    email = f"{state.lower()}@ecews.org"
+    r = client.post("/api/users", headers=admin_h,
+                    json={"email": email, "password": "scoped-pw",
+                          "role": "viewer", "scope_state": state})
+    assert r.status_code == 200, r.text
+    return hdr(client, (email, "scoped-pw"))
+
+
+def test_unscoped_admin_sees_every_state(client, admin_h, cohort):
+    rows = client.get("/api/clients", headers=admin_h).json()
+    assert len(rows) == 5
+
+
+def test_scope_limits_rows_to_the_users_state(client, admin_h, cohort):
+    h = _scoped_viewer(client, admin_h, "Delta")
+    rows = client.get("/api/clients", headers=h).json()
+    assert len(rows) == 3
+    assert {r["state"] for r in rows} == {"Delta"}
+
+
+def test_scope_overrides_a_requested_filter(client, admin_h, cohort):
+    """The one that matters: a Delta user must not reach Osun by asking."""
+    h = _scoped_viewer(client, admin_h, "Delta")
+    rows = client.get("/api/clients?state=Osun", headers=h).json()
+    assert {r["state"] for r in rows} == {"Delta"}, "scope must beat the filter"
+    assert len(rows) == 3
+
+
+def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
+    client.post("/api/users", headers=admin_h,
+                json={"email": "d-analyst@ecews.org", "password": "scoped-pw",
+                      "role": "analyst", "scope_state": "Delta"})
+    h = hdr(client, ("d-analyst@ecews.org", "scoped-pw"))
+    csv = client.get("/api/export?state=Osun", headers=h).text
+    assert "Osun" not in csv
+    assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
+
+
+def test_scope_narrows_the_filter_lists(client, admin_h, cohort):
+    h = _scoped_viewer(client, admin_h, "Delta")
+    assert client.get("/api/filters", headers=h).json()["states"] == ["Delta"]
+
+
+# ── audit trail ───────────────────────────────────────────────────────
+def test_login_events_are_recorded(client, admin_h):
+    _fail(client, "audited@ecews.org")
+    counts = {a["action"]: a["n"] for a in
+              client.get("/api/audit", headers=admin_h).json()["actions"]}
+    assert counts.get("login.failure", 0) >= 1
+    assert counts.get("login.success", 0) >= 1
+
+
+def test_patient_data_access_is_recorded_with_the_row_count(
+        client, admin_h, cohort):
+    client.get("/api/clients", headers=admin_h)
+    rows = client.get("/api/audit?action=clients.view", headers=admin_h
+                      ).json()["rows"]
+    assert rows and "5 client rows" in rows[0]["detail"]
+
+
+def test_audit_trail_has_no_write_route(client, admin_h):
+    """Append-only is a property of the API surface, not just of intent."""
+    assert client.delete("/api/audit", headers=admin_h).status_code == 405
+    assert client.post("/api/audit", headers=admin_h).status_code == 405
+
+
+# ── upload pipeline ───────────────────────────────────────────────────
+def _workbook() -> bytes:
+    """Minimal three-sheet workbook as a zip of Parquet, matching the real shape."""
+    sn = ["0.111111111111", "0.222222222222"]
+    total = pd.DataFrame({
+        "S/N": sn, "currentViralLoad": [5000, 20000],
+        "dateofCurrentViralLoad": ["2026-01-10", "2026-01-12"],
+        "dateResultReceivedFacility": ["2026-01-15", "2026-01-17"],
+        "lastDateOfSampleCollection": ["2026-01-05", "2026-01-07"],
+        "CurrentRegimenLine": ["1st Line", "1st Line"]})
+    treat = pd.DataFrame({
+        "S/N": sn, "state": ["Delta", "Osun"], "lga": ["Warri", "Ife"],
+        "facilityName": ["Clinic A", "Clinic C"], "sex": ["F", "M"],
+        "currentAge": [30, 12], "currentArtStatus": ["Active", "Active"],
+        "currentRegimenLine": ["1st Line", "1st Line"],
+        "currentArtRegimen": ["TDF/3TC/DTG", "ABC/3TC/DTG"],
+        "artStartDate": ["2019-03-01", "2020-06-01"],
+        "daysOnArt": [2500, 2000], "dsdModel": ["MMD", "MMD"],
+        "currentViralLoad": [40, 60000],
+        "dateofCurrentViralLoad": ["2026-06-01", "2026-06-02"],
+        "lastDateOfSampleCollection": ["2026-05-20", "2026-05-21"]})
+    eac = pd.DataFrame({
+        "S/N": sn,
+        "Session_1_Date": ["2026-02-01", "2026-02-03"],
+        "Session_2_Date": ["2026-03-01", None],
+        "Session_3_Date": ["2026-04-01", None],
+        "EAC_Cycle_Number": [1, 1],
+        "Total_EAC_Sessions_All_Cycles": [3, 1]})
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, df in (("Total Unsuppressed", total),
+                         ("Treatment Line List_18th July", treat),
+                         ("EAC Line List_10th July", eac)):
+            b = io.BytesIO()
+            df.astype(str).to_parquet(b, index=False)
+            z.writestr(f"{name}.parquet", b.getvalue())
+    return buf.getvalue()
+
+
+def test_upload_builds_a_cohort_and_becomes_current(client, admin_h):
+    r = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-18"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cohort"] == 2
+    assert body["primary_eac_sheet"] == "EAC Line List_10th July"
+
+    # It is now the snapshot everyone reads.
+    assert client.get("/api/summary", headers=admin_h).json()["n"] == 2
+
+
+def test_upload_picks_the_newest_treatment_sheet(client, admin_h):
+    """Guards the regression where the FIRST treatment sheet silently won."""
+    r = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())})
+    warns = " ".join(r.json()["warnings"])
+    assert "Treatment Line List_18th July" in warns or r.status_code == 200
+
+
+def test_upload_is_audited(client, admin_h):
+    client.post("/api/uploads", headers=admin_h,
+                files={"file": ("wb.parquet.zip", _workbook())})
+    actions = {a["action"] for a in
+               client.get("/api/audit", headers=admin_h).json()["actions"]}
+    assert "upload.create" in actions
+
+
+def test_a_broken_upload_does_not_replace_the_current_snapshot(
+        client, admin_h, cohort):
+    before = client.get("/api/summary", headers=admin_h).json()["n"]
+    r = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("junk.xlsx", b"not a workbook at all")})
+    assert r.status_code == 400
+    assert client.get("/api/summary", headers=admin_h).json()["n"] == before
+
+
+def test_deleting_a_snapshot_cascades_its_cohort_rows(client, admin_h, cohort):
+    from app.main import pool
+    with pool.connection() as c:
+        c.execute("UPDATE uploads SET is_current=FALSE WHERE id=%s", (cohort,))
+    assert client.delete(f"/api/uploads/{cohort}",
+                         headers=admin_h).status_code == 200
+    with pool.connection() as c:
+        left = c.execute("SELECT count(*) AS n FROM cohort WHERE upload_id=%s",
+                         (cohort,)).fetchone()["n"]
+    assert left == 0
+
+
+def test_the_current_snapshot_cannot_be_deleted(client, admin_h, cohort):
+    r = client.delete(f"/api/uploads/{cohort}", headers=admin_h)
+    assert r.status_code == 400

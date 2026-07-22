@@ -153,6 +153,26 @@ def age_band(a: float | None) -> str:
 
 
 
+def _col(df: pd.DataFrame, name: str) -> pd.Series:
+    """
+    `df[name]`, or an all-null Series aligned to `df` when the column is absent.
+
+    `df.get(name)` returns None for a missing column, and `pd.to_numeric(None)`
+    / `pd.to_datetime(None)` then hand back a bare scalar - float64 or NaT -
+    instead of a Series. Every downstream `.where()`, `.dropna()`, `.dt` or
+    `.fillna()` raises AttributeError.
+
+    Every column read this way is OPTIONAL, so the crash only appears on an
+    export that happens to omit one - which is exactly the case nobody tests by
+    hand. It failed the whole upload with an opaque AttributeError rather than
+    degrading to "not recorded", and it kept 25 of the unit tests red.
+    """
+    s = df.get(name)
+    if s is None:
+        return pd.Series(pd.NA, index=df.index, dtype="object")
+    return s
+
+
 def _pick(df: pd.DataFrame, *names: str) -> str | None:
     """
     Find a column regardless of casing.
@@ -363,8 +383,8 @@ def build_cohort(
              "lgaOfResidence": "lga_res", "stateOfResidence": "state_res"}
     keep = ["sn"] + [c for c in tcols if c in t]
     df = df.merge(t[keep].rename(columns=tcols), on="sn", how="left")
-    df["current_vl"] = pd.to_numeric(df.get("current_vl"), errors="coerce")
-    df["current_vl_samp"] = pd.to_datetime(df.get("current_vl_samp"), errors="coerce")
+    df["current_vl"] = pd.to_numeric(_col(df, "current_vl"), errors="coerce")
+    df["current_vl_samp"] = pd.to_datetime(_col(df, "current_vl_samp"), errors="coerce")
 
     # Episode key: a client can have several. This, not sn, is the primary key.
     df["episode"] = (df["sn"].astype(str) + "|"
@@ -375,12 +395,12 @@ def build_cohort(
 
     df["state"] = df["state"].map(norm_state)
     df["sex"] = df["sex"].map({"F": "Female", "M": "Male"}).fillna("Unknown")
-    df["age"] = pd.to_numeric(df.get("age"), errors="coerce")
+    df["age"] = pd.to_numeric(_col(df, "age"), errors="coerce")
     df["age_band"] = df["age"].map(age_band)
     df["paed"] = df["age"] < 20
     df["age_group"] = pd.cut(df["age"], [0, 10, 20, np.inf],
                              labels=["Under 10", "10-19", "20+"], right=False)
-    df["days_on_art"] = pd.to_numeric(df.get("days_on_art"), errors="coerce")
+    df["days_on_art"] = pd.to_numeric(_col(df, "days_on_art"), errors="coerce")
 
     # --- socio-demographics: collapse the long tail, keep missing visible ---
     # ~23-31% are blank in the export. They become an explicit "Not recorded"
@@ -403,7 +423,7 @@ def build_cohort(
     preg = _norm("pregnancy", _PREG)
     df["pregnancy"] = preg.where(df["sex"] == "Female", "N/A")
     # BMI outside 10-60 is a recording error (weight/height swapped, zeros)
-    bmi = pd.to_numeric(df.get("bmi"), errors="coerce")
+    bmi = pd.to_numeric(_col(df, "bmi"), errors="coerce")
     df["bmi"] = bmi.where((bmi >= 10) & (bmi <= 60))
     for rc in ("lga_res", "state_res"):
         if rc in df:
@@ -414,10 +434,10 @@ def build_cohort(
     # FirstCD4 (old regime) and CD4_LFA (LessThan200 / GreaterTE200, new regime)
     # are BOTH valid and complementary. Combine them onto a single <200 vs >=200
     # split; the integer value wins when both exist.
-    cd4 = pd.to_numeric(df.get("first_cd4"), errors="coerce")
+    cd4 = pd.to_numeric(_col(df, "first_cd4"), errors="coerce")
     cd4 = cd4.where((cd4 >= 0) & (cd4 <= 3000))     # drop impossible integers
     df["first_cd4"] = cd4
-    lfa_raw = df.get("cd4_lfa")
+    lfa_raw = _col(df, "cd4_lfa")
     lfa = (lfa_raw.astype(str).str.strip().str.lower() if lfa_raw is not None
            else pd.Series("", index=df.index))     # astype(str): NA -> 'nan'
     band = pd.Series(np.nan, index=df.index, dtype=object)
@@ -428,9 +448,9 @@ def build_cohort(
     df["cd4_band"] = band
 
     # --- time-to-VL, from ART start (EAC list dates) ---------------------
-    art0 = pd.to_datetime(df.get("art_start"), errors="coerce")
-    fev = pd.to_datetime(df.get("First_Ever_VL_Sample_Collection_Date"), errors="coerce")
-    fhi = pd.to_datetime(df.get("First_High_VL_Sample_Collection_Date"), errors="coerce")
+    art0 = pd.to_datetime(_col(df, "art_start"), errors="coerce")
+    fev = pd.to_datetime(_col(df, "First_Ever_VL_Sample_Collection_Date"), errors="coerce")
+    fhi = pd.to_datetime(_col(df, "First_High_VL_Sample_Collection_Date"), errors="coerce")
     ttfv = (fev - art0).dt.days
     ttfu = (fhi - art0).dt.days
     df["time_to_first_vl"] = ttfv.where(ttfv >= 0)
@@ -444,9 +464,9 @@ def build_cohort(
     # Outcomes_Date covers death / transferred out / discontinued (~99%), but
     # LTFU is only ~4% dated. For those, the exit is 28 days after the expected
     # return: last pharmacy pickup + days of ARV refill + 28 (LTFU definition).
-    odate = pd.to_datetime(df.get("outcome_date"), errors="coerce")
-    pickup = pd.to_datetime(df.get("last_pickup"), errors="coerce")
-    refill = pd.to_numeric(df.get("days_refill"), errors="coerce")
+    odate = pd.to_datetime(_col(df, "outcome_date"), errors="coerce")
+    pickup = pd.to_datetime(_col(df, "last_pickup"), errors="coerce")
+    refill = pd.to_numeric(_col(df, "days_refill"), errors="coerce")
     derived = pickup + pd.to_timedelta(refill.fillna(0), unit="D") + pd.Timedelta(days=28)
     neg = care_status(df).isin(_NEG_OUTCOMES)
     df["exit_date"] = odate.where(odate.notna(), derived).where(neg)
@@ -760,8 +780,8 @@ def time_to_unsupp_curve(df: pd.DataFrame) -> dict:
     around 2017/18: a pre-2018 starter's long lag to the first VL is partly
     detection, not durability, so the two strata must not be pooled.
     """
-    y = pd.to_numeric(df.get("time_to_first_unsupp"), errors="coerce") / 365.25
-    yr = pd.to_numeric(df.get("art_year"), errors="coerce")
+    y = pd.to_numeric(_col(df, "time_to_first_unsupp"), errors="coerce") / 365.25
+    yr = pd.to_numeric(_col(df, "art_year"), errors="coerce")
     grid = np.arange(0.0, 15.01, 0.25)
     out = {}
     for label, mask in (("Started ART ≤2017 (pre / early T&T)", yr <= 2017),
@@ -787,8 +807,8 @@ def kaplan_meier(df: pd.DataFrame) -> list[dict]:
     back from the database. An earlier version used Session_1_Date directly and
     worked in-process while 500-ing over HTTP.
     """
-    s1 = df.get("s1_date", df.get("Session_1_Date"))
-    fu = df.get("fu_date", df.get("Followup_VL_Result_Date"))
+    s1 = df.get("s1_date", _col(df, "Session_1_Date"))
+    fu = df.get("fu_date", _col(df, "Followup_VL_Result_Date"))
     if s1 is None:
         return []
 
@@ -854,11 +874,11 @@ def profile(df: pd.DataFrame) -> dict:
     n = len(df)
     if not n:
         return {"n": 0}
-    age = pd.to_numeric(df.get("age"), errors="coerce")
-    yrs = pd.to_numeric(df.get("days_on_art"), errors="coerce") / 365
-    cd4 = pd.to_numeric(df.get("first_cd4"), errors="coerce")
-    tte = pd.to_numeric(df.get("time_to_eac"), errors="coerce")
-    mu = pd.to_numeric(df.get("months_unsuppressed"), errors="coerce")
+    age = pd.to_numeric(_col(df, "age"), errors="coerce")
+    yrs = pd.to_numeric(_col(df, "days_on_art"), errors="coerce") / 365
+    cd4 = pd.to_numeric(_col(df, "first_cd4"), errors="coerce")
+    tte = pd.to_numeric(_col(df, "time_to_eac"), errors="coerce")
+    mu = pd.to_numeric(_col(df, "months_unsuppressed"), errors="coerce")
 
     def _band(v, cuts, labels, na="Not recorded"):
         if pd.isna(v):
@@ -893,16 +913,16 @@ def profile(df: pd.DataFrame) -> dict:
             "female_pct": round(float((df["sex"] == "Female").mean() * 100), 1),
             "adolescent_pct": round(float(((age >= 10) & (age < 20)).mean() * 100), 1),
             "paed_pct": round(float((age < 10).mean() * 100), 1),
-            "sex": _dist(df.get("sex"), ["Female", "Male", "Unknown"], na="Unknown"),
-            "age_group": _dist(df.get("age_group"), ["Under 10", "10-19", "20+"]),
-            "age_band": _dist(df.get("age_band"),
+            "sex": _dist(_col(df, "sex"), ["Female", "Male", "Unknown"], na="Unknown"),
+            "age_group": _dist(_col(df, "age_group"), ["Under 10", "10-19", "20+"]),
+            "age_band": _dist(_col(df, "age_band"),
                               ["0-9", "10-19", "20-24", "25-34", "35-49", "50+", "Unknown"],
                               na="Unknown"),
-            "marital": _dist(df.get("marital"),
+            "marital": _dist(_col(df, "marital"),
                              ["Married", "Never married", "Previously married", "Other", "Not recorded"]),
-            "education": _dist(df.get("education"),
+            "education": _dist(_col(df, "education"),
                                ["Primary", "Secondary", "Tertiary", "Other", "Not recorded"]),
-            "job": _dist(df.get("job"),
+            "job": _dist(_col(df, "job"),
                          ["Employee", "Unemployed", "Student", "Other", "Not recorded"]),
             # female-only denominator (males are set to N/A upstream)
             "pregnancy": _dist(df.loc[df["sex"] == "Female", "pregnancy"]
@@ -913,40 +933,40 @@ def profile(df: pd.DataFrame) -> dict:
             "median_years_art": round(float(yrs.median()), 1) if yrs.notna().any() else None,
             "regimen": _dist(np.where(df["on_second_line"].fillna(False).astype(bool),
                                       "2nd/3rd line", "1st line"), ["1st line", "2nd/3rd line"]),
-            "vl_magnitude": _dist(df.get("vl_magnitude"), ["1k-10k", "10k-100k", ">=100k"]),
-            "cd4": _dist(df.get("cd4_band"), ["<200", ">=200", "Not recorded"]),
+            "vl_magnitude": _dist(_col(df, "vl_magnitude"), ["1k-10k", "10k-100k", ">=100k"]),
+            "cd4": _dist(_col(df, "cd4_band"), ["<200", ">=200", "Not recorded"]),
             "years_art": _dist(yrs.map(lambda v: _band(v, [1, 3, 5, 10], yr_lab)),
                                yr_lab + ["Not recorded"]),
             "eac_status": _dist(pd.Series(eac_status, index=df.index),
                                 ["Never commenced", "Commenced, not completed", "Completed EAC"]),
-            "who_stage": _dist(df.get("who_stage"),
+            "who_stage": _dist(_col(df, "who_stage"),
                                ["Stage 1", "Stage 2", "Stage 3", "Stage 4", "Not recorded"]),
-            "bmi": _dist(pd.to_numeric(df.get("bmi"), errors="coerce")
+            "bmi": _dist(pd.to_numeric(_col(df, "bmi"), errors="coerce")
                          .map(lambda v: _band(v, [18.5, 25, 30],
                               ["Underweight (<18.5)", "Normal (18.5-24.9)",
                                "Overweight (25-29.9)", "Obese (30+)"])),
                          ["Underweight (<18.5)", "Normal (18.5-24.9)",
                           "Overweight (25-29.9)", "Obese (30+)", "Not recorded"]),
-            "plan": _dist(df.get("treatment_plan")),
+            "plan": _dist(_col(df, "treatment_plan")),
         },
         "when": {
             "monthly": monthly,
-            "quarter": _dist(df.get("enrol_quarter"), qs),
+            "quarter": _dist(_col(df, "enrol_quarter"), qs),
             # ART start -> first-ever VL (the 6-month guideline clock) and
             # ART start -> first UNSUPPRESSED VL (how long treatment held).
             "time_to_first_vl": _dist(
-                pd.to_numeric(df.get("time_to_first_vl"), errors="coerce")
+                pd.to_numeric(_col(df, "time_to_first_vl"), errors="coerce")
                 .map(lambda v: _band(v / 30.44, [6, 12, 24],
                      ["<6 mo", "6-12 mo", "1-2 yr", "2+ yr"])),
                 ["<6 mo", "6-12 mo", "1-2 yr", "2+ yr", "Not recorded"]),
             "yrs_to_unsupp": _dist(
-                pd.to_numeric(df.get("time_to_first_unsupp"), errors="coerce")
+                pd.to_numeric(_col(df, "time_to_first_unsupp"), errors="coerce")
                 .map(lambda v: _band(v / 365.25, [1, 3, 5, 10],
                      ["<1 yr", "1-3 yr", "3-5 yr", "5-10 yr", "10+ yr"])),
                 ["<1 yr", "1-3 yr", "3-5 yr", "5-10 yr", "10+ yr", "Not recorded"]),
-            "ttfv_months": _quart(pd.to_numeric(df.get("time_to_first_vl"),
+            "ttfv_months": _quart(pd.to_numeric(_col(df, "time_to_first_vl"),
                                    errors="coerce") / 30.44),
-            "ttfu_years": _quart(pd.to_numeric(df.get("time_to_first_unsupp"),
+            "ttfu_years": _quart(pd.to_numeric(_col(df, "time_to_first_unsupp"),
                                   errors="coerce") / 365.25),
             "time_to_eac": _dist(tte.map(lambda v: _band(v, [31, 91], ["<=30 d", "31-90 d", ">90 d"],
                                                          na="No EAC on record")),
@@ -954,14 +974,14 @@ def profile(df: pd.DataFrame) -> dict:
             "months_unsupp": _dist(mu.map(lambda v: _band(v, [3, 6, 12], mu_lab)),
                                    mu_lab + ["Not recorded"]),
             "tte_stats": _quart(tte),
-            "lead_stats": _quart(df.get("eac_lead_time")),
+            "lead_stats": _quart(_col(df, "eac_lead_time")),
             "mu_stats": _quart(mu),
         },
         "care": _care_outcomes(df),
         "where": {
-            "state": _dist(df.get("state"), na="Unknown"),
-            "lga": _dist(df.get("lga"), top=10, na="Unknown"),
-            "facility": _dist(df.get("facility"), top=10, na="Unknown"),
+            "state": _dist(_col(df, "state"), na="Unknown"),
+            "lga": _dist(_col(df, "lga"), top=10, na="Unknown"),
+            "facility": _dist(_col(df, "facility"), top=10, na="Unknown"),
             "lga_res": _lga_res_map(df),
         },
     }
@@ -984,7 +1004,7 @@ _LGA_ALIAS = {
 
 def care_status(df) -> pd.Series:
     """CurrentARTStatus normalised to a care outcome (Active / LTFU / Died / ...)."""
-    s = df.get("art_status")
+    s = _col(df, "art_status")
     if s is None:
         return pd.Series("Not recorded", index=df.index)
     return (s.astype(str).str.strip().str.lower().map(_ART_STATUS)
@@ -1011,10 +1031,10 @@ def _care_outcomes(df) -> dict:
     no_peac = ~df["post_eac_vl"].fillna(False).astype(bool)
     n = len(df)
 
-    exit_d = pd.to_datetime(df.get("exit_date"), errors="coerce")
-    idx = pd.to_datetime(df.get("idx_date"), errors="coerce")
-    s1 = pd.to_datetime(df.get("s1_date", df.get("Session_1_Date")), errors="coerce")
-    fu = pd.to_datetime(df.get("fu_samp"), errors="coerce")
+    exit_d = pd.to_datetime(_col(df, "exit_date"), errors="coerce")
+    idx = pd.to_datetime(_col(df, "idx_date"), errors="coerce")
+    s1 = pd.to_datetime(df.get("s1_date", _col(df, "Session_1_Date")), errors="coerce")
+    fu = pd.to_datetime(_col(df, "fu_samp"), errors="coerce")
 
     when = pd.Series("Exit date unknown", index=df.index, dtype=object)
     dated = neg & exit_d.notna()
@@ -1057,12 +1077,12 @@ def _lga_res_map(df) -> dict:
     The EMR field is free text (towns, misspellings), so a share will never
     match an LGA polygon - that share is reported, not hidden.
     """
-    s = df.get("lga_res") if hasattr(df, "get") else None
+    s = _col(df, "lga_res") if hasattr(df, "get") else None
     if s is None:
         return {"counts": {}, "total": 0}
     import re as _re
     norm = lambda v: _re.sub(r"[^a-z0-9]", "", str(v).lower())
-    age = pd.to_numeric(df.get("age"), errors="coerce")
+    age = pd.to_numeric(_col(df, "age"), errors="coerce")
     d = pd.DataFrame({
         "k": s.astype(str).map(lambda v: _LGA_ALIAS.get(norm(v), norm(v))),
         "f": (df["sex"] == "Female").astype(int),
@@ -1407,11 +1427,11 @@ def dtc_review(df: pd.DataFrame) -> dict:
     d = df.assign(
         _rep=rep.astype(int),
         _sex=df["sex"],
-        _age=df.get("age_group"),
+        _age=_col(df, "age_group"),
         _reg=np.where(df["on_second_line"].fillna(False).astype(bool),
                       "2nd/3rd line", "1st line"),
-        _cd4=df.get("cd4_band"),
-        _vl=df.get("vl_magnitude"),
+        _cd4=_col(df, "cd4_band"),
+        _vl=_col(df, "vl_magnitude"),
         _still=still, _await=awaiting, _switched=switched, _prior=prior)
 
     def rate(a, b):
@@ -1507,12 +1527,12 @@ def _design(df: pd.DataFrame) -> pd.DataFrame:
     rep = df["sn"].duplicated(keep=False) if "sn" in df else pd.Series(False, index=df.index)
     return pd.DataFrame({
         "paed": df.get("paed", False).fillna(False).astype(float),
-        "male": (df.get("sex") == "Male").astype(float),
+        "male": (_col(df, "sex") == "Male").astype(float),
         "log_vl": np.log10(pd.to_numeric(df["idx_vl"], errors="coerce").clip(lower=1)).fillna(3),
         "no_eac": (~df["eac1"].fillna(False).astype(bool)).astype(float),
         "eac3": df["eac3"].fillna(False).astype(float),
-        "late_eac": (pd.to_numeric(df.get("time_to_eac"), errors="coerce") > 30).fillna(False).astype(float),
-        "years_art": (pd.to_numeric(df.get("days_on_art"), errors="coerce") / 365).fillna(0).clip(0, 40),
+        "late_eac": (pd.to_numeric(_col(df, "time_to_eac"), errors="coerce") > 30).fillna(False).astype(float),
+        "years_art": (pd.to_numeric(_col(df, "days_on_art"), errors="coerce") / 365).fillna(0).clip(0, 40),
         "second_line": df.get("regimen_line", pd.Series("", index=df.index))
                          .astype(str).str.contains("2nd", case=False, na=False).astype(float),
         "repeat_ep": rep.astype(float),
@@ -1603,7 +1623,7 @@ def resuppression_model(df: pd.DataFrame) -> dict:
 
 def mortality(df: pd.DataFrame) -> dict:
     """§7.2 — crude mortality among the unsuppressed cohort."""
-    st = df.get("art_status")
+    st = _col(df, "art_status")
     if st is None:
         return {"ok": False}
     dead = st.astype(str).str.strip().str.lower().isin(["dead", "death"])

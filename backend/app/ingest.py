@@ -171,7 +171,15 @@ def _classify(name: str, df: pd.DataFrame) -> str:
 
 def audit_censoring(df: pd.DataFrame) -> tuple[bool, float | None]:
     """True if the follow-up VL column only ever contains suppressed values."""
-    v = pd.to_numeric(df.get("Followup_VL_Value"), errors="coerce").dropna()
+    col = df.get("Followup_VL_Value")
+    if col is None:
+        # The column is optional - it has not been read for outcomes since
+        # follow-up VLs moved to the clinical line lists. Without this guard
+        # pd.to_numeric(None) returns a bare float64, whose missing .dropna()
+        # raised an AttributeError that failed the WHOLE upload with an opaque
+        # message. An EAC export that simply omits the column is not an error.
+        return False, None
+    v = pd.to_numeric(col, errors="coerce").dropna()
     if len(v) < 200:
         return False, (float(v.max()) if len(v) else None)
     return bool(v.max() < VL_UNDETECTABLE), float(v.max())

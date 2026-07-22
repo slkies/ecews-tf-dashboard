@@ -16,3 +16,7 @@ __pycache__/
 .DS_Store
 .Rhistory
 .claude/settings.local.json
+
+# Generated from TECHNICAL_DOSSIER.md for submission; regenerate rather than
+# version it. Delete this line if the exact submitted artifact needs archiving.
+*.docx
