@@ -1007,6 +1007,9 @@ async function boot(){
   $('#uName').textContent=ME.name||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
   if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();}
+  // Bulk export of patient-level rows is analyst/admin only, enforced server
+  // side. Hide the control for viewers so the rule is visible, not a surprise.
+  if(ME.role!=='admin'&&ME.role!=='analyst'){const b=$('#btnExport'); if(b)b.style.display='none';}
 
   try{
     const f=await api('/filters');
@@ -2212,6 +2215,13 @@ function switchTo(v){
 }
 async function download(extra){
   const r=await fetch('/api/export'+qs(extra),{headers:{Authorization:'Bearer '+TOKEN}});
+  // Without this check a 403 was silently saved AS the CSV, so a viewer got a
+  // file called ecews_tf.csv containing a JSON error object.
+  if(!r.ok){
+    let m='Export failed.';
+    try{ m=(await r.json()).detail||m; }catch(e){}
+    alert(m); return;
+  }
   const b=await r.blob(), a=document.createElement('a');
   a.href=URL.createObjectURL(b); a.download='ecews_tf.csv'; a.click(); URL.revokeObjectURL(a.href);
 }

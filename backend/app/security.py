@@ -7,13 +7,37 @@ against bcrypt >= 4.1. One less dependency, one less landmine.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import os
 
 import bcrypt
 import jwt
 from fastapi import HTTPException
 
-SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
+log = logging.getLogger("ecews")
+
+# JWT_SECRET signs every session token. A deployment that forgets to set it used
+# to fall back to a hard-coded string, which means anyone holding this source
+# could mint a valid admin token. It now FAILS CLOSED: the fallback exists only
+# when APP_ENV explicitly says this is a development box, and APP_ENV defaults to
+# production precisely so that forgetting it is the safe mistake, not the unsafe
+# one.
+_DEV_ENVS = ("dev", "development", "local", "test")
+APP_ENV = os.getenv("APP_ENV", "production").strip().lower()
+SECRET = os.getenv("JWT_SECRET", "").strip()
+
+if not SECRET:
+    if APP_ENV in _DEV_ENVS:
+        SECRET = "dev-secret-change-me"
+        log.warning("JWT_SECRET unset - using the development fallback because "
+                    "APP_ENV=%s. Never do this in a hosted environment.", APP_ENV)
+    else:
+        raise RuntimeError(
+            "JWT_SECRET is not set. Generate one with "
+            "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"` "
+            "and set it in the environment. (For local development set "
+            "APP_ENV=development to allow an insecure fallback.)")
+
 ALGO = "HS256"
 TTL_HOURS = int(os.getenv("JWT_TTL_HOURS", "12"))
 

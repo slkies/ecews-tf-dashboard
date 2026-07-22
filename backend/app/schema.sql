@@ -123,6 +123,30 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Security audit trail. Records authentication and every access to, or change
+-- of, patient-level data: who, what, when, from where.
+--
+-- email is denormalised on purpose. The audit trail has to stay readable after
+-- an account is deleted, so user_id nulls out but the address written at the
+-- time survives. Rows are append-only; nothing in the application updates or
+-- deletes them.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id       BIGSERIAL PRIMARY KEY,
+  ts       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  email    TEXT,
+  action   TEXT NOT NULL,   -- login.success | login.failure | login.blocked
+                            -- | export.csv | clients.view
+                            -- | upload.create | upload.delete | upload.prune
+                            -- | user.create  | user.toggle
+  detail   TEXT,
+  ip       TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_ts    ON audit_log(ts DESC);
+CREATE INDEX IF NOT EXISTS audit_user  ON audit_log(user_id, ts DESC);
+-- Supports the lockout query, which counts recent failures for one address.
+CREATE INDEX IF NOT EXISTS audit_login ON audit_log(email, action, ts DESC);
+
 -- Per-sheet data-quality findings, surfaced in the dashboard.
 CREATE TABLE IF NOT EXISTS dq_findings (
   id         SERIAL PRIMARY KEY,

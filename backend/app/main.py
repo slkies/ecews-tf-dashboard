@@ -23,7 +23,7 @@ from typing import Annotated
 
 import pandas as pd
 from fastapi import (Depends, FastAPI, File, Form, Header, HTTPException, Query,
-                     UploadFile)
+                     Request, UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -98,13 +98,88 @@ def _public(u: dict) -> dict:
             "scope_state": u["scope_state"], "scope_facility": u["scope_facility"]}
 
 
+# ── audit trail ───────────────────────────────────────────────────────
+# Every authentication attempt and every access to patient-level data is
+# recorded. The dashboard holds PPI-removed but still identifiable-in-context
+# clinical line lists, so "who looked at what, and when" has to be answerable
+# after the fact rather than reconstructed from platform logs.
+
+LOCKOUT_FAILS = int(os.getenv("LOGIN_LOCKOUT_FAILS", "5"))
+LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
+
+
+def _client_ip(request: Request | None) -> str | None:
+    """Caller IP, honouring the proxy header the hosting platform sets."""
+    if request is None:
+        return None
+    # Railway/Render/nginx terminate TLS and forward the original address.
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()[:64]
+    return request.client.host[:64] if request.client else None
+
+
+def _audit(action: str, *, user_id: int | None = None, email: str | None = None,
+           detail: str | None = None, request: Request | None = None) -> None:
+    """Append one audit row. Never raises: an audit failure must not 500 a request."""
+    try:
+        with pool.connection() as c:
+            c.execute(
+                "INSERT INTO audit_log (user_id,email,action,detail,ip) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (user_id, (email or "").lower().strip() or None, action,
+                 (detail or "")[:500] or None, _client_ip(request)))
+    except Exception:  # noqa: BLE001
+        log.exception("audit write failed for action=%s", action)
+
+
+def _recent_failures(email: str) -> int:
+    """
+    Failed sign-ins for this address since the later of the lockout window and
+    the last successful sign-in.
+
+    Counting from the last success is what makes the lockout usable: someone who
+    fumbles a password twice, gets in, then mistypes again on a new device is not
+    three-fifths of the way to being locked out.
+
+    Backed by audit_log rather than process memory so the limit survives a
+    restart and holds across every worker.
+    """
+    with pool.connection() as c:
+        r = c.execute(
+            "WITH last_ok AS ("
+            "  SELECT max(ts) AS t FROM audit_log"
+            "   WHERE action='login.success' AND email=%s)"
+            " SELECT count(*) AS n FROM audit_log, last_ok"
+            "  WHERE action='login.failure' AND email=%s"
+            f"   AND ts > now() - interval '{LOCKOUT_MINUTES} minutes'"
+            "    AND ts > COALESCE(last_ok.t, '-infinity'::timestamptz)",
+            (email, email)).fetchone()
+    return int(r["n"]) if r else 0
+
+
 @app.post("/api/login")
-def login(body: Login):
+def login(body: Login, request: Request):
+    email = body.email.lower().strip()
+
+    if _recent_failures(email) >= LOCKOUT_FAILS:
+        _audit("login.blocked", email=email, request=request,
+               detail=f"{LOCKOUT_FAILS} failed attempts within "
+                      f"{LOCKOUT_MINUTES} minutes")
+        raise HTTPException(429, f"Too many failed attempts. Try again in "
+                                 f"{LOCKOUT_MINUTES} minutes.")
+
     with pool.connection() as c:
         u = c.execute("SELECT * FROM users WHERE email=%s AND is_active",
-                      (body.email.lower().strip(),)).fetchone()
+                      (email,)).fetchone()
     if not u or not verify_password(body.password, u["password_hash"]):
+        # Deliberately does not distinguish unknown address from wrong password:
+        # the response must not confirm whether an account exists.
+        _audit("login.failure", email=email, request=request,
+               user_id=u["id"] if u else None)
         raise HTTPException(401, "Wrong email or password")
+
+    _audit("login.success", user_id=u["id"], email=email, request=request)
     return {"token": create_token(u["id"]), "user": _public(u)}
 
 
@@ -195,6 +270,7 @@ def _load(u: dict, f: Filters) -> pd.DataFrame:
 @app.post("/api/uploads")
 def create_upload(
     u: Annotated[dict, Depends(admin)],
+    request: Request,
     file: UploadFile = File(...),
     as_of: str | None = Form(None),
     cohort_mode: str = Form("event"),
@@ -240,8 +316,13 @@ def create_upload(
         with pool.connection() as c:
             c.execute("UPDATE uploads SET status='failed', error=%s WHERE id=%s",
                       (str(e)[:800], uid))
+        _audit("upload.failed", user_id=u["id"], email=u["email"], request=request,
+               detail=f"upload {uid} ({file.filename}): {str(e)[:200]}")
         raise HTTPException(400, f"Ingest failed: {e}") from e
 
+    _audit("upload.create", user_id=u["id"], email=u["email"], request=request,
+           detail=f"upload {uid} ({file.filename}), as_of {when.date()}, "
+                  f"{len(rows)} cohort rows, now the current snapshot")
     return {"upload_id": uid, "cohort": len(rows), "primary_eac_sheet": primary,
             "warnings": warns,
             "sheets": [{"name": i.name, "kind": i.kind, "rows": i.rows,
@@ -258,23 +339,28 @@ def list_uploads(u: U):
 
 
 @app.delete("/api/uploads/{uid}")
-def delete_upload(uid: int, u: Annotated[dict, Depends(admin)]):
+def delete_upload(uid: int, u: Annotated[dict, Depends(admin)], request: Request):
     """Delete one immutable snapshot. Cohort + DQ rows cascade. Never the current one."""
     with pool.connection() as c:
-        row = c.execute("SELECT is_current FROM uploads WHERE id=%s", (uid,)).fetchone()
+        row = c.execute("SELECT is_current,filename FROM uploads WHERE id=%s",
+                        (uid,)).fetchone()
         if not row:
             raise HTTPException(404, "Upload not found.")
         if row["is_current"]:
             raise HTTPException(400, "Cannot delete the current upload - it is the active data.")
         c.execute("DELETE FROM uploads WHERE id=%s", (uid,))
+    _audit("upload.delete", user_id=u["id"], email=u["email"], request=request,
+           detail=f"upload {uid} ({row['filename']}), cohort rows cascaded")
     return {"ok": True}
 
 
 @app.post("/api/uploads/prune")
-def prune_uploads(u: Annotated[dict, Depends(admin)]):
+def prune_uploads(u: Annotated[dict, Depends(admin)], request: Request):
     """Delete every snapshot except the current one - a one-click cleanup."""
     with pool.connection() as c:
         cur = c.execute("DELETE FROM uploads WHERE is_current IS NOT TRUE")
+    _audit("upload.prune", user_id=u["id"], email=u["email"], request=request,
+           detail=f"{cur.rowcount} non-current snapshots deleted")
     return {"ok": True, "deleted": cur.rowcount}
 
 
@@ -389,16 +475,35 @@ def _clients(u: dict, f: Filters, flag: str | None, limit: int) -> pd.DataFrame:
     return df[CLIENT_COLS].head(limit)
 
 
+def _access_note(f: Filters, flag: str | None, n: int) -> str:
+    """Human-readable record of exactly which slice was retrieved."""
+    where = ", ".join(f"{k}={v}" for k, v in f.model_dump().items()
+                      if v and v != "All") or "no filters"
+    return f"{n} client rows; {where}; flag={flag or 'none'}"
+
+
 @app.get("/api/clients")
-def get_clients(u: U, f: F, flag: str | None = Query(None),
+def get_clients(u: U, f: F, request: Request, flag: str | None = Query(None),
                 limit: int = Query(500, le=5000)):
     df = _clients(u, f, flag, limit)
+    _audit("clients.view", user_id=u["id"], email=u["email"], request=request,
+           detail=_access_note(f, flag, len(df)))
     return [] if df.empty else _json_safe(df)
 
 
 @app.get("/api/export")
-def export_csv(u: U, f: F, flag: str | None = Query(None)):
+def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
+    # Bulk extraction of patient-level records. Restricted to admin/analyst:
+    # a scoped viewer reads the dashboard, but pulling the line list out of it
+    # is a different act and is logged as such.
+    if u["role"] not in ("admin", "analyst"):
+        _audit("export.denied", user_id=u["id"], email=u["email"], request=request,
+               detail=f"role={u['role']}")
+        raise HTTPException(403, "Exporting the line list requires an analyst "
+                                 "or administrator account.")
     df = _clients(u, f, flag, 100_000)
+    _audit("export.csv", user_id=u["id"], email=u["email"], request=request,
+           detail=_access_note(f, flag, len(df)))
     buf = io.StringIO()
     df.to_csv(buf, index=False)
     buf.seek(0)
@@ -490,7 +595,7 @@ def list_users(u: Annotated[dict, Depends(admin)]):
 
 
 @app.post("/api/users")
-def create_user(body: NewUser, u: Annotated[dict, Depends(admin)]):
+def create_user(body: NewUser, u: Annotated[dict, Depends(admin)], request: Request):
     email = (body.email or "").lower().strip()
     if "@" not in email:
         raise HTTPException(400, "A valid email is required.")
@@ -506,16 +611,46 @@ def create_user(body: NewUser, u: Annotated[dict, Depends(admin)]):
             (email, hash_password(body.password),
              body.full_name or email.split("@")[0], role,
              (body.scope_state or None) if (body.scope_state or "") != "All" else None))
+    _audit("user.create", user_id=u["id"], email=u["email"], request=request,
+           detail=f"created {email} role={role} scope={body.scope_state or 'all states'}")
     return {"ok": True}
 
 
 @app.patch("/api/users/{uid}")
-def toggle_user(uid: int, u: Annotated[dict, Depends(admin)]):
+def toggle_user(uid: int, u: Annotated[dict, Depends(admin)], request: Request):
     if uid == u["id"]:
         raise HTTPException(400, "You cannot deactivate your own account.")
     with pool.connection() as c:
-        c.execute("UPDATE users SET is_active = NOT is_active WHERE id=%s", (uid,))
+        r = c.execute("UPDATE users SET is_active = NOT is_active WHERE id=%s "
+                      "RETURNING email, is_active", (uid,)).fetchone()
+    if not r:
+        raise HTTPException(404, "User not found.")
+    _audit("user.toggle", user_id=u["id"], email=u["email"], request=request,
+           detail=f"{r['email']} -> {'activated' if r['is_active'] else 'deactivated'}")
     return {"ok": True}
+
+
+@app.get("/api/audit")
+def get_audit(u: Annotated[dict, Depends(admin)],
+              action: str | None = Query(None),
+              limit: int = Query(200, le=2000)):
+    """
+    The security audit trail, newest first. Admin only, and read-only: there is
+    no endpoint that edits or deletes an audit row, by design.
+    """
+    clauses, args = [], []
+    if action:
+        clauses.append("action = %s")
+        args.append(action)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with pool.connection() as c:
+        rows = c.execute(
+            f"SELECT id,ts,email,action,detail,ip FROM audit_log {where} "
+            f"ORDER BY ts DESC LIMIT %s", (*args, limit)).fetchall()
+        kinds = c.execute(
+            "SELECT action, count(*) AS n FROM audit_log "
+            "GROUP BY action ORDER BY n DESC").fetchall()
+    return {"rows": rows, "actions": kinds}
 
 
 @app.get("/api/dq")

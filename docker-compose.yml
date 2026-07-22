@@ -15,7 +15,11 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql://ecews:${DB_PASSWORD:-ecews}@db:5432/ecews
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      # Local compose only. APP_ENV=development is what permits an unset
+      # JWT_SECRET; any other value makes the app refuse to start without one,
+      # so a hosted deployment cannot silently run on a known signing key.
+      APP_ENV: ${APP_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
     ports: ["8080:8000"]
     depends_on:
