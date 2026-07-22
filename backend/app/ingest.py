@@ -36,6 +36,74 @@ SHEET_TOTAL = ("total unsuppressed", "total_unsuppressed")
 EAC_MARKERS = ("Session_1_Date", "EAC_Cycle_Number")
 ART_MARKERS = ("currentViralLoad", "currentArtStatus")
 
+# Every column the dashboard actually reads, and what breaks without it.
+# Most are matched EXACTLY and case-sensitively downstream (indicators.tcols and
+# ecols), so a re-export that renames `outcomesDate` to `OutcomesDate` drops the
+# column silently: no error, no failed upload, every client simply reads "not
+# recorded". The audit below turns that into a visible finding.
+EXPECTED_COLS: dict[str, dict[str, str]] = {
+    "total": {
+        "S/N": "client key - the join to every other sheet",
+        "currentViralLoad": "the index (triggering) viral load",
+        "dateofCurrentViralLoad": "index VL result date - dates the episode",
+        "dateResultReceivedFacility": "FY quarter buckets",
+        "lastDateOfSampleCollection": "index VL sample date",
+        "CurrentRegimenLine": "regimen line AT index - separates a genuine switch "
+                              "from a client already on 2nd/3rd line",
+    },
+    "eac": {
+        "S/N": "client key",
+        "Session_1_Date": "EAC-1, EAC lead time, time-to-EAC",
+        "Session_2_Date": "EAC-2",
+        "Session_3_Date": "EAC-3, completed EAC, the post-EAC VL window",
+        "Session_4_Extended_Date": "extended EAC",
+        "Total_EAC_Sessions_All_Cycles": "session count",
+        "EAC_Cycle_Number": "repeat-cycle detection",
+        "First_Ever_VL_Sample_Collection_Date": "time to first VL",
+        "First_High_VL_Sample_Collection_Date": "time to first unsuppressed VL",
+    },
+    "treatment": {
+        "S/N": "client key",
+        "state": "geography filters",
+        "lga": "geography filters",
+        "facilityName": "facility filters and league tables",
+        "sex": "Who breakdowns",
+        "currentAge": "age bands and the paediatric split",
+        "currentArtStatus": "care outcomes - LTFU / died / transferred out",
+        "currentRegimenLine": "current line - this is what detects the switch",
+        "currentArtRegimen": "regimen detail",
+        "artStartDate": "ART era (pre/post Test-and-Treat)",
+        "daysOnArt": "time on ART",
+        "dsdModel": "differentiated service delivery",
+        "currentViralLoad": "follow-up / post-EAC VL value",
+        "dateofCurrentViralLoad": "follow-up VL result date",
+        "lastDateOfSampleCollection": "follow-up VL sample date - the post-EAC clock",
+        "maritalStatus": "Who breakdowns",
+        "jobStatus": "Who breakdowns",
+        "educationallevel": "Who breakdowns",
+        "firstCd4": "CD4 band",
+        "cd4LfaResult": "CD4 band (VISITEC LFA arm)",
+        "currentPregnancyStatus": "pregnancy among women",
+        "whostage": "WHO stage",
+        "bmi": "nutrition",
+        "outcomesDate": "exit dating for death / transfer / discontinued care",
+        "pharmacyLastPickupdate": "derived LTFU exit date (pickup + refill + 28d)",
+        "daysOfArvRefill": "derived LTFU exit date (pickup + refill + 28d)",
+        "lgaOfResidence": "residence choropleth",
+        "stateOfResidence": "residence choropleth",
+    },
+}
+
+# The handful resolved through indicators._pick/_coalesce, which DO match
+# case-insensitively. Header drift on these is untidy but harmless, so the audit
+# must not claim they were ignored - everything else genuinely is.
+CASE_INSENSITIVE: dict[str, set[str]] = {
+    "total": {"currentViralLoad", "dateofCurrentViralLoad",
+              "dateResultReceivedFacility", "lastDateOfSampleCollection"},
+    "eac": {"Total_EAC_Sessions_All_Cycles", "EAC_Cycle_Number"},
+    "treatment": set(),
+}
+
 
 @dataclass
 class SheetInfo:
@@ -109,14 +177,63 @@ def audit_censoring(df: pd.DataFrame) -> tuple[bool, float | None]:
     return bool(v.max() < VL_UNDETECTABLE), float(v.max())
 
 
+def _col_audit(df: pd.DataFrame, kind: str, sheet: str, add) -> None:
+    """
+    Compare an incoming sheet against the columns the dashboard reads.
+
+    Splits into two findings because they need different remedies: a column that
+    is genuinely absent needs a re-export, whereas one that is merely mis-cased
+    is present in the file and only needs its header restored.
+    """
+    exp = EXPECTED_COLS.get(kind, {})
+    if not exp:
+        return
+    have = set(df.columns)
+    lower = {str(c).strip().lower(): c for c in df.columns}
+    tolerant = CASE_INSENSITIVE.get(kind, set())
+
+    missing, ignored, tolerated = [], [], []
+    for col, purpose in exp.items():
+        if col in have:
+            continue
+        hit = lower.get(col.lower())
+        if hit is None:
+            missing.append(f"{col} ({purpose})")
+        elif col in tolerant:
+            tolerated.append(f"{hit} should be {col}")
+        else:
+            ignored.append(f"{hit} should be {col} - powers {purpose}")
+
+    add(sheet, "Expected column missing", "high", len(missing),
+        "Absent from this sheet, so the feature it powers is blank for every "
+        "client: " + "; ".join(missing) + ". Ask the HI team to re-export."
+        if missing else
+        f"All {len(exp)} columns the dashboard reads are present.")
+    add(sheet, "Expected column renamed", "high", len(ignored),
+        "Present but under a different header, and these are read case-sensitively, "
+        "so they are SILENTLY IGNORED: " + "; ".join(ignored) + "."
+        if ignored else "No header drift on case-sensitive columns.")
+    if tolerated:
+        add(sheet, "Header casing drift (tolerated)", "low", len(tolerated),
+            "Read case-insensitively, so nothing is lost - but fix at source "
+            "before it spreads: " + "; ".join(tolerated) + ".")
+
+
 def dq_checks(sheets: dict[str, pd.DataFrame], infos: list[SheetInfo],
-              cohort_df: pd.DataFrame) -> list[dict]:
+              cohort_df: pd.DataFrame,
+              used: dict[str, str | None] | None = None) -> list[dict]:
     out: list[dict] = []
 
     def add(sheet, name, sev, n, detail):
         out.append({"sheet": sheet, "check_name": name,
                     "severity": sev if n else "clear",
                     "n_records": int(n), "detail": detail})
+
+    # Audit only the sheets that were actually analysed. A stale sheet sitting
+    # in the workbook is ignored by design and should not raise findings.
+    for _kind, _name in (used or {}).items():
+        if _name and _name in sheets:
+            _col_audit(sheets[_name], _kind, _name, add)
 
     for i in infos:
         if i.kind != "eac":
@@ -226,22 +343,49 @@ def ingest_workbook(buf: bytes, as_of, mode: str = "snapshot", filename: str = "
     eacs = [i for i in infos if i.kind == "eac"]
     if not eacs:
         raise ValueError("No EAC line list found (need Session_1_Date or EAC_Cycle_Number).")
-    treat = next((i for i in infos if i.kind == "treatment"), None)
-    if treat is None:
+    treats = [i for i in infos if i.kind == "treatment"]
+    if not treats:
         raise ValueError("No treatment line list found (need currentViralLoad).")
     total = next((i for i in infos if i.kind == "total"), None)
 
-    # Newest EAC sheet wins. Success-censoring no longer matters for outcomes:
-    # follow-up VLs come from the clinical line lists, and the EAC sheet is read
-    # only for SESSION DATES, which the censoring never touched.
+    # ---- which sheet wins when the workbook carries several -----------------
+    # Sheet ORDER is the authority. Exports are appended chronologically, and
+    # trusting that is far less fragile than parsing "18th July" out of a sheet
+    # name. Both kinds now take the LAST sheet as the newest.
+    #
+    # They used to disagree: EAC took the last, treatment took the FIRST. A
+    # workbook holding both an 11-July and an 18-July treatment list therefore
+    # analysed the 11-July one and ignored the newer sheet without a word.
+    treat = treats[-1]
     primary = eacs[-1]
 
-    eac_df = sheets[primary.name]
+    # ---- the EAC list is NOT cumulative, so union it ------------------------
+    # Clients drop out of the EAC export once their cycle closes: 3,547 present
+    # in the May/June sheets were gone from the 4-July one. Reading only the
+    # newest sheet deletes their session dates, and they resurface downstream as
+    # "never had EAC" - 226 episodes in the July build, 22% of the no-EAC group.
+    #
+    # Newest sheet first, so build_cohort's drop_duplicates("sn") keeps the most
+    # recent row per client. Whole rows are kept intact and columns are never
+    # blended across exports: filling a gap in an in-progress cycle from an older
+    # one would credit a client with a Session_3 they have not yet attended.
+    eac_df = pd.concat([sheets[i.name] for i in reversed(eacs)], ignore_index=True)
     treat_df = sheets[treat.name]
     total_df = sheets[total.name] if total else treat_df.iloc[0:0]
 
+    def _keys(df: pd.DataFrame) -> set:
+        if "S/N" not in df:
+            return set()
+        return set(df["S/N"].astype("string").str.strip().dropna())
+
+    recovered = len(_keys(eac_df) - _keys(sheets[primary.name]))
+
     coh = build_cohort(total_df, treat_df, eac_df, as_of=as_of, mode=mode)
-    findings = dq_checks(sheets, infos, coh.df)
+    findings = dq_checks(sheets, infos, coh.df, used={
+        "total": total.name if total else None,
+        "treatment": treat.name,
+        "eac": primary.name,
+    })
 
     warnings = list(coh.warnings)
     for i in eacs:
@@ -251,7 +395,22 @@ def ingest_workbook(buf: bytes, as_of, mode: str = "snapshot", filename: str = "
                 f"(max {i.max_fu_vl:g}). Harmless: that column is no longer read. "
                 f"Outcomes come from the clinical line lists."
             )
-    warnings.append(f"EAC session dates read from '{primary.name}'. All viral loads - index and follow-up - come from the clinical line lists.")
+    if len(eacs) > 1:
+        warnings.append(
+            f"EAC session dates unioned across {len(eacs)} sheets "
+            f"({', '.join(i.name for i in eacs)}); '{primary.name}' is the newest and "
+            f"wins wherever a client appears in more than one. {recovered:,} clients "
+            f"carry session dates found ONLY in an older sheet - reading the newest "
+            f"alone would have counted them as never having had EAC.")
+    else:
+        warnings.append(f"EAC session dates read from '{primary.name}'.")
+    if len(treats) > 1:
+        warnings.append(
+            f"{len(treats)} treatment line lists present. Used the newest by sheet "
+            f"order, '{treat.name}'. Not read: "
+            f"{', '.join(i.name for i in treats if i is not treat)}. The treatment "
+            f"list is a current-state snapshot, so only the latest is meaningful.")
+    warnings.append("All viral loads - index and follow-up - come from the clinical line lists.")
 
     return coh, findings, warnings, infos, primary.name
 
