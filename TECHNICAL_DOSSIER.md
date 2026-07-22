@@ -440,14 +440,15 @@ baseline.
 | 2 | No audit trail | High | **Resolved** — `audit_log` implemented |
 | 3 | No brute-force protection on sign-in | Medium | **Resolved** — lockout implemented |
 | 4 | Any authenticated user could export the full line list | Medium | **Resolved** — restricted to analyst/admin and logged |
-| 5 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
-| 6 | Password policy is minimal (6-character floor, no complexity or expiry) | Medium | **Open** — pending ECEWS policy direction |
-| 7 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
-| 8 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
-| 9 | No automated schema down-migration | Low | Accepted by design |
-| 10 | No multi-factor authentication | — | **Not implemented** — available if ECEWS requires it |
+| 5 | EMR free-text rendered unescaped into the DOM in six places | Medium | **Resolved** — all data-derived strings now HTML-escaped; vector was a malformed upload, not a public form |
+| 6 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
+| 7 | Password policy is minimal (6-character floor, no complexity or expiry) | Medium | **Open** — pending ECEWS policy direction |
+| 8 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
+| 9 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
+| 10 | No automated schema down-migration | Low | Accepted by design |
+| 11 | No multi-factor authentication | — | **Not implemented** — available if ECEWS requires it |
 
-Items 5 and 6 are deployment and policy decisions rather than code defects, and
+Items 6 and 7 are deployment and policy decisions rather than code defects, and
 we would welcome ECEWS's standard on both.
 
 ---
