@@ -1465,10 +1465,10 @@ async function loadClients(flag){
     '<th class="r">Post-EAC VL</th><th class="r">Months</th><th>Plan</th></tr>';
   $('#drillB').innerHTML=rows.map(r=>'<tr>'+
     '<td class="num" style="font-size:11px;color:var(--ink-3)">'+String(r.sn).slice(0,9)+'\u2026</td>'+
-    '<td>'+(r.facility||'\u2014')+'</td><td>'+(r.state||'\u2014')+'</td><td>'+(r.sex||'\u2014')+'</td>'+
+    '<td>'+esc(r.facility||'\u2014')+'</td><td>'+esc(r.state||'\u2014')+'</td><td>'+esc(r.sex||'\u2014')+'</td>'+
     '<td class="r num">'+(r.age!=null?r.age:'\u2014')+'</td>'+
     '<td class="r num">'+(r.idx_vl!=null?fmt(r.idx_vl):'\u2014')+'</td>'+
-    '<td class="num" style="font-size:11px">'+String(r.idx_date||'\u2014').slice(0,10)+'</td>'+
+    '<td class="num" style="font-size:11px">'+esc(String(r.idx_date||'\u2014').slice(0,10))+'</td>'+
     '<td class="r num">'+(r.sessions||0)+'</td>'+
     '<td class="r num" style="'+(r.still_unsuppressed?'color:var(--brick);font-weight:600':'')+'">'+
       (r.fu_vl!=null?fmt(r.fu_vl):'\u2014')+'</td>'+
@@ -1499,7 +1499,7 @@ async function deep(prof,dd,byFac){
   $('#facB').innerHTML=fac.map(function(f){
     const r=(f.eac1_pct||0)/100, col=r<.5?C.brick:r<.75?C.honey:C.green;
     const aw=Math.max(0,f.still_unsuppressed-f.switched);
-    return '<tr><td style="font-weight:500">'+f.group+'</td>'+
+    return '<tr><td style="font-weight:500">'+esc(f.group)+'</td>'+
       '<td class="r num">'+fmt(f.n)+'</td>'+
       '<td class="r"><div class="bar-cell">'+
         '<span class="num" style="font-weight:600;color:'+col+'">'+pc(f.eac1_pct)+'</span>'+
@@ -2030,12 +2030,12 @@ function plansView(plans){
       '<th>ART status</th></tr>';
     $('#planB').innerHTML=rows.map(r=>'<tr>'+
       '<td class="num" style="font-size:11px;color:var(--ink-3)">'+String(r.sn).slice(0,9)+'\u2026</td>'+
-      '<td>'+(r.facility||'\u2014')+'</td><td>'+(r.state||'\u2014')+'</td>'+
+      '<td>'+esc(r.facility||'\u2014')+'</td><td>'+esc(r.state||'\u2014')+'</td>'+
       '<td class="r num">'+(r.age!=null?r.age:'\u2014')+'</td>'+
       '<td class="r num">'+(r.idx_vl!=null?fmt(r.idx_vl):'\u2014')+'</td>'+
       '<td class="r num">'+(r.sessions||0)+'</td>'+
       '<td class="r num">'+(r.fu_vl!=null?fmt(r.fu_vl):'\u2014')+'</td>'+
-      '<td>'+(r.art_status||'\u2014')+'</td></tr>').join('');
+      '<td>'+esc(r.art_status||'\u2014')+'</td></tr>').join('');
     $('#planPanel').scrollIntoView({block:'nearest'});
   });
 }
@@ -2081,7 +2081,7 @@ function advanced(r,m,dd){
       const p=x.p_resupp, col=p<70?C.brick:(p<88?C.honey:C.slate);
       return '<tr><td class="num" style="font-size:11px;color:var(--ink-3)">'+
         String(x.sn).slice(0,9)+'\u2026</td>'+
-        '<td>'+(x.facility||'\u2014')+'</td><td class="r num">'+(x.age!=null?x.age:'\u2014')+'</td>'+
+        '<td>'+esc(x.facility||'\u2014')+'</td><td class="r num">'+(x.age!=null?x.age:'\u2014')+'</td>'+
         '<td class="r num">'+(x.idx_vl!=null?fmt(x.idx_vl):'\u2014')+'</td>'+
         '<td class="r num">'+x.sessions+'</td>'+
         '<td><span class="tag t-n">'+String(x.plan||'\u2014').slice(0,2)+'</span></td>'+
@@ -2192,7 +2192,7 @@ async function doUpload(file){
     if(!r.ok) throw new Error(d.detail||'Upload failed');
     out.innerHTML='<div class="notice ok"><h3>Loaded '+fmt(d.cohort)+' episodes</h3>'+
       'Outcomes computed from <code>'+d.primary_eac_sheet+'</code>.<ul>'+
-      d.sheets.map(s=>'<li><code>'+s.name+'</code> \u2014 '+s.kind+', '+fmt(s.rows)+' rows '+
+      d.sheets.map(s=>'<li><code>'+esc(s.name)+'</code> \u2014 '+esc(s.kind)+', '+fmt(s.rows)+' rows '+
         (s.censored?'<span class="tag t-b">success-censored, excluded</span>':'')+'</li>').join('')+
       '</ul>'+(d.warnings.length?'<p style="margin-top:8px">'+d.warnings.join('<br>')+'</p>':'')+'</div>';
     loadUploads(); boot();
