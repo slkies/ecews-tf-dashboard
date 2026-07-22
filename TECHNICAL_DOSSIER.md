@@ -8,7 +8,7 @@ ECEWS domain and integration with the ECEWS Central Data Repository.
 |---|---|
 | Document version | 1.0 |
 | Date | 22 July 2026 |
-| Application commit | `e0458d4` |
+| Application commit | `871bc68` |
 | Prepared by | Data Analytics Lead, ECEWS/SPEED Program |
 | Status | For review |
 
@@ -94,8 +94,9 @@ third-party analytics or telemetry.
 ### 1.1 Repository
 
 The complete source is a single Git repository, currently private, comprising
-22 tracked files. **No patient data has ever been committed**; the `.gitignore`
-excludes `*.xlsx`, `*.parquet`, `*.parquet.zip` and `.env`, and this can be
+26 tracked files. **No patient data has ever been committed**; the `.gitignore`
+excludes `*.xlsx`, `*.parquet`, `*.parquet.zip` and `.env`, this is additionally
+enforced by a CI check that fails the build (section 1.5), and it can be
 confirmed against the full commit history.
 
 For handover, the repository can be transferred to an ECEWS GitHub organisation
@@ -114,6 +115,9 @@ or supplied as a bundle, at ECEWS's preference.
 | `backend/static/*.geojson` | Offline LGA/state boundaries for the map |
 | `backend/scripts/to_parquet.py` | Workbook → Parquet converter (operator tool) |
 | `backend/tests/test_indicators.py` | Unit tests for the indicator logic |
+| `backend/tests/test_api.py` | API integration tests, incl. the security controls |
+| `backend/tests/conftest.py` | Test fixtures and database setup |
+| `.github/workflows/ci.yml` | Continuous integration pipeline |
 | `backend/Dockerfile` | Container image definition |
 | `backend/requirements.txt` | Pinned dependencies |
 | `docker-compose.yml` | Local/self-hosted two-container stack |
@@ -124,14 +128,15 @@ or supplied as a bundle, at ECEWS's preference.
 
 ### 1.3 Runtime and dependencies
 
-Base image `python:3.12-slim`. Twelve pinned direct dependencies:
+Base image `python:3.12-slim`. Thirteen pinned direct dependencies, of which
+two (`pytest`, `httpx`) are used only by the test suite:
 
 ```
 fastapi 0.115.6      uvicorn 0.34.0       psycopg 3.2.3
 pandas 2.2.3         numpy 2.1.3          openpyxl 3.1.5
 python-multipart 0.0.20                   bcrypt 4.2.1
 PyJWT 2.10.1         pydantic 2.10.4      pyarrow 18.1.0
-pytest 8.3.4
+pytest 8.3.4         httpx 0.28.1
 ```
 
 All are mainstream, actively maintained packages. There is deliberately **no
@@ -147,6 +152,42 @@ docker compose up --build        # local: http://localhost:8080
 The container binds `$PORT` when the host injects one, and defaults to 8000
 otherwise, so the same image runs unchanged on a platform host or behind an
 ECEWS reverse proxy.
+
+### 1.5 Testing and continuous integration
+
+64 test functions, expanding to **89 test cases**, in two suites:
+
+| Suite | Covers |
+|---|---|
+| `test_indicators.py` | Indicator logic: the decision tree, temporal matching, negative-time exclusion, `S/N` precision, repeat episodes, schema drift between exports, success-censoring detection |
+| `test_api.py` | The API surface, and specifically **every security control claimed in section 6** |
+
+The API suite runs against a real PostgreSQL instance rather than a mock.
+Row-level scoping, the lockout counter and `ON DELETE CASCADE` are database
+behaviours; a mock would only ever confirm that the mock works. It asserts,
+among other things, that:
+
+- protected endpoints reject anonymous callers, and administrative endpoints
+  reject a non-administrator;
+- the sign-in response does not reveal whether an account exists;
+- lockout triggers on the fifth failure, blocks even a *correct* password
+  thereafter, resets on a successful sign-in, and applies per account;
+- **a scoped user cannot reach another state by requesting it as a filter**,
+  and the same restriction governs the CSV export;
+- bulk export is refused to a viewer and the refusal is audited;
+- the audit trail exposes no write route;
+- a failed upload leaves the previous snapshot current and intact.
+
+**Continuous integration** (`.github/workflows/ci.yml`) runs the full suite on
+every push and pull request against a PostgreSQL 16 service container. Two
+additional guards fail the build outright:
+
+1. **No patient data may be tracked in git.** `.gitignore` covers this, but a
+   forced add or a renamed extension would slip past it, and the data is
+   PEPFAR clinical records.
+2. **The JWT fallback must remain gated by `APP_ENV`.** Removing that guard
+   while leaving the fallback string present would silently return every
+   deployment to a signing key that is in this repository.
 
 ---
 
@@ -277,7 +318,10 @@ sees the state of its own data.
 
 An upload that cannot be parsed at all is marked `failed` with the error
 retained, and the previous snapshot remains current. A failed upload never
-becomes the active data set.
+becomes the active data set. This behaviour is covered by a regression test.
+
+Optional columns that an export omits are treated as absent data, not as an
+error: the affected indicator reports "not recorded" and the upload proceeds.
 
 ### 3.6 Processing steps
 
@@ -410,7 +454,8 @@ which sheets a given set of figures was built from.
 | Audit trail of authentication and patient-data access | Implemented |
 | Parameterised SQL throughout (no string interpolation of values) | Implemented |
 | Secrets supplied by environment, never committed | Implemented |
-| No patient data in source control | Implemented |
+| No patient data in source control | Implemented, and enforced by CI |
+| Automated regression tests over the controls above | Implemented (see 1.5) |
 | Raw upload not persisted | Implemented (see 3.7) |
 | Transport encryption | Provided by the hosting layer (see 8.3) |
 | Encryption at rest | Provided by the database host (see 8.3) |
@@ -441,14 +486,15 @@ baseline.
 | 3 | No brute-force protection on sign-in | Medium | **Resolved** — lockout implemented |
 | 4 | Any authenticated user could export the full line list | Medium | **Resolved** — restricted to analyst/admin and logged |
 | 5 | EMR free-text rendered unescaped into the DOM in six places | Medium | **Resolved** — all data-derived strings now HTML-escaped; vector was a malformed upload, not a public form |
-| 6 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
-| 7 | Password policy is minimal (6-character floor, no complexity or expiry) | Medium | **Open** — pending ECEWS policy direction |
-| 8 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
-| 9 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
-| 10 | No automated schema down-migration | Low | Accepted by design |
-| 11 | No multi-factor authentication | — | **Not implemented** — available if ECEWS requires it |
+| 6 | An export omitting an optional column aborted the whole upload with an opaque error | Medium | **Resolved** — missing optional columns now degrade to "not recorded"; found by the new API tests |
+| 7 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
+| 8 | Password policy is minimal (6-character floor, no complexity or expiry) | Medium | **Open** — pending ECEWS policy direction |
+| 9 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
+| 10 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
+| 11 | No automated schema down-migration | Low | Accepted by design |
+| 12 | No multi-factor authentication | — | **Not implemented** — available if ECEWS requires it |
 
-Items 6 and 7 are deployment and policy decisions rather than code defects, and
+Items 7 and 8 are deployment and policy decisions rather than code defects, and
 we would welcome ECEWS's standard on both.
 
 ---
