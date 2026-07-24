@@ -140,9 +140,9 @@ def test_admin_can_export(client, admin_h, cohort):
 
 def test_analyst_can_export(client, admin_h, cohort):
     client.post("/api/users", headers=admin_h,
-                json={"email": "analyst@ecews.org", "password": "analyst-pw",
+                json={"email": "analyst@ecews.org", "password": "Analyst-Pass-1",
                       "role": "analyst"})
-    h = hdr(client, ("analyst@ecews.org", "analyst-pw"))
+    h = hdr(client, ("analyst@ecews.org", "Analyst-Pass-1"))
     assert client.get("/api/export", headers=h).status_code == 200
 
 
@@ -157,10 +157,10 @@ def test_denied_export_is_audited(client, admin_h, viewer_h, cohort):
 def _scoped_viewer(client, admin_h, state):
     email = f"{state.lower()}@ecews.org"
     r = client.post("/api/users", headers=admin_h,
-                    json={"email": email, "password": "scoped-pw",
+                    json={"email": email, "password": "Scoped-Pass-1",
                           "role": "viewer", "scope_state": state})
     assert r.status_code == 200, r.text
-    return hdr(client, (email, "scoped-pw"))
+    return hdr(client, (email, "Scoped-Pass-1"))
 
 
 def test_unscoped_admin_sees_every_state(client, admin_h, cohort):
@@ -185,9 +185,9 @@ def test_scope_overrides_a_requested_filter(client, admin_h, cohort):
 
 def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
     client.post("/api/users", headers=admin_h,
-                json={"email": "d-analyst@ecews.org", "password": "scoped-pw",
+                json={"email": "d-analyst@ecews.org", "password": "Scoped-Pass-1",
                       "role": "analyst", "scope_state": "Delta"})
-    h = hdr(client, ("d-analyst@ecews.org", "scoped-pw"))
+    h = hdr(client, ("d-analyst@ecews.org", "Scoped-Pass-1"))
     csv = client.get("/api/export?state=Osun", headers=h).text
     assert "Osun" not in csv
     assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
@@ -219,6 +219,94 @@ def test_audit_trail_has_no_write_route(client, admin_h):
     """Append-only is a property of the API surface, not just of intent."""
     assert client.delete("/api/audit", headers=admin_h).status_code == 405
     assert client.post("/api/audit", headers=admin_h).status_code == 405
+
+
+# ── passwords ─────────────────────────────────────────────────────────
+def _make_user(client, admin_h, email="pw@ecews.org", pw="Correct-Horse-99"):
+    r = client.post("/api/users", headers=admin_h,
+                    json={"email": email, "password": pw, "role": "viewer"})
+    assert r.status_code == 200, r.text
+    uid = next(u["id"] for u in client.get("/api/users", headers=admin_h).json()
+               if u["email"] == email)
+    return uid, email, pw
+
+
+@pytest.mark.parametrize("pw", ["short", "changeme", "viewer1234", "blindalley"])
+def test_weak_or_default_passwords_are_refused(client, admin_h, pw):
+    r = client.post("/api/users", headers=admin_h,
+                    json={"email": "weak@ecews.org", "password": pw})
+    assert r.status_code == 400
+
+
+def test_admin_can_reset_another_users_password(client, admin_h):
+    uid, email, old = _make_user(client, admin_h)
+    assert client.post(f"/api/users/{uid}/password", headers=admin_h,
+                       json={"password": "Brand-New-Pass-1"}).status_code == 200
+    assert client.post("/api/login",
+                       json={"email": email, "password": "Brand-New-Pass-1"}
+                       ).status_code == 200
+    assert client.post("/api/login", json={"email": email, "password": old}
+                       ).status_code == 401
+
+
+def test_a_viewer_cannot_reset_anyone(client, admin_h, viewer_h):
+    uid, _, _ = _make_user(client, admin_h)
+    assert client.post(f"/api/users/{uid}/password", headers=viewer_h,
+                       json={"password": "Brand-New-Pass-1"}).status_code == 403
+
+
+def test_changing_your_own_password_requires_the_current_one(client, admin_h):
+    _, email, pw = _make_user(client, admin_h)
+    h = hdr(client, (email, pw))
+    assert client.post("/api/me/password", headers=h,
+                       json={"current_password": "wrong",
+                             "password": "Another-Good-1"}).status_code == 403
+    assert client.post("/api/me/password", headers=h,
+                       json={"current_password": pw,
+                             "password": "Another-Good-1"}).status_code == 200
+    assert client.post("/api/login",
+                       json={"email": email, "password": "Another-Good-1"}
+                       ).status_code == 200
+
+
+def test_a_reset_password_must_also_meet_the_policy(client, admin_h):
+    uid, _, _ = _make_user(client, admin_h)
+    assert client.post(f"/api/users/{uid}/password", headers=admin_h,
+                       json={"password": "abc"}).status_code == 400
+
+
+def test_password_events_are_audited(client, admin_h):
+    uid, _, _ = _make_user(client, admin_h)
+    client.post(f"/api/users/{uid}/password", headers=admin_h,
+                json={"password": "Brand-New-Pass-1"})
+    actions = {a["action"] for a in
+               client.get("/api/audit", headers=admin_h).json()["actions"]}
+    assert "user.password_reset" in actions
+
+
+# ── usage tracking ────────────────────────────────────────────────────
+def test_usage_is_admin_only(client, viewer_h):
+    assert client.get("/api/usage", headers=viewer_h).status_code == 403
+
+
+def test_usage_records_activity_per_user(client, admin_h, viewer_h, cohort):
+    client.get("/api/summary", headers=viewer_h)
+    client.get("/api/summary", headers=admin_h)
+    d = client.get("/api/usage?days=1", headers=admin_h).json()
+    emails = {p["email"] for p in d["people"]}
+    assert ADMIN[0] in emails
+    assert d["gap_minutes"] > 0
+    # Requests within one window collapse into a single session per user.
+    assert all(p["sessions"] >= 1 for p in d["people"])
+
+
+def test_usage_never_records_the_login_route(client, admin_h):
+    """Sign-in belongs to the audit trail; logging it here too would double-count
+    and would attribute a request to a session that did not exist yet."""
+    client.post("/api/login", json={"email": ADMIN[0], "password": "wrong"})
+    paths = {p["path"] for p in
+             client.get("/api/usage?days=1", headers=admin_h).json()["pages"]}
+    assert "/api/login" not in paths
 
 
 # ── upload pipeline ───────────────────────────────────────────────────

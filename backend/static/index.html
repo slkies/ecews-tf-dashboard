@@ -459,6 +459,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
       <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
       <button class="btn" id="btnExport">Export</button>
+      <button class="btn" id="btnPw">Change password</button>
       <button class="btn" id="btnOut">Sign out</button>
     </div>
   </header>
@@ -933,13 +934,32 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
         <select id="nuRole"><option value="viewer">Viewer</option>
           <option value="analyst">Analyst</option><option value="admin">Admin</option></select>
         <select id="nuState"><option>All</option></select>
-        <input id="nuPw" type="text" placeholder="Password (min 6)">
+        <input id="nuPw" type="text" placeholder="Password (min 10)">
         <button class="btn btn-solid" id="nuAdd">Add user</button>
         <span id="nuMsg"></span>
       </div>
       <div class="tw" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Email</th>
         <th>Role</th><th>Scope</th><th>Status</th><th></th></tr></thead>
         <tbody id="userB"></tbody></table></div></div>
+
+    <div class="panel"><div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div><h2>Platform usage</h2>
+          <p>Who is signing in and what they open. A <strong>session</strong> ends after
+             <span id="usGap">30</span> minutes without activity &mdash; the app holds no live
+             connection and most people close the tab rather than signing out, so
+             <strong>time is an estimate</strong> and a visit of a single page reads as
+             0 minutes.</p></div>
+        <select id="usDays" class="btn sm"><option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option></select></div>
+      <div class="tw"><table><thead><tr><th>User</th><th>Role</th><th>Scope</th>
+        <th class="r">Sessions</th><th class="r">Days active</th><th class="r">Pages opened</th>
+        <th class="r">Est. minutes</th><th>Last seen</th></tr></thead>
+        <tbody id="usB"></tbody></table></div>
+      <div id="usNever" style="margin-top:10px"></div>
+      <div class="tw" style="margin-top:14px"><table><thead><tr><th>Most-opened pages</th>
+        <th class="r">Views</th><th class="r">Users</th></tr></thead>
+        <tbody id="usPages"></tbody></table></div></div>
 
     <div class="panel"><div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
         <div><h2>Feedback</h2>
@@ -1006,7 +1026,8 @@ async function boot(){
   $('#login').style.display='none'; $('#app').style.display='block';
   $('#uName').textContent=ME.name||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
-  if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();}
+  if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();
+    const ud=$('#usDays'); if(ud) ud.onchange=loadUsage;}
   // Bulk export of patient-level rows is analyst/admin only, enforced server
   // side. Hide the control for viewers so the rule is visible, not a surprise.
   if(ME.role!=='admin'&&ME.role!=='analyst'){const b=$('#btnExport'); if(b)b.style.display='none';}
@@ -2150,14 +2171,67 @@ async function loadUsers(){
       '<td><span class="tag '+(roleTag[u.role]||'t-n')+'">'+esc(u.role)+'</span></td>'+
       '<td>'+esc(u.scope_state||'All states')+'</td>'+
       '<td>'+(u.is_active?'<span class="tag t-g">active</span>':'<span class="tag t-n">disabled</span>')+'</td>'+
-      '<td class="r">'+(u.id===ME.id?'':'<button class="btn sm" data-uid="'+u.id+'">'
+      '<td class="r" style="white-space:nowrap">'
+        +'<button class="btn sm" data-pw="'+u.id+'" data-em="'+esc(u.email)+'">Reset password</button> '
+        +(u.id===ME.id?'':'<button class="btn sm" data-uid="'+u.id+'">'
         +(u.is_active?'Disable':'Enable')+'</button>')+'</td></tr>').join('');
-    $$('#userB button').forEach(b=>b.onclick=async()=>{
+    $$('#userB button[data-uid]').forEach(b=>b.onclick=async()=>{
       try{ await api('/users/'+b.dataset.uid,{method:'PATCH'}); loadUsers(); }catch(e){ alert(e.message); }});
+    $$('#userB button[data-pw]').forEach(b=>b.onclick=async()=>{
+      const pw=prompt('New password for '+b.dataset.em+'\n\nAt least 10 characters. '
+        +'Give it to them directly and ask them to change it themselves afterwards.');
+      if(!pw) return;
+      try{ await api('/users/'+b.dataset.pw+'/password',
+             {method:'POST',body:JSON.stringify({password:pw})});
+           alert('Password updated for '+b.dataset.em+'.'); }
+      catch(e){ alert(e.message); }});
     // populate the scope-state dropdown from the loaded filters
     const st=$('#fState'); if(st) $('#nuState').innerHTML=[...st.options].map(o=>'<option>'+o.value+'</option>').join('');
   }catch(e){}
 }
+// Friendly page names: the API path is what gets logged, but "Overview" is what
+// an administrator is actually asking about.
+const PAGE_NAME={'/api/summary':'Overview (headline figures)','/api/overview':'Overview',
+  '/api/cascade':'Cascade','/api/breakdown':'Breakdowns','/api/plans':'Treatment plans',
+  '/api/clients':'Client worklist','/api/export':'CSV export','/api/deep-dive':'Deep dive',
+  '/api/profile':'Deep dive (profile)','/api/dtc':'DTC review','/api/time-metrics':'Time metrics',
+  '/api/survival':'Time metrics (survival)','/api/unsupp-curve':'Time to unsuppression',
+  '/api/risk':'Advanced analytics','/api/mortality':'Advanced analytics (outcomes)',
+  '/api/dq':'Data quality','/api/uploads':'Admin — uploads','/api/users':'Admin — users',
+  '/api/audit':'Admin — audit trail','/api/usage':'Admin — usage','/api/feedback':'Feedback',
+  '/api/filters':'(filter lists)','/api/me':'(session check)'};
+const pageName=p=>PAGE_NAME[p]||PAGE_NAME[p.replace(/\/[^/]+$/,'')]||p;
+
+async function loadUsage(){
+  try{
+    const days=$('#usDays')?$('#usDays').value:30;
+    const d=await api('/usage?days='+days);
+    $('#usGap').textContent=d.gap_minutes;
+    $('#usB').innerHTML=d.people.map(p=>'<tr>'+
+      '<td style="font-weight:500">'+esc(p.email)
+        +(p.is_active?'':' <span class="tag t-n">disabled</span>')+'</td>'+
+      '<td><span class="tag t-n">'+esc(p.role)+'</span></td>'+
+      '<td>'+esc(p.scope_state||'All states')+'</td>'+
+      '<td class="r num">'+fmt(p.sessions)+'</td>'+
+      '<td class="r num">'+fmt(p.active_days)+'</td>'+
+      '<td class="r num">'+fmt(p.requests)+'</td>'+
+      '<td class="r num">'+fmt(p.minutes)+'</td>'+
+      '<td class="num" style="font-size:11px">'
+        +new Date(p.last_seen).toLocaleString()+'</td></tr>').join('')
+      ||'<tr><td colspan="8" style="text-align:center;padding:26px;color:var(--ink-3)">'
+        +'No activity recorded in this window.</td></tr>';
+    $('#usNever').innerHTML=d.never_used.length
+      ? '<div class="notice"><h3>Never signed in</h3><p>'
+        +d.never_used.map(n=>esc(n.email)).join(', ')
+        +' &mdash; accounts exist but have not been used. Worth a nudge, or remove them.</p></div>'
+      : '';
+    $('#usPages').innerHTML=d.pages.map(p=>'<tr>'+
+      '<td>'+esc(pageName(p.path))+'</td>'+
+      '<td class="r num">'+fmt(p.n)+'</td>'+
+      '<td class="r num">'+fmt(p.users)+'</td></tr>').join('');
+  }catch(e){}
+}
+
 async function loadFeedback(){
   try{
     const rows=await api('/feedback');
@@ -2230,6 +2304,17 @@ $$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
 $('#btnLogin').onclick=signIn;
 $('#pw').onkeydown=e=>{if(e.key==='Enter')signIn();};
 $('#btnOut').onclick=signOut;
+$('#btnPw').onclick=async()=>{
+  const cur=prompt('Your current password:'); if(!cur) return;
+  const nw=prompt('New password (at least 10 characters):'); if(!nw) return;
+  if(nw!==prompt('Type the new password again to confirm:')){
+    alert('The two entries did not match. Nothing was changed.'); return; }
+  try{
+    await api('/me/password',{method:'POST',
+      body:JSON.stringify({current_password:cur,password:nw})});
+    alert('Password changed. Use the new one next time you sign in.');
+  }catch(e){ alert(e.message); }
+};
 $('#btnReset').onclick=()=>{$$('#filters select').forEach(s=>s.selectedIndex=0);
   if(window.__geoFill)window.__geoFill(); if(window.__qtrFill)window.__qtrFill(); refresh();};
 $$('#filters select').forEach(s=>s.onchange=refresh);

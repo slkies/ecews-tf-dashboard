@@ -133,6 +133,38 @@ def _audit(action: str, *, user_id: int | None = None, email: str | None = None,
         log.exception("audit write failed for action=%s", action)
 
 
+# How long a gap ends a session. There is no logout event to rely on - the
+# token is stateless and people close the tab - so sessions are inferred from
+# inactivity, the same way web analytics does it. This makes durations an
+# ESTIMATE, and a session containing a single request measures as zero.
+SESSION_GAP_MINUTES = int(os.getenv("SESSION_GAP_MINUTES", "30"))
+
+
+@app.middleware("http")
+async def _record_usage(request: Request, call_next):
+    """
+    One row per authenticated API call, for the usage panel.
+
+    The user is taken from the token rather than the database: this runs on
+    every request, and a lookup per request would be a real cost for a figure
+    nobody needs to be exact. Anything that goes wrong here is swallowed -
+    usage tracking must never be the reason a page fails to load.
+    """
+    response = await call_next(request)
+    try:
+        path = request.url.path
+        head = request.headers.get("authorization", "")
+        if (path.startswith("/api/") and path not in ("/api/health", "/api/login")
+                and head.startswith("Bearer ")):
+            uid = int(decode_token(head[7:])["sub"])
+            with pool.connection() as c:
+                c.execute("INSERT INTO usage_log (user_id, path) VALUES (%s,%s)",
+                          (uid, path[:120]))
+    except Exception:  # noqa: BLE001
+        pass
+    return response
+
+
 def _recent_failures(email: str) -> int:
     """
     Failed sign-ins for this address since the later of the lockout window and
@@ -586,6 +618,29 @@ class NewUser(BaseModel):
     scope_state: str | None = None
 
 
+class NewPassword(BaseModel):
+    password: str
+    current_password: str | None = None   # required when changing your own
+
+
+# Minimum length, configurable so ECEWS policy can raise it without a code
+# change. The seeded defaults are refused outright: the whole point of a reset
+# is to stop an account sitting on a password that is printed in this source.
+MIN_PASSWORD = int(os.getenv("MIN_PASSWORD_LENGTH", "10"))
+_BANNED = {"changeme", "viewer1234", "blindalley", "password", "admin",
+           "12345678", "password123"}
+
+
+def _check_password(pw: str) -> None:
+    pw = pw or ""
+    if len(pw) < MIN_PASSWORD:
+        raise HTTPException(
+            400, f"Password must be at least {MIN_PASSWORD} characters.")
+    if pw.lower() in _BANNED:
+        raise HTTPException(
+            400, "That password is one of the known defaults. Choose another.")
+
+
 @app.get("/api/users")
 def list_users(u: Annotated[dict, Depends(admin)]):
     with pool.connection() as c:
@@ -599,8 +654,7 @@ def create_user(body: NewUser, u: Annotated[dict, Depends(admin)], request: Requ
     email = (body.email or "").lower().strip()
     if "@" not in email:
         raise HTTPException(400, "A valid email is required.")
-    if len(body.password or "") < 6:
-        raise HTTPException(400, "Password must be at least 6 characters.")
+    _check_password(body.password)
     role = body.role if body.role in ("admin", "analyst", "viewer") else "viewer"
     with pool.connection() as c:
         if c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
@@ -630,6 +684,46 @@ def toggle_user(uid: int, u: Annotated[dict, Depends(admin)], request: Request):
     return {"ok": True}
 
 
+@app.post("/api/users/{uid}/password")
+def reset_password(uid: int, body: NewPassword, request: Request,
+                   u: Annotated[dict, Depends(admin)]):
+    """
+    Administrative reset. Does NOT require the target's current password - that
+    is the point: it is how an account whose password is unknown, forgotten or
+    still on a seeded default gets recovered.
+    """
+    _check_password(body.password)
+    with pool.connection() as c:
+        r = c.execute("UPDATE users SET password_hash=%s WHERE id=%s "
+                      "RETURNING email", (hash_password(body.password), uid)
+                      ).fetchone()
+    if not r:
+        raise HTTPException(404, "User not found.")
+    _audit("user.password_reset", user_id=u["id"], email=u["email"],
+           request=request, detail=f"reset the password for {r['email']}")
+    return {"ok": True}
+
+
+@app.post("/api/me/password")
+def change_own_password(body: NewPassword, request: Request, u: U):
+    """
+    Self-service change. Requires the current password, so a walk-up at an
+    unattended signed-in browser cannot lock the real owner out of the account.
+    """
+    if not body.current_password or not verify_password(
+            body.current_password, u["password_hash"]):
+        _audit("user.password_change_failed", user_id=u["id"], email=u["email"],
+               request=request, detail="current password did not match")
+        raise HTTPException(403, "Your current password is not correct.")
+    _check_password(body.password)
+    with pool.connection() as c:
+        c.execute("UPDATE users SET password_hash=%s WHERE id=%s",
+                  (hash_password(body.password), u["id"]))
+    _audit("user.password_change", user_id=u["id"], email=u["email"],
+           request=request, detail="changed their own password")
+    return {"ok": True}
+
+
 @app.get("/api/audit")
 def get_audit(u: Annotated[dict, Depends(admin)],
               action: str | None = Query(None),
@@ -651,6 +745,74 @@ def get_audit(u: Annotated[dict, Depends(admin)],
             "SELECT action, count(*) AS n FROM audit_log "
             "GROUP BY action ORDER BY n DESC").fetchall()
     return {"rows": rows, "actions": kinds}
+
+
+@app.get("/api/usage")
+def get_usage(u: Annotated[dict, Depends(admin)], days: int = Query(90, le=365)):
+    """
+    Who is using the dashboard, how often, and roughly for how long.
+
+    Sessions are inferred from gaps in activity (see SESSION_GAP_MINUTES), so
+    `minutes` is an estimate and a one-request session reads as zero. It is
+    sound for "is this being used, and by whom"; it is not a precise dwell time
+    and should not be reported as one.
+    """
+    window = f"{int(days)} days"
+    with pool.connection() as c:
+        people = c.execute(f"""
+            WITH marked AS (
+              SELECT user_id, ts,
+                     CASE WHEN LAG(ts) OVER w IS NULL
+                           OR ts - LAG(ts) OVER w >
+                              interval '{SESSION_GAP_MINUTES} minutes'
+                          THEN 1 ELSE 0 END AS starts
+              FROM usage_log
+              WHERE ts > now() - interval '{window}'
+              WINDOW w AS (PARTITION BY user_id ORDER BY ts)
+            ), grouped AS (
+              SELECT user_id, ts,
+                     SUM(starts) OVER (PARTITION BY user_id ORDER BY ts) AS sid
+              FROM marked
+            ), spans AS (
+              SELECT user_id, sid, MIN(ts) AS started, MAX(ts) AS ended,
+                     count(*) AS hits
+              FROM grouped GROUP BY user_id, sid
+            )
+            SELECT us.email, us.role, us.scope_state, us.is_active,
+                   count(*)                                   AS sessions,
+                   sum(s.hits)                                AS requests,
+                   count(DISTINCT s.started::date)            AS active_days,
+                   max(s.ended)                               AS last_seen,
+                   round(sum(EXTRACT(EPOCH FROM (s.ended - s.started)))
+                         / 60.0)::int                         AS minutes
+            FROM spans s JOIN users us ON us.id = s.user_id
+            GROUP BY us.email, us.role, us.scope_state, us.is_active
+            ORDER BY max(s.ended) DESC
+        """).fetchall()
+
+        pages = c.execute(f"""
+            SELECT path, count(*) AS n, count(DISTINCT user_id) AS users
+            FROM usage_log WHERE ts > now() - interval '{window}'
+            GROUP BY path ORDER BY n DESC LIMIT 15
+        """).fetchall()
+
+        daily = c.execute(f"""
+            SELECT ts::date AS day, count(*) AS n,
+                   count(DISTINCT user_id) AS users
+            FROM usage_log WHERE ts > now() - interval '{window}'
+            GROUP BY 1 ORDER BY 1
+        """).fetchall()
+
+        never = c.execute("""
+            SELECT email, role, created_at FROM users
+            WHERE is_active AND id NOT IN (SELECT DISTINCT user_id
+                                           FROM usage_log WHERE user_id IS NOT NULL)
+            ORDER BY created_at
+        """).fetchall()
+
+    return {"people": people, "pages": pages, "daily": daily,
+            "never_used": never, "gap_minutes": SESSION_GAP_MINUTES,
+            "days": days}
 
 
 @app.get("/api/dq")

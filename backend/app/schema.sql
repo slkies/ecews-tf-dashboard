@@ -147,6 +147,22 @@ CREATE INDEX IF NOT EXISTS audit_user  ON audit_log(user_id, ts DESC);
 -- Supports the lockout query, which counts recent failures for one address.
 CREATE INDEX IF NOT EXISTS audit_login ON audit_log(email, action, ts DESC);
 
+-- Lightweight usage tracking: one row per authenticated API request.
+--
+-- Deliberately SEPARATE from audit_log. That table is a security record and
+-- must stay readable and un-noisy; this one is high-volume operational data
+-- answering "is the dashboard being used, by whom, and for what". It cascades
+-- on user delete for the same reason - usage statistics about a removed account
+-- are not evidence, whereas their audit trail is.
+CREATE TABLE IF NOT EXISTS usage_log (
+  id      BIGSERIAL PRIMARY KEY,
+  ts      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  path    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_user_ts ON usage_log(user_id, ts);
+CREATE INDEX IF NOT EXISTS usage_ts      ON usage_log(ts DESC);
+
 -- Per-sheet data-quality findings, surfaced in the dashboard.
 CREATE TABLE IF NOT EXISTS dq_findings (
   id         SERIAL PRIMARY KEY,

@@ -8,7 +8,7 @@ ECEWS domain and integration with the ECEWS Central Data Repository.
 |---|---|
 | Document version | 1.0 |
 | Date | 22 July 2026 |
-| Application commit | `871bc68` |
+| Application commit | `pending` |
 | Prepared by | Data Analytics Lead, ECEWS/SPEED Program |
 | Status | For review |
 
@@ -75,8 +75,8 @@ This is the single most important framing point for the review.
                        ▼
    ┌──────────────────────────────────────────┐
    │  PostgreSQL 16                           │
-   │  users · uploads · cohort ·              │
-   │  dq_findings · feedback · audit_log      │
+   │  users · uploads · cohort · dq_findings  │
+   │  feedback · audit_log · usage_log        │
    └───────────────────┬──────────────────────┘
                        │  aggregated, scope-filtered
                        ▼
@@ -155,7 +155,7 @@ ECEWS reverse proxy.
 
 ### 1.5 Testing and continuous integration
 
-64 test functions, expanding to **89 test cases**, in two suites:
+78 test functions, expanding to **101 test cases**, in two suites:
 
 | Suite | Covers |
 |---|---|
@@ -201,7 +201,7 @@ environment variable. No database credentials appear in source.
 
 ### 2.2 Tables
 
-Six tables. The complete definition is `backend/app/schema.sql`.
+Seven tables. The complete definition is `backend/app/schema.sql`.
 
 | Table | Contents | Sensitivity |
 |---|---|---|
@@ -210,6 +210,7 @@ Six tables. The complete definition is `backend/app/schema.sql`.
 | `cohort` | **The derived patient-level cohort** — one row per failure episode, 72 columns | Patient data |
 | `dq_findings` | Data-quality findings per upload | Metadata |
 | `feedback` | In-app user feedback | Low |
+| `usage_log` | One row per authenticated request, for the usage panel | Operational |
 | `audit_log` | Append-only security audit trail | Security record |
 
 `cohort` is the only table holding patient-level data. It stores the
@@ -367,7 +368,30 @@ one place to address, and it is configurable at the framework level.
   `audit_log`, so it survives restarts and applies across all workers, and it
   counts from the last successful sign-in rather than indefinitely.
 
-### 4.2 Roles
+### 4.2 Account provisioning
+
+**Accounts are created by an administrator. There is no self-registration**, and
+adding one is deliberately not possible from the sign-in page.
+
+This is a design decision, not an omission. Every account carries a data scope
+(section 4.4), and that scope is the access-control boundary — deciding whether
+a given person may see Delta or Osun is a judgement an administrator makes, not
+a dropdown the requester fills in for themselves. For a patient-level clinical
+data set, provisioning has to be an explicit act by someone accountable for it.
+
+Passwords are managed as follows:
+
+- an administrator sets an initial password when creating the account, and can
+  **reset** any account's password without knowing the old one, which is how a
+  forgotten or still-default password is recovered;
+- **users change their own** password from the header, and must supply their
+  current one to do so, so an unattended signed-in browser cannot be used to
+  lock the real owner out;
+- minimum length is **10 characters**, configurable through
+  `MIN_PASSWORD_LENGTH`; the known seeded defaults are refused outright;
+- every reset, change and failed change attempt is written to the audit trail.
+
+### 4.3 Roles
 
 | Role | Capabilities |
 |---|---|
@@ -375,7 +399,7 @@ one place to address, and it is configurable at the framework level.
 | `analyst` | Read all dashboards within scope; **may export the line list** |
 | `viewer` | Read dashboards within scope only; **cannot export** |
 
-### 4.3 Row-level scope
+### 4.4 Row-level scope
 
 Each account may carry `scope_state` and/or `scope_facility`. Where set, the
 account can only ever see rows matching that scope.
@@ -386,14 +410,14 @@ overrides any filter the client requests**. A viewer scoped to Delta cannot
 obtain Osun data by manipulating a request parameter, and the CSV export path
 uses the same function, so it inherits the same restriction.
 
-### 4.4 Authorisation of administrative functions
+### 4.5 Authorisation of administrative functions
 
 Administrative endpoints (upload, delete, prune, user management, audit,
 feedback) are gated by a dependency that rejects any non-admin caller with HTTP
 403. This is server-side; hiding controls in the interface is presentation only
 and is never relied upon for enforcement.
 
-### 4.5 Bulk extraction
+### 4.6 Bulk extraction
 
 Exporting the patient-level line list as CSV is restricted to `analyst` and
 `admin`. Both successful and denied attempts are recorded in the audit trail,
@@ -456,6 +480,7 @@ which sheets a given set of figures was built from.
 | Secrets supplied by environment, never committed | Implemented |
 | No patient data in source control | Implemented, and enforced by CI |
 | Automated regression tests over the controls above | Implemented (see 1.5) |
+| Password reset and self-service change | Implemented (see 4.2) |
 | Raw upload not persisted | Implemented (see 3.7) |
 | Transport encryption | Provided by the hosting layer (see 8.3) |
 | Encryption at rest | Provided by the database host (see 8.3) |
@@ -471,6 +496,27 @@ hosting layer).
 
 The trail is readable only by administrators, through a read-only endpoint.
 No application code updates or deletes an audit row.
+
+### 6.2 Usage tracking, and what it means for staff
+
+Separately from the security audit, the application records one row per
+authenticated request (`usage_log`) so administrators can see whether the
+dashboard is actually being used, by whom, and which pages matter. This is
+**staff activity data**, and we would rather state it plainly here than have it
+discovered:
+
+- it records the user, the page and the time — never anything the user typed,
+  and never patient data;
+- session duration is **inferred** from gaps in activity, not measured. The
+  application holds no live connection and most people close the tab rather than
+  signing out, so a visit consisting of one page reads as zero minutes. It is
+  sound for "is this being used"; it is not a timesheet and should not be read
+  as one;
+- it is visible to administrators only;
+- if ECEWS policy requires staff to be notified that usage is recorded, or
+  requires a retention limit on this table, both are straightforward — the table
+  is independent of everything else and can be pruned on a schedule without
+  affecting the dashboard or the audit trail.
 
 ---
 
@@ -488,7 +534,7 @@ baseline.
 | 5 | EMR free-text rendered unescaped into the DOM in six places | Medium | **Resolved** — all data-derived strings now HTML-escaped; vector was a malformed upload, not a public form |
 | 6 | An export omitting an optional column aborted the whole upload with an opaque error | Medium | **Resolved** — missing optional columns now degrade to "not recorded"; found by the new API tests |
 | 7 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
-| 8 | Password policy is minimal (6-character floor, no complexity or expiry) | Medium | **Open** — pending ECEWS policy direction |
+| 8 | Password policy | Medium | **Largely resolved** — 10-character floor (configurable), known defaults refused, admin reset and self-service change; complexity rules and expiry still pending ECEWS policy |
 | 9 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
 | 10 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
 | 11 | No automated schema down-migration | Low | Accepted by design |
