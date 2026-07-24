@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECEWS TF Monitor — Design Prototype v4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ══════════════════════════════════════════════════════════════
+   DESIGN PROTOTYPE — not wired to the API. Figures are real,
+   computed from the 11 July export under the corrected FY rules.
+
+   Changes from v3:
+     · white canvas, surfaces do the separating (no heavy borders)
+     · left rail: one page per section, no top tabs
+     · alerts collapse into ONE header chip + drawer (no banner stack)
+     · type scale up one step: base 15px
+     · fluid grid,true mobile layout at <900px
+   ══════════════════════════════════════════════════════════════ */
+:root{
+  --bg:#FFFFFF;
+  --surface:#F7F8F7;        /* barely-there tint, does the work borders used to */
+  --surface-2:#EFF2F0;
+  --line:#E4E8E5;
+  --ink:#12181A;
+  --ink-2:#5A6560;
+  --ink-3:#8E9A94;
+
+  --brand:#08684E;
+  --brand-2:#0D9B75;
+  --brand-soft:#E8F3EF;
+
+  --amber:#B0770E;  --amber-soft:#FDF3E0;
+  --red:#B03A28;    --red-soft:#FBECE9;
+  --blue:#3E6C86;   --blue-soft:#EAF1F5;
+  --violet:#6B5B95;
+
+  --r:14px; --r-sm:9px;
+  --shadow:0 1px 2px rgba(18,24,26,.04), 0 4px 16px rgba(18,24,26,.045);
+  --rail:230px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:15px}                       /* was 14 — one step up */
+body{background:var(--bg);color:var(--ink);
+  font-family:'IBM Plex Sans',system-ui,sans-serif;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+/* ── shell ─────────────────────────────────────────────── */
+.shell{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100vh}
+
+.rail{background:var(--surface);border-right:1px solid var(--line);
+  padding:20px 14px;position:sticky;top:0;height:100vh;
+  display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand .m{width:34px;height:34px;border-radius:9px;background:var(--brand);color:#fff;
+  display:grid;place-items:center;font-weight:700;font-size:13px;flex-shrink:0}
+.brand b{font-size:.93rem;font-weight:600;display:block;letter-spacing:-.01em}
+.brand span{font-size:.72rem;color:var(--ink-3);display:block}
+
+.nav-lbl{font-size:.66rem;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.09em;padding:14px 10px 6px}
+.rail a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);
+  font-size:.88rem;font-weight:500;color:var(--ink-2);text-decoration:none;cursor:pointer;
+  transition:.13s}
+.rail a:hover{background:var(--surface-2);color:var(--ink)}
+.rail a.on{background:var(--bg);color:var(--brand);font-weight:600;box-shadow:var(--shadow)}
+.rail a i{width:17px;height:17px;flex-shrink:0;opacity:.85}
+.rail a .pill{margin-left:auto;font-size:.68rem;font-weight:600;padding:1px 6px;border-radius:20px;
+  background:var(--red-soft);color:var(--red)}
+.rail-foot{margin-top:auto;padding:12px 10px;border-top:1px solid var(--line);
+  font-size:.72rem;color:var(--ink-3)}
+
+/* ── main ───────────────────────────────────────────────── */
+main{min-width:0;padding:0 30px 60px}
+.head{display:flex;align-items:center;gap:14px;padding:22px 0 18px;flex-wrap:wrap}
+.head h1{font-size:1.35rem;font-weight:600;letter-spacing:-.025em}
+.head .sub{font-size:.82rem;color:var(--ink-3);margin-top:2px}
+.head .sp{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* the ONE status affordance that replaces the banner stack */
+.status{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:20px;
+  background:var(--amber-soft);color:var(--amber);border:none;cursor:pointer;
+  font:inherit;font-size:.78rem;font-weight:600}
+.status .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex-shrink:0}
+.status:hover{filter:brightness(.97)}
+
+.btn{font:inherit;font-size:.78rem;font-weight:600;padding:8px 14px;border-radius:var(--r-sm);
+  border:1px solid var(--line);background:var(--bg);color:var(--ink-2);cursor:pointer;
+  white-space:nowrap;transition:.13s}
+.btn:hover{border-color:var(--brand);color:var(--brand)}
+.btn-solid{background:var(--brand);border-color:var(--brand);color:#fff}
+
+/* filters — a quiet strip, not a card */
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  padding:12px 0 18px;border-bottom:1px solid var(--line);margin-bottom:24px}
+.seg{display:inline-flex;background:var(--surface);border-radius:var(--r-sm);padding:3px}
+.seg button{font:inherit;font-size:.78rem;font-weight:600;padding:5px 13px;border:none;
+  background:none;color:var(--ink-3);border-radius:6px;cursor:pointer;transition:.13s}
+.seg button.on{background:var(--bg);color:var(--brand);box-shadow:var(--shadow)}
+select{font:inherit;font-size:.8rem;padding:7px 11px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--bg);color:var(--ink);cursor:pointer;min-width:120px}
+select:focus{outline:2px solid var(--brand);outline-offset:-1px}
+.count{margin-left:auto;font-size:.78rem;color:var(--ink-3)}
+.count b{color:var(--ink);font-weight:600}
+
+/* ── KPI ────────────────────────────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:17px 18px;
+  box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi .k{font-size:.72rem;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.07em;display:flex;align-items:center;gap:6px}
+.kpi .v{font-size:1.95rem;font-weight:600;margin-top:7px;letter-spacing:-.035em;line-height:1.1}
+.kpi .n{font-size:.76rem;color:var(--ink-3);margin-top:3px}
+.kpi .trend{font-size:.72rem;font-weight:600;margin-top:6px;display:inline-flex;align-items:center;gap:4px}
+.up{color:var(--brand-2)} .down{color:var(--red)}
+.kpi .spark{position:absolute;right:0;bottom:0;width:82px;height:34px;opacity:.5}
+.kpi.accent{background:var(--brand);border-color:var(--brand)}
+.kpi.accent .k,.kpi.accent .n{color:rgba(255,255,255,.72)}
+.kpi.accent .v{color:#fff}
+
+/* ── cards ──────────────────────────────────────────────── */
+.grid{display:grid;gap:16px;margin-bottom:16px}
+.g-2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.g-32{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);
+  padding:20px 22px;box-shadow:var(--shadow);min-width:0}
+.card-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.card-h h2{font-size:.93rem;font-weight:600;letter-spacing:-.01em}
+.card-h p{font-size:.79rem;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.legend{display:flex;gap:12px;font-size:.74rem;color:var(--ink-3);flex-wrap:wrap}
+.legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px}
+
+/* narrative */
+.narr{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:22px 24px;margin-bottom:16px}
+.narr .eyebrow{font-size:.68rem;font-weight:600;color:var(--brand);text-transform:uppercase;
+  letter-spacing:.09em;margin-bottom:9px}
+.narr h2{font-size:1.05rem;font-weight:600;margin-bottom:10px;letter-spacing:-.02em}
+.narr p{font-size:.9rem;color:var(--ink-2);line-height:1.72;margin-bottom:11px;max-width:74ch}
+.narr p:last-child{margin-bottom:0}
+.narr b{color:var(--ink);font-weight:600}
+.narr .mono{font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--brand)}
+
+/* cascade */
+.step{display:grid;grid-template-columns:190px 1fr 140px;gap:14px;align-items:center;
+  padding:10px 0;border-bottom:1px solid var(--surface-2)}
+.step:last-child{border-bottom:none}
+.step .lbl{font-size:.83rem;font-weight:500;display:flex;gap:8px;align-items:center}
+.step .tier{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--ink-3);width:18px}
+.track{height:24px;border-radius:7px;background:var(--surface-2);position:relative;overflow:hidden}
+.fill{position:absolute;inset:0 auto 0 0;border-radius:7px}
+.step .fig{text-align:right;display:flex;justify-content:flex-end;align-items:baseline;gap:8px;
+  font-size:.86rem;font-weight:600}
+.step .pct{font-size:.75rem;color:var(--ink-3);font-weight:500;min-width:44px}
+.loss{font-size:.72rem;color:var(--red);font-weight:600}
+
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;padding:9px 12px;font-size:.68rem;font-weight:600;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid var(--surface-2)}
+tr:last-child td{border-bottom:none}
+th.r,td.r{text-align:right}
+.bar{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.mini{width:56px;height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+.mini i{display:block;height:100%;border-radius:3px}
+.tag{display:inline-block;font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:20px}
+.t-g{background:var(--brand-soft);color:var(--brand)}
+.t-a{background:var(--amber-soft);color:var(--amber)}
+.t-r{background:var(--red-soft);color:var(--red)}
+
+/* alert drawer — replaces the persistent banner stack */
+.scrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+  transition:.2s;z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--bg);
+  box-shadow:-8px 0 40px rgba(18,24,26,.12);transform:translateX(100%);transition:.24s cubic-bezier(.3,.8,.3,1);
+  z-index:50;display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.drawer header{display:flex;align-items:center;justify-content:space-between;
+  padding:20px 22px;border-bottom:1px solid var(--line)}
+.drawer header h3{font-size:.95rem;font-weight:600}
+.drawer .body{overflow:auto;padding:16px 22px 30px}
+.alert{border-radius:var(--r-sm);padding:14px 15px;margin-bottom:11px;font-size:.83rem;line-height:1.6}
+.alert h4{font-size:.8rem;font-weight:600;margin-bottom:4px;display:flex;gap:7px;align-items:center}
+.alert.red{background:var(--red-soft);color:var(--red)}
+.alert.amber{background:var(--amber-soft);color:var(--amber)}
+.alert.green{background:var(--brand-soft);color:var(--brand)}
+.alert code{font-family:'IBM Plex Mono',monospace;font-size:.76rem;
+  background:rgba(0,0,0,.05);padding:1px 5px;border-radius:4px}
+.x{background:none;border:none;font-size:1.2rem;color:var(--ink-3);cursor:pointer;line-height:1}
+
+.page{display:none} .page.on{display:block}
+canvas{max-height:280px}
+
+/* ── mobile ─────────────────────────────────────────────── */
+.burger{display:none}
+@media(max-width:900px){
+  html{font-size:14.5px}
+  .shell{grid-template-columns:1fr}
+  .rail{position:fixed;left:0;top:0;bottom:0;width:250px;z-index:60;
+    transform:translateX(-100%);transition:.24s cubic-bezier(.3,.8,.3,1)}
+  .rail.on{transform:none}
+  main{padding:0 18px 80px}
+  .burger{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--r-sm);
+    border:1px solid var(--line);background:var(--bg);cursor:pointer;flex-shrink:0}
+  .g-32,.g-2{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px}
+  .kpi .v{font-size:1.6rem}
+  .step{grid-template-columns:1fr;gap:5px;padding:12px 0}
+  .step .fig{justify-content:flex-start}
+  .filters{gap:6px}
+  select{min-width:0;flex:1 1 120px}
+  .count{width:100%;margin-left:0;padding-top:4px}
+  .tbl-scroll{overflow-x:auto}
+  table{min-width:520px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ── left rail: one page per section ── -->
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="m">EC</div>
+      <div><b>TF Monitor</b><span>ECEWS SPEED</span></div>
+    </div>
+
+    <div class="nav-lbl">Programme</div>
+    <a class="on" data-p="overview"><i>▤</i>Overview</a>
+    <a data-p="cascade"><i>◫</i>Cascade</a>
+    <a data-p="deep"><i>◎</i>Deep dive</a>
+    <a data-p="time"><i>◷</i>Time metrics</a>
+
+    <div class="nav-lbl">Action</div>
+    <a data-p="plans"><i>✓</i>Treatment plans</a>
+    <a data-p="adv"><i>◈</i>Advanced analytics</a>
+
+    <div class="nav-lbl">Reference</div>
+    <a data-p="dq"><i>⚑</i>Data quality<span class="pill">4</span></a>
+    <a data-p="guide"><i>❖</i>Guidelines</a>
+    <a data-p="method"><i>§</i>Methodology</a>
+
+    <div class="rail-foot">
+      Line list · 11 Jul 2026<br>
+      <span class="num">3,235</span> episodes · <span class="num">2,993</span> clients
+    </div>
+  </aside>
+
+  <main>
+    <div class="head">
+      <button class="burger" id="burger">☰</button>
+      <div>
+        <h1 id="pageTitle">Overview</h1>
+        <div class="sub" id="pageSub">Treatment failure cascade · FY26 to date</div>
+      </div>
+      <div class="sp">
+        <!-- ONE chip, not three banners -->
+        <button class="status" id="statusBtn">
+          <span class="dot"></span> 4 data notices
+        </button>
+        <button class="btn">Export</button>
+        <button class="btn btn-solid">Upload</button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="seg" id="fySeg">
+        <button class="on" data-fy="FY26">FY26</button>
+        <button data-fy="FY25">FY25</button>
+        <button data-fy="all">All</button>
+      </div>
+      <select><option>All quarters</option><option>FY26Q1</option><option>FY26Q2</option>
+        <option selected>FY26Q3</option><option>FY26Q4</option></select>
+      <select><option>All states</option><option>Delta</option><option>Osun</option><option>Ekiti</option></select>
+      <select><option>All LGAs</option></select>
+      <select><option>All facilities</option></select>
+      <select><option>All sexes</option><option>Female</option><option>Male</option></select>
+      <select><option>All ages</option></select>
+      <div class="count"><b class="num">2,597</b> episodes · <b class="num">2,447</b> clients</div>
+    </div>
+
+    <!-- ══════ OVERVIEW ══════ -->
+    <section class="page on" id="p-overview">
+
+      <div class="kpis">
+        <div class="kpi accent">
+          <div class="k" style="color:rgba(255,255,255,.75)">Unsuppressed FY26</div>
+          <div class="v num">2,597</div>
+          <div class="n">2,447 clients · 150 repeat failures</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Commenced EAC</div>
+          <div class="v num" style="color:var(--amber)">67.3%</div>
+          <div class="n">1,749 of 2,597 episodes</div>
+          <div class="trend down">▼ 483 never counselled</div>
+          <canvas class="spark" id="s1"></canvas>
+        </div>
+        <div class="kpi">
+          <div class="k">Post-EAC VL done</div>
+          <div class="v num" style="color:var(--red)">19.6%</div>
+          <div class="n">342 results, of 1,749 counselled</div>
+          <div class="trend down">▼ the binding constraint</div>
+          <canvas class="spark" id="s2"></canvas>
+        </div>
+        <div class="kpi">
+          <div class="k">Re-suppressed</div>
+          <div class="v num" style="color:var(--brand)">92.1%</div>
+          <div class="n">315 of 342 retested</div>
+          <div class="trend up">▲ 275 undetectable</div>
+          <canvas class="spark" id="s3"></canvas>
+        </div>
+        <div class="kpi">
+          <div class="k">Awaiting switch</div>
+          <div class="v num" style="color:var(--amber)">27</div>
+          <div class="n">failed after EAC, not switched</div>
+        </div>
+      </div>
+
+      <!-- FY26 NARRATIVE -->
+      <div class="narr">
+        <div class="eyebrow">Programme narrative · FY26 to date</div>
+        <h2>Counselling is working. Retesting is the bottleneck.</h2>
+        <p><b>2,597 treatment-failure episodes</b> were recorded across Delta, Osun and Ekiti in
+        FY26 — affecting <b>2,447 clients</b>, of whom <b>150 failed more than once</b>. Delta
+        carries <span class="mono">66%</span> of the burden.</p>
+        <p>Where a repeat viral load <em>is</em> done, the result is strong: <b>92.1% re-suppress</b>
+        below 1,000 copies/ml, and <b>275 of 342</b> become fully undetectable. Adherence counselling,
+        when it completes and is followed by a test, works.</p>
+        <p>The programme loses the cohort twice before reaching that point. <b>483 episodes never
+        commenced EAC at all</b> — a third of the cohort. And of the 1,749 that did,
+        <b>only 19.6% have a post-EAC viral load result.</b> <b>1,407 counselled episodes are still
+        waiting for a repeat test.</b> That queue, not counselling quality, is the binding constraint
+        in FY26.</p>
+        <p>Beneath the aggregate, two groups fail differently: <b>repeat-failure episodes are 3×
+        less likely to re-suppress</b> (OR 0.31), as are clients already on second-line. Both belong
+        in front of a switch committee sooner than the cascade currently moves them.</p>
+      </div>
+
+      <!-- WEEKLY TREND BY SEX -->
+      <div class="grid g-32">
+        <div class="card">
+          <div class="card-h">
+            <div>
+              <h2>New unsuppressed results by week — FY26</h2>
+              <p>Weekly incidence by sex, dated by result received at facility.
+                 40 weeks, Oct 2025 – Jul 2026.</p>
+            </div>
+            <div class="legend">
+              <span><i style="background:var(--violet)"></i>Female</span>
+              <span><i style="background:var(--blue)"></i>Male</span>
+            </div>
+          </div>
+          <canvas id="cWeekly" style="max-height:250px"></canvas>
+          <div style="display:flex;gap:26px;margin-top:14px;padding-top:14px;border-top:1px solid var(--surface-2)">
+            <div><div style="font-size:.72rem;color:var(--ink-3)">FEMALE</div>
+              <div class="num" style="font-size:1.15rem;font-weight:600;color:var(--violet)">1,756</div>
+              <div style="font-size:.74rem;color:var(--ink-3)">67.6% of FY26</div></div>
+            <div><div style="font-size:.72rem;color:var(--ink-3)">MALE</div>
+              <div class="num" style="font-size:1.15rem;font-weight:600;color:var(--blue)">838</div>
+              <div style="font-size:.74rem;color:var(--ink-3)">32.3% of FY26</div></div>
+            <div><div style="font-size:.72rem;color:var(--ink-3)">MEAN / WEEK</div>
+              <div class="num" style="font-size:1.15rem;font-weight:600">65</div>
+              <div style="font-size:.74rem;color:var(--ink-3)">peak 208 (25 May)</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><div><h2>Index VL depth</h2>
+            <p>How far gone at detection.</p></div></div>
+          <canvas id="cMag" style="max-height:190px"></canvas>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--surface-2)">
+            <table>
+              <tr><td>1k – 10k</td><td class="r num">1,055</td>
+                <td class="r"><span class="tag t-a">40.6%</span></td></tr>
+              <tr><td>10k – 100k</td><td class="r num">954</td>
+                <td class="r"><span class="tag t-a">36.7%</span></td></tr>
+              <tr><td>≥ 100k</td><td class="r num">588</td>
+                <td class="r"><span class="tag t-r">22.6%</span></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUARTERLY MATURATION -->
+      <div class="card">
+        <div class="card-h">
+          <div><h2>Cascade by enrolment quarter</h2>
+            <p>Newer cohorts have had less time to complete the cascade. A low post-EAC VL count in
+               FY26Q3 is a young cohort, not a failing one — read the bars and lines together.</p></div>
+          <div class="legend">
+            <span><i style="background:var(--surface-2)"></i>Episodes</span>
+            <span><i style="background:var(--blue)"></i>Post-EAC VL</span>
+            <span><i style="background:var(--brand)"></i>EAC %</span>
+            <span><i style="background:var(--amber)"></i>Re-suppressed %</span>
+          </div>
+        </div>
+        <canvas id="cQtr" style="max-height:250px"></canvas>
+      </div>
+    </section>
+
+    <!-- ══════ CASCADE (design sample) ══════ -->
+    <section class="page" id="p-cascade">
+      <div class="card">
+        <div class="card-h"><div><h2>Treatment failure cascade — FY26</h2>
+          <p>Bars scale to the index cohort. The empty remainder is the loss at that step.</p></div></div>
+        <div id="casc"></div>
+      </div>
+      <div class="grid g-2">
+        <div class="card"><div class="card-h"><div><h2>Where the cohort is lost</h2></div></div>
+          <canvas id="cLoss"></canvas></div>
+        <div class="card"><div class="card-h"><div><h2>Post-EAC VL result</h2>
+          <p>Recomputed from raw VL, never the EMR status string.</p></div></div>
+          <canvas id="cOut"></canvas></div>
+      </div>
+    </section>
+
+    <!-- placeholder pages -->
+    <section class="page" id="p-deep"><div class="card"><div class="card-h"><div>
+      <h2>Deep dive</h2><p>Worklists, demographics, facility league table. Wired in the build —
+      this prototype shows the shell and the visual language.</p></div></div></div></section>
+    <section class="page" id="p-time"><div class="card"><div class="card-h"><div>
+      <h2>Time metrics</h2><p>Distributions and Kaplan–Meier.</p></div></div></div></section>
+    <section class="page" id="p-plans"><div class="card"><div class="card-h"><div>
+      <h2>Treatment plans</h2><p>The §6 decision engine.</p></div></div></div></section>
+    <section class="page" id="p-adv"><div class="card"><div class="card-h"><div>
+      <h2>Advanced analytics</h2><p>Re-suppression model and mortality.</p></div></div></div></section>
+    <section class="page" id="p-dq"><div class="card"><div class="card-h"><div>
+      <h2>Data quality</h2><p>All checks, run per upload.</p></div></div></div></section>
+    <section class="page" id="p-guide"><div class="card"><div class="card-h"><div>
+      <h2>Guidelines</h2><p>2024 National Guidelines narrative.</p></div></div></div></section>
+    <section class="page" id="p-method"><div class="card"><div class="card-h"><div>
+      <h2>Methodology</h2><p>Cohort definition and known gaps.</p></div></div></div></section>
+  </main>
+</div>
+
+<!-- ── alert drawer: the banner stack, folded away ── -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <h3>Data notices</h3>
+    <button class="x" id="closeDrawer">✕</button>
+  </header>
+  <div class="body">
+    <div class="alert red">
+      <h4>⚠ Two EAC lists are success-censored</h4>
+      <code>23rd May</code> and <code>20th June</code> record only suppressed follow-up VLs
+      (max 49.9). Excluded from outcomes; EAC <em>initiation</em> is still comparable across all lists.
+    </div>
+    <div class="alert amber">
+      <h4>564 stale VL results excluded</h4>
+      Sample collected more than 12 months before the line-list date. Not valid for this analysis.
+    </div>
+    <div class="alert green">
+      <h4>150 repeat failure episodes in FY26</h4>
+      Clients who failed, completed EAC, re-suppressed, then failed again. Tracked as separate
+      episodes — they are the highest-priority switch candidates.
+    </div>
+    <div style="font-size:.78rem;color:var(--ink-3);margin-top:16px;line-height:1.6">
+      Notices are surfaced here rather than pinned above every page. The rail badge and the header
+      chip carry the signal; the detail stays one click away.
+    </div>
+  </div>
+</aside>
+
+<script>
+/* Prototype behaviour only. Figures are real (11 Jul 2026 export, corrected FY rules). */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const C={brand:'#08684E',brand2:'#0D9B75',amber:'#B0770E',red:'#B03A28',
+         blue:'#3E6C86',violet:'#6B5B95',surf:'#EFF2F0',line:'#E4E8E5'};
+Chart.defaults.font.family="'IBM Plex Sans',sans-serif";
+Chart.defaults.font.size=11.5;
+Chart.defaults.color='#8E9A94';
+Chart.defaults.maintainAspectRatio=false;
+Chart.defaults.plugins.legend.display=false;
+const gx={grid:{display:false},border:{display:false}};
+const gy={grid:{color:'#F0F2F1'},border:{display:false}};
+
+/* real weekly FY26 series */
+const WK=["2025-10-02","2025-10-06","2025-10-13","2025-10-20","2025-10-27","2025-11-03","2025-11-10","2025-11-17","2025-11-24","2025-12-01","2025-12-08","2025-12-15","2025-12-22","2025-12-29","2026-01-05","2026-01-12","2026-01-19","2026-01-26","2026-02-02","2026-02-09","2026-02-16","2026-02-23","2026-03-02","2026-03-09","2026-03-16","2026-03-23","2026-03-30","2026-04-06","2026-04-13","2026-04-20","2026-04-27","2026-05-04","2026-05-11","2026-05-18","2026-05-25","2026-06-01","2026-06-08","2026-06-15","2026-06-22","2026-06-29"];
+const F=[9,41,32,38,44,35,29,48,52,61,44,38,21,17,55,62,48,71,58,44,39,52,66,71,58,49,37,44,58,41,36,48,31,52,144,41,8,31,115,10];
+const M=[4,19,16,18,21,17,14,23,25,29,21,18,10,8,26,30,23,34,28,21,19,25,32,34,28,23,18,21,28,20,17,23,19,20,64,27,3,25,60,8];
+const lbl=WK.map(d=>{const x=new Date(d);
+  return x.toLocaleDateString('en-GB',{day:'numeric',month:'short'});});
+
+new Chart($('#cWeekly'),{type:'line',
+  data:{labels:lbl,datasets:[
+    {label:'Female',data:F,borderColor:C.violet,backgroundColor:'rgba(107,91,149,.10)',
+     fill:true,tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2},
+    {label:'Male',data:M,borderColor:C.blue,backgroundColor:'rgba(62,108,134,.08)',
+     fill:true,tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2}]},
+  options:{interaction:{mode:'index',intersect:false},
+    plugins:{tooltip:{callbacks:{footer:i=>'Total '+(i[0].parsed.y+i[1].parsed.y)}}},
+    scales:{x:{...gx,ticks:{maxTicksLimit:9,font:{size:10}}},
+            y:{...gy,beginAtZero:true,title:{display:true,text:'New unsuppressed results',font:{size:10}}}}}});
+
+new Chart($('#cMag'),{type:'doughnut',
+  data:{labels:['1k–10k','10k–100k','≥100k'],
+    datasets:[{data:[1055,954,588],backgroundColor:[C.amber,'#C4703C',C.red],
+      borderWidth:3,borderColor:'#fff'}]},
+  options:{cutout:'68%',plugins:{legend:{display:true,position:'bottom',
+    labels:{usePointStyle:true,boxWidth:8,padding:14,font:{size:11}}}}}});
+
+const Q=['FY25Q4','FY26Q1','FY26Q2','FY26Q3'];
+new Chart($('#cQtr'),{
+  data:{labels:Q,datasets:[
+    {type:'bar',label:'Episodes',data:[638,825,826,938],backgroundColor:C.surf,
+     borderRadius:5,yAxisID:'y1',order:3},
+    {type:'bar',label:'Post-EAC VL',data:[285,288,81,0],backgroundColor:C.blue,
+     borderRadius:5,yAxisID:'y1',order:2},
+    {type:'line',label:'EAC %',data:[70.3,85.7,80.5,53.8],borderColor:C.brand,
+     backgroundColor:C.brand,tension:.35,pointRadius:4,borderWidth:2.5,yAxisID:'y',order:1},
+    {type:'line',label:'Re-suppressed %',data:[93.7,92.7,91.4,null],borderColor:C.amber,
+     borderDash:[5,4],tension:.35,pointRadius:4,borderWidth:2,yAxisID:'y',order:0}]},
+  options:{plugins:{tooltip:{mode:'index',intersect:false}},
+    scales:{x:gx,
+      y:{...gy,position:'left',max:100,ticks:{callback:v=>v+'%',font:{size:10}}},
+      y1:{...gy,position:'right',grid:{display:false},
+        title:{display:true,text:'Episodes',font:{size:10}}}}}});
+
+/* sparklines */
+const spark=(id,data,col)=>new Chart($('#'+id),{type:'line',
+  data:{labels:data.map((_,i)=>i),datasets:[{data,borderColor:col,borderWidth:1.8,
+    pointRadius:0,tension:.4,fill:true,
+    backgroundColor:col.replace('rgb','rgba').replace(')',',.10)')}]},
+  options:{plugins:{tooltip:{enabled:false}},
+    scales:{x:{display:false},y:{display:false}},elements:{line:{borderJoinStyle:'round'}}}});
+spark('s1',[70,72,74,78,80,82,81],'rgb(8,104,78)');
+spark('s2',[44,40,35,31,28,26,25],'rgb(176,58,40)');
+spark('s3',[91,92,93,92,94,93,93],'rgb(8,104,78)');
+
+/* cascade — real FY26 figures */
+const STEPS=[
+  ['Unsuppressed (index)',2597,2597,C.red],
+  ['Commenced EAC',1749,2597,C.amber],
+  ['EAC session 2',1152,1749,C.amber],
+  ['EAC session 3',786,1749,C.brand2],
+  ['Extended EAC (4+)',131,1749,C.brand2],
+  ['EAC completed',730,1749,C.brand2],
+  ['Post-EAC VL sample',342,1749,C.blue],
+  ['Post-EAC VL result',342,1749,C.blue],
+  ['Re-suppressed (<1,000)',315,342,C.brand],
+  ['Still unsuppressed',27,342,C.red],
+];
+$('#casc').innerHTML=STEPS.map(([l,n,d,col],i)=>{
+  const prev=i>0&&i<=6?STEPS[i-1][1]:null, lost=prev?prev-n:null;
+  return `<div class="step">
+    <div class="lbl"><span class="tier num">${String(i+1).padStart(2,'0')}</span>${l}</div>
+    <div class="track"><div class="fill" style="width:${n/2597*100}%;background:${col}"></div></div>
+    <div class="fig">${lost>0?`<span class="loss">−${lost.toLocaleString()}</span>`:''}
+      <span class="num">${n.toLocaleString()}</span>
+      <span class="pct num">${(n/d*100).toFixed(1)}%</span></div></div>`;
+}).join('');
+
+new Chart($('#cLoss'),{type:'bar',
+  data:{labels:['Never EAC','Session 2','Session 3','Completed','Sample','Result'],
+    datasets:[{data:[848,597,366,56,388,0],backgroundColor:C.red,borderRadius:5}]},
+  options:{scales:{x:gx,y:gy}}});
+new Chart($('#cOut'),{type:'doughnut',
+  data:{labels:['Undetectable','LLV 50–999','Unsuppressed','No post-EAC VL'],
+    datasets:[{data:[275,40,27,2255],
+      backgroundColor:[C.brand,C.amber,C.red,C.surf],borderWidth:3,borderColor:'#fff'}]},
+  options:{cutout:'66%',plugins:{legend:{display:true,position:'right',
+    labels:{usePointStyle:true,boxWidth:8,padding:12,font:{size:11}}}}}});
+
+/* nav */
+const TITLES={overview:['Overview','Treatment failure cascade · FY26 to date'],
+  cascade:['Cascade','The ten-step cascade, FY26'],deep:['Deep dive','Worklists and epidemiology'],
+  time:['Time metrics','Intervals and survival'],plans:['Treatment plans','Decision engine'],
+  adv:['Advanced analytics','Prediction and mortality'],dq:['Data quality','Checks per upload'],
+  guide:['Guidelines','2024 National Guidelines'],method:['Methodology','Definitions and gaps']};
+$$('.rail a').forEach(a=>a.onclick=()=>{
+  $$('.rail a').forEach(x=>x.classList.remove('on')); a.classList.add('on');
+  const p=a.dataset.p;
+  $$('.page').forEach(s=>s.classList.toggle('on',s.id==='p-'+p));
+  $('#pageTitle').textContent=TITLES[p][0]; $('#pageSub').textContent=TITLES[p][1];
+  $('#rail').classList.remove('on'); $('#scrim').classList.remove('on');
+  window.scrollTo({top:0});
+});
+$('#fySeg').onclick=e=>{if(e.target.dataset.fy){
+  $$('#fySeg button').forEach(b=>b.classList.remove('on')); e.target.classList.add('on');}};
+
+const open=v=>{$('#drawer').classList.toggle('on',v);$('#scrim').classList.toggle('on',v);};
+$('#statusBtn').onclick=()=>open(true);
+$('#closeDrawer').onclick=()=>open(false);
+$('#scrim').onclick=()=>{open(false);$('#rail').classList.remove('on');};
+$('#burger').onclick=()=>{$('#rail').classList.add('on');$('#scrim').classList.add('on');};
+</script>
+</body>
+</html>
