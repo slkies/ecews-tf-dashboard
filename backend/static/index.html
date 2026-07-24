@@ -10,16 +10,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{
-  --paper:#FBF8F3; --card:#FFF; --ink:#211E1A; --ink-2:#5C554C; --ink-3:#928A7E;
-  --rule:#E6DFD4; --rule-2:#F0EAE1; --line:#E6DFD4; --bg-2:#F5F1E9;
-  --green:#08684E; --green-d:#05402F; --green-l:#E3F0EA;
-  --honey:#B8860B; --honey-l:#FBF0D8;
-  --brick:#B83B2A; --brick-l:#FAE7E2;
-  --slate:#4A6B7C; --slate-l:#E8EEF1; --violet:#8250C9; --teal:#12A0B8; --r:10px;
-  --sh:0 1px 2px rgba(33,30,26,.05),0 1px 8px rgba(33,30,26,.03);
+  /* v4: neutral white canvas; surfaces + shadow do the separating that heavy
+     warm borders used to. Brand green is unchanged. */
+  --bg:#FFFFFF; --surface:#F7F8F7; --rail:230px;
+  --paper:#F4F6F5;           /* subtle tint kept for row hovers + dropzone */
+  --card:#FFFFFF; --ink:#12181A; --ink-2:#5A6560; --ink-3:#8E9A94;
+  --rule:#E4E8E5; --rule-2:#EFF2F0; --line:#E4E8E5; --bg-2:#EFF2F0;
+  --green:#08684E; --green-d:#05402F; --green-l:#E8F3EF;
+  --honey:#B0770E; --honey-l:#FDF3E0;
+  --brick:#B03A28; --brick-l:#FBECE9;
+  --slate:#3E6C86; --slate-l:#EAF1F5; --violet:#6B5B95; --teal:#12A0B8; --r:12px;
+  --sh:0 1px 2px rgba(18,24,26,.04),0 4px 16px rgba(18,24,26,.045);
 }
 [data-theme=dark]{
-  --paper:#1A1815; --card:#232019; --ink:#F0EBE3; --ink-2:#B8AFA2; --ink-3:#8A8175;
+  --bg:#1A1815; --surface:#221F19;
+  --paper:#221F19; --card:#232019; --ink:#F0EBE3; --ink-2:#B8AFA2; --ink-3:#8A8175;
   --rule:#3A3529; --rule-2:#2E2A22; --line:#3A3529; --bg-2:#2A261E;
   --green:#14CE9D; --green-d:#0D9B75; --green-l:#12302A;
   --honey:#D4A72C; --honey-l:#33290F; --brick:#E0705C; --brick-l:#3A1F1A;
@@ -27,7 +32,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:15px}   /* was 14 - one step up for readability */
-body{background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
+body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;line-height:1.5;transition:background .2s,color .2s}
 .num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .wrap{max-width:1260px;margin:0 auto;padding:0 24px 64px}
@@ -63,14 +68,45 @@ input:focus,select:focus{outline:2px solid var(--green);outline-offset:-1px}
 .btn-solid:hover{background:var(--green-d);color:#fff}
 .btn.sm{padding:4px 9px;font-size:11px}
 
-nav{display:flex;gap:2px;border-bottom:1px solid var(--rule);margin-bottom:22px;
-  overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{font:inherit;font-size:13px;font-weight:500;color:var(--ink-3);background:none;
-  border:none;border-bottom:2px solid transparent;padding:10px 12px;cursor:pointer;
-  white-space:nowrap;margin-bottom:-1px;width:auto}
-nav button:hover{color:var(--ink)}
-nav button[aria-selected=true]{color:var(--green);border-bottom-color:var(--green);font-weight:600}
+/* ── v4 shell: sidebar rail + main column ─────────────────────── */
+/* minmax(0,1fr) not 1fr: a grid item defaults to min-width:min-content, so a
+   wide table would expand the main column past the viewport instead of letting
+   its own overflow-x container scroll. This is the same trap the page grids hit. */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:100vh}
+.rail{background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;
+  position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;
+  overflow-y:auto;scrollbar-width:thin;z-index:60}
+.rail .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 16px}
+.rail .brand b{font-size:14px;font-weight:600;display:block;letter-spacing:-.01em;line-height:1.2}
+.rail .brand span{font-size:11px;color:var(--ink-3);display:block}
+.nav-lbl{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.09em;padding:14px 10px 5px}
+nav.rail-nav{display:flex;flex-direction:column;gap:2px}
+nav.rail-nav button{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;
+  font:inherit;font-size:13px;font-weight:500;color:var(--ink-2);background:none;border:none;
+  cursor:pointer;width:100%;text-align:left;transition:.13s}
+nav.rail-nav button:hover{background:var(--bg);color:var(--ink)}
+nav.rail-nav button[aria-selected=true]{background:var(--bg);color:var(--green);
+  font-weight:600;box-shadow:var(--sh)}
+nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;padding:1px 7px;
+  border-radius:20px;background:var(--brick-l);color:var(--brick)}
+.rail-foot{margin-top:auto;padding:12px 10px 4px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--ink-3);line-height:1.5}
+.railmain{min-width:0;display:flex;flex-direction:column}
+.railmain>.inner{width:100%;min-width:0;max-width:1200px;margin:0 auto;padding:0 30px 60px;flex:1}
+.burger{display:none}
+@media(max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .rail{position:fixed;left:0;top:0;bottom:0;width:250px;
+    transform:translateX(-100%);transition:transform .24s cubic-bezier(.3,.8,.3,1)}
+  .rail.on{transform:none}
+  .railmain>.inner{padding:0 16px 70px}
+  .burger{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;
+    border:1px solid var(--rule);background:var(--card);cursor:pointer;flex-shrink:0}
+  .railscrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+    transition:.2s;z-index:55}
+  .railscrim.on{opacity:1;pointer-events:auto}
+}
 
 .filters{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
@@ -92,12 +128,12 @@ nav button[aria-selected=true]{color:var(--green);border-bottom-color:var(--gree
 .grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .grid>.panel{min-width:0}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:1px;
-  background:var(--rule);border:1px solid var(--rule);border-radius:var(--r);
-  overflow:hidden;margin-bottom:16px}
-.stat{background:var(--card);padding:15px 17px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;
+  margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
+  padding:16px 18px;box-shadow:var(--sh)}
 .stat .k{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.stat .v{font-size:25px;font-weight:600;margin-top:4px;letter-spacing:-.03em}
+.stat .v{font-size:27px;font-weight:600;margin-top:5px;letter-spacing:-.035em;line-height:1.12}
 .stat .n{font-size:11px;color:var(--ink-3);margin-top:2px}
 .stat.good .v{color:var(--green)}.stat.warn .v{color:var(--honey)}.stat.bad .v{color:var(--brick)}
 
@@ -451,46 +487,57 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   </div>
 </div>
 
-<div class="wrap" id="app" style="display:none">
-  <header class="top">
-    <div class="mark">EC</div>
-    <div><h1>ECEWS-SPEED Treatment Failure Monitoring Dashboard</h1>
-      <div class="sub">Delta &middot; Osun &middot; Ekiti</div></div>
-    <div class="right">
-      <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
-      <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
-      <button class="btn" id="btnExport">Export</button>
-      <button class="btn" id="btnPw">Change password</button>
-      <button class="btn" id="btnOut">Sign out</button>
+<div class="shell" id="app" style="display:none">
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="mark">EC</div>
+      <div><b>TF Monitor</b><span>ECEWS&nbsp;SPEED</span></div>
     </div>
-  </header>
+    <nav class="rail-nav" role="tablist">
+      <div class="nav-lbl">Programme</div>
+      <button role="tab" aria-selected="true"  data-v="overview">Overview</button>
+      <button role="tab" aria-selected="false" data-v="cascade">Cascade</button>
+      <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
+      <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
+      <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
+      <div class="nav-lbl">Action</div>
+      <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
+      <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
+      <div class="nav-lbl">Reference</div>
+      <button role="tab" aria-selected="false" data-v="dq">Data quality</button>
+      <button role="tab" aria-selected="false" data-v="guide">Guidelines</button>
+      <button role="tab" aria-selected="false" data-v="method">Methodology</button>
+      <button role="tab" aria-selected="false" data-v="admin" id="tabAdmin" style="display:none">Admin</button>
+    </nav>
+    <div class="rail-foot" id="railFoot"></div>
+  </aside>
 
-  <div class="modal-bg" id="fbModal">
-    <div class="modal">
-      <h3>Send feedback</h3>
-      <p>Bugs, wrong numbers, or ideas — goes straight to the team.</p>
-      <textarea id="fbText" rows="5" placeholder="What did you notice?"></textarea>
-      <div class="modal-foot">
-        <span id="fbMsg"></span>
-        <button class="btn" id="fbCancel">Cancel</button>
-        <button class="btn btn-solid" id="fbSend">Send</button>
+  <div class="railmain"><div class="inner">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Menu">&#9776;</button>
+      <div><h1>Treatment Failure Monitoring Dashboard</h1>
+        <div class="sub">ECEWS-SPEED &middot; Delta &middot; Osun &middot; Ekiti</div></div>
+      <div class="right">
+        <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
+        <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
+        <button class="btn" id="btnExport">Export</button>
+        <button class="btn" id="btnPw">Change password</button>
+        <button class="btn" id="btnOut">Sign out</button>
+      </div>
+    </header>
+
+    <div class="modal-bg" id="fbModal">
+      <div class="modal">
+        <h3>Send feedback</h3>
+        <p>Bugs, wrong numbers, or ideas — goes straight to the team.</p>
+        <textarea id="fbText" rows="5" placeholder="What did you notice?"></textarea>
+        <div class="modal-foot">
+          <span id="fbMsg"></span>
+          <button class="btn" id="fbCancel">Cancel</button>
+          <button class="btn btn-solid" id="fbSend">Send</button>
+        </div>
       </div>
     </div>
-  </div>
-
-  <nav role="tablist">
-    <button role="tab" aria-selected="true"  data-v="overview">Overview</button>
-    <button role="tab" aria-selected="false" data-v="cascade">Cascade</button>
-    <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
-    <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
-    <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
-    <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
-    <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
-    <button role="tab" aria-selected="false" data-v="dq">Data quality</button>
-    <button role="tab" aria-selected="false" data-v="guide">Guidelines</button>
-    <button role="tab" aria-selected="false" data-v="method">Methodology</button>
-    <button role="tab" aria-selected="false" data-v="admin" id="tabAdmin" style="display:none">Admin</button>
-  </nav>
 
   <div class="filters" id="filters">
     <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
@@ -974,6 +1021,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   </section>
 
   <footer><span>ECEWS-SPEED Treatment Failure Monitoring Dashboard &middot; DAP v3.0</span><span id="foot"></span></footer>
+  </div></div>
+  <div class="railscrim" id="railScrim"></div>
   <button id="btnFeedback" class="fab" title="Send feedback">&#128172; Feedback</button>
 </div>
 
@@ -1039,7 +1088,7 @@ function signOut(){localStorage.removeItem('tf_token');TOKEN=null;
 
 async function boot(){
   try{ME=await api('/me');}catch(e){return signOut();}
-  $('#login').style.display='none'; $('#app').style.display='block';
+  $('#login').style.display='none'; $('#app').style.display='grid';  /* .shell is a grid */
   $('#uName').textContent=ME.name||ME.username||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
   if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();
@@ -1104,6 +1153,7 @@ async function refresh(){
       {day:'numeric',month:'short',year:'numeric'}) : '\u2014';
     const cnt=fmt(sum.n)+' episodes \u00b7 '+fmt(sum.clients)+' clients';
     $('#foot').textContent=cnt; $('#chip').textContent='Line list as of '+asof+' \u00b7 '+cnt;
+    $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
     advanced(risk,mort,dd); dqView(dq);
@@ -2304,7 +2354,11 @@ function switchTo(v){
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   const hide=['guide','method','admin','dq'].indexOf(v)>=0;
   $('#filters').style.display=hide?'none':'flex';
+  closeRail();                 // collapse the mobile rail after a jump
+  window.scrollTo({top:0});
 }
+function openRail(){$('#rail').classList.add('on');$('#railScrim').classList.add('on');}
+function closeRail(){$('#rail').classList.remove('on');$('#railScrim').classList.remove('on');}
 async function download(extra){
   const r=await fetch('/api/export'+qs(extra),{headers:{Authorization:'Bearer '+TOKEN}});
   // Without this check a 403 was silently saved AS the CSV, so a viewer got a
@@ -2319,6 +2373,8 @@ async function download(extra){
 }
 
 $$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
+$('#burger').onclick=openRail;
+$('#railScrim').onclick=closeRail;
 $('#btnLogin').onclick=signIn;
 $('#pw').onkeydown=e=>{if(e.key==='Enter')signIn();};
 $('#btnOut').onclick=signOut;
