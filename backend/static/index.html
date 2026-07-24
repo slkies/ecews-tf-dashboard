@@ -93,7 +93,11 @@ nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;paddin
 .rail-foot{margin-top:auto;padding:12px 10px 4px;border-top:1px solid var(--line);
   font-size:11px;color:var(--ink-3);line-height:1.5}
 .railmain{min-width:0;display:flex;flex-direction:column}
-.railmain>.inner{width:100%;min-width:0;max-width:1200px;margin:0 auto;padding:0 30px 60px;flex:1}
+/* No max-width cap: the rail already frames the page, so the content fills its
+   column right up to the edges the way the prototype does. A cap + margin:auto
+   left symmetric gutters that read as dead space beside the rail. Wide prose
+   still self-limits via .narr p / .doc measures. */
+.railmain>.inner{width:100%;min-width:0;padding:0 32px 60px;flex:1}
 .burger{display:none}
 @media(max-width:900px){
   .shell{grid-template-columns:minmax(0,1fr)}
@@ -107,6 +111,32 @@ nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;paddin
     transition:.2s;z-index:55}
   .railscrim.on{opacity:1;pointer-events:auto}
 }
+
+/* ── status chip + data-notices drawer ────────────────────────── */
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:20px;
+  background:var(--honey-l);color:var(--honey);border:none;cursor:pointer;
+  font:inherit;font-size:12px;font-weight:600;white-space:nowrap}
+.status .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.status:hover{filter:brightness(.97)}
+.status.crit{background:var(--brick-l);color:var(--brick)}
+.ndrawer-scrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+  transition:.2s;z-index:65}
+.ndrawer-scrim.on{opacity:1;pointer-events:auto}
+.ndrawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,100%);background:var(--card);
+  box-shadow:-8px 0 40px rgba(18,24,26,.14);transform:translateX(100%);
+  transition:transform .24s cubic-bezier(.3,.8,.3,1);z-index:66;display:flex;flex-direction:column}
+.ndrawer.on{transform:none}
+.ndrawer>header{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px;border-bottom:1px solid var(--line)}
+.ndrawer h3{font-size:14px;font-weight:600}
+.ndrawer .body{overflow:auto;padding:14px 20px 30px}
+.ndrawer .x{background:none;border:none;font-size:20px;color:var(--ink-3);cursor:pointer;line-height:1}
+
+/* ── sortable table headers ───────────────────────────────────── */
+.tw th,.tbl-wrap th{cursor:pointer;user-select:none}
+.tw th:hover,.tbl-wrap th:hover{color:var(--ink)}
+.tw th.sorted,.tbl-wrap th.sorted{color:var(--green)}
+th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle}
 
 .filters{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
@@ -518,6 +548,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       <div><h1>Treatment Failure Monitoring Dashboard</h1>
         <div class="sub">ECEWS-SPEED &middot; Delta &middot; Osun &middot; Ekiti</div></div>
       <div class="right">
+        <button class="status" id="statusBtn" style="display:none">
+          <span class="dot"></span><span id="statusTxt"></span></button>
         <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
         <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
         <button class="btn" id="btnExport">Export</button>
@@ -1023,6 +1055,13 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   <footer><span>ECEWS-SPEED Treatment Failure Monitoring Dashboard &middot; DAP v3.0</span><span id="foot"></span></footer>
   </div></div>
   <div class="railscrim" id="railScrim"></div>
+
+  <div class="ndrawer-scrim" id="ndScrim"></div>
+  <aside class="ndrawer" id="ndDrawer">
+    <header><h3>Data notices</h3><button class="x" id="ndClose" aria-label="Close">&times;</button></header>
+    <div class="body" id="ndBody"></div>
+  </aside>
+
   <button id="btnFeedback" class="fab" title="Send feedback">&#128172; Feedback</button>
 </div>
 
@@ -1156,7 +1195,7 @@ async function refresh(){
     $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
-    advanced(risk,mort,dd); dqView(dq);
+    advanced(risk,mort,dd); dqView(dq); notices(dq);
   }catch(e){
     $('#alerts').innerHTML='<div class="notice stop"><h3>Could not load</h3>'+e.message+'</div>';
   }
@@ -1178,6 +1217,31 @@ function banners(s){
   // every other view. #alerts stays reserved for genuine load errors.
   const box=$('#adminBanners'); if(box) box.innerHTML=h;
 }
+
+// Status chip + slide-out drawer: the banner stack, folded to one affordance.
+// Fed from the same /api/dq findings the Data quality page shows.
+function notices(dq){
+  const items=(dq||[]).filter(r=>r.n_records>0 && r.severity!=='clear');
+  const chip=$('#statusBtn'); if(!chip) return;
+  if(!items.length){chip.style.display='none'; ndClose(); return;}
+  const order={critical:0,high:1,medium:2,low:3};
+  items.sort((a,b)=>(order[a.severity]??9)-(order[b.severity]??9) || b.n_records-a.n_records);
+  const worst=items[0].severity;
+  chip.style.display='';
+  chip.classList.toggle('crit', worst==='critical'||worst==='high');
+  $('#statusTxt').textContent=items.length+' data notice'+(items.length>1?'s':'');
+  const cls={critical:'stop',high:'stop',medium:'warn',low:'info'};
+  $('#ndBody').innerHTML=items.map(r=>
+    '<div class="notice '+(cls[r.severity]||'info')+'"><h3>'+esc(r.check_name)+
+    ' &middot; '+fmt(r.n_records)+'</h3>'+esc(r.detail||'')+
+    (r.sheet?'<div style="margin-top:6px;font-size:11px;opacity:.8">Sheet: <code>'+esc(r.sheet)+'</code></div>':'')+
+    '</div>').join('')+
+    '<div style="font-size:12px;color:var(--ink-3);margin-top:14px;line-height:1.6">'+
+    'Surfaced here rather than pinned above every page. Full checks live on the '+
+    '<strong>Data quality</strong> page.</div>';
+}
+function ndOpen(){$('#ndDrawer').classList.add('on');$('#ndScrim').classList.add('on');}
+function ndClose(){$('#ndDrawer').classList.remove('on');$('#ndScrim').classList.remove('on');}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const stat=(k,v,n,cl)=>'<div class="stat '+(cl||'')+'"><div class="k">'+k+'</div>'+
   '<div class="v num">'+v+'</div><div class="n">'+n+'</div></div>';
@@ -2375,6 +2439,35 @@ async function download(extra){
 $$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
 $('#burger').onclick=openRail;
 $('#railScrim').onclick=closeRail;
+$('#statusBtn').onclick=ndOpen;
+$('#ndClose').onclick=ndClose;
+$('#ndScrim').onclick=ndClose;
+
+// Sortable tables: one delegated handler survives every table re-render.
+// Grouped tables (a row spanning all columns) are left alone - sorting would
+// scramble the groups.
+document.addEventListener('click',e=>{
+  const th=e.target.closest('th'); if(!th) return;
+  const wrap=th.closest('.tw,.tbl-wrap'); if(!wrap) return;
+  const table=th.closest('table'), tbody=table&&table.tBodies[0];
+  if(!tbody) return;
+  const rows=[...tbody.rows];
+  if(rows.some(r=>r.querySelector('td[colspan]'))) return;   // grouped table
+  const cells=[...th.parentElement.children], idx=cells.indexOf(th);
+  if(idx<0) return;
+  const dir=th.getAttribute('data-sort')==='asc'?'desc':'asc';
+  cells.forEach(h=>{h.removeAttribute('data-sort');h.classList.remove('sorted');
+    const c=h.querySelector('.caret'); if(c)c.remove();});
+  th.setAttribute('data-sort',dir); th.classList.add('sorted');
+  th.insertAdjacentHTML('beforeend','<span class="caret">'+(dir==='asc'?'▲':'▼')+'</span>');
+  const key=r=>{const c=r.cells[idx]; if(!c) return '';
+    const t=c.innerText.trim().replace(/[,%\s]/g,'');
+    const n=parseFloat(t); return t!==''&&!isNaN(n)&&/[\d.]/.test(t[0]||'')?n:c.innerText.trim().toLowerCase();};
+  rows.sort((a,b)=>{const x=key(a),y=key(b);
+    if(typeof x==='number'&&typeof y==='number') return dir==='asc'?x-y:y-x;
+    return dir==='asc'?String(x).localeCompare(y):String(y).localeCompare(x);});
+  rows.forEach(r=>tbody.appendChild(r));
+});
 $('#btnLogin').onclick=signIn;
 $('#pw').onkeydown=e=>{if(e.key==='Enter')signIn();};
 $('#btnOut').onclick=signOut;
