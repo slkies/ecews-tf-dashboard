@@ -994,10 +994,23 @@ Chart.defaults.maintainAspectRatio=false;
 
 async function api(p,o){
   o=o||{};
-  const r=await fetch('/api'+p,Object.assign({},o,{headers:Object.assign({},o.headers||{},
+  // A body without this header is sent as text/plain, which FastAPI rejects
+  // with 422 before the handler ever runs - the request looks like it worked
+  // from the caller's side but nothing changes. Set it here rather than at
+  // every call site, so forgetting it is not possible.
+  const ct=o.body?{'Content-Type':'application/json'}:{};
+  const r=await fetch('/api'+p,Object.assign({},o,{headers:Object.assign({},ct,o.headers||{},
     TOKEN?{Authorization:'Bearer '+TOKEN}:{})}));
   if(r.status===401){signOut();throw new Error('Session expired');}
-  if(!r.ok){const j=await r.json().catch(()=>({})); throw new Error(j.detail||r.statusText);}
+  if(!r.ok){
+    const j=await r.json().catch(()=>({}));
+    // FastAPI validation errors arrive as an ARRAY of objects, which rendered
+    // as "[object Object]" in the alert and told the user nothing.
+    const d=j.detail;
+    throw new Error(typeof d==='string'?d
+      :Array.isArray(d)?d.map(x=>x.msg||JSON.stringify(x)).join('; ')
+      :r.statusText);
+  }
   return r.json();
 }
 function qs(extra){
