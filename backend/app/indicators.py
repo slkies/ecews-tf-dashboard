@@ -1419,6 +1419,14 @@ def dtc_review(df: pd.DataFrame) -> dict:
     sn = df.get("sn", pd.Series(range(n), index=df.index))
     rep = sn.duplicated(keep=False)
     still = df["still_unsuppressed"].fillna(False).astype(bool)
+    # Repeat unsuppression, restricted to episodes STILL >= 1,000 after the
+    # follow-up / post-EAC VL. This is the switch-relevant subset: a client who
+    # failed more than once AND has not re-suppressed. It nests inside `still`,
+    # unlike the raw repeat count, which also includes repeat clients who did
+    # re-suppress and so are not switch candidates at all. The univariate OR
+    # analysis below deliberately stays on ALL repeats (`rep`) as a broader
+    # descriptive signal - only this headline is the subset.
+    rep_still = rep & still
     switched = df["switched"].fillna(False).astype(bool)
     awaiting = df["awaiting_switch"].fillna(False).astype(bool)
     prior = df.get("prior_switch", pd.Series(False, index=df.index)).fillna(False).astype(bool)
@@ -1490,6 +1498,10 @@ def dtc_review(df: pd.DataFrame) -> dict:
             "repeat_clients": int((sn.value_counts() > 1).sum()),
             "repeat_episodes": int(rep.sum()),
             "repeat_occurrences": int(n - sn.nunique()),
+            # the switch-relevant subset: repeat episodes still >= 1,000, and the
+            # clients they belong to. A strict subset of `still`.
+            "repeat_still_episodes": int(rep_still.sum()),
+            "repeat_still_clients": int(sn[rep_still].nunique()),
             "still": int(still.sum()),
             "switched": int(switched.sum()),
             "awaiting": int(awaiting.sum()),

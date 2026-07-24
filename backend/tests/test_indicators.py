@@ -6,8 +6,8 @@ detecting a success-censored EAC export.
 import pandas as pd
 import pytest
 
-from app.indicators import (build_cohort, cascade, fiscal_quarter, fiscal_year,
-                            norm_state, vl_category)
+from app.indicators import (build_cohort, cascade, dtc_review, fiscal_quarter,
+                            fiscal_year, norm_state, vl_category)
 from app.ingest import audit_censoring
 
 AS_OF = pd.Timestamp("2026-07-11")
@@ -181,6 +181,32 @@ def test_blank_sn_rows_are_dropped_and_reported():
     c = cohort([mk(), mk(**{"S/N": None})])
     assert len(c.df) == 1
     assert any("blank S/N" in w for w in c.warnings)
+
+
+# ── DTC review: the repeat-unsuppression subset must nest in "still" ──
+def test_dtc_repeat_subset_nests_in_still():
+    """
+    The headline repeat-unsuppression figure on the DTC page is the switch-
+    relevant subset: repeat episodes that are STILL >= 1,000 after follow-up.
+    It must never exceed either its parent set (still) or the full repeat count,
+    and the three-way switch split must still sum to `still`.
+    """
+    # Two failure episodes for one client (a repeat), one for another; the
+    # repeat client stays >= 1,000 on follow-up (a switch candidate).
+    rows = [
+        mk(**{"S/N": "0.111111111111",
+              "EAC_Triggering_High_VL_Date": "2026-01-05"}),
+        mk(**{"S/N": "0.111111111111",
+              "EAC_Triggering_High_VL_Date": "2026-04-05"}),
+        mk(**{"S/N": "0.222222222222"}),
+    ]
+    c = cohort(rows, fu_vl=8000, fu_samp="2026-06-01")   # follow-up still high
+    s = dtc_review(c.df)["summary"]
+
+    assert s["repeat_still_episodes"] <= s["still"]
+    assert s["repeat_still_episodes"] <= s["repeat_episodes"]
+    assert s["repeat_still_clients"] <= s["repeat_clients"]
+    assert s["awaiting"] + s["prior"] + s["switched"] == s["still"]
 
 
 # ── small helpers ─────────────────────────────────────────────────────
