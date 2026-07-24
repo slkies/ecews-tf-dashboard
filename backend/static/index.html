@@ -1221,14 +1221,19 @@ function banners(s){
 // Status chip + slide-out drawer: the banner stack, folded to one affordance.
 // Fed from the same /api/dq findings the Data quality page shows.
 function notices(dq){
-  const items=(dq||[]).filter(r=>r.n_records>0 && r.severity!=='clear');
+  // Only genuine data-quality problems in the assembled cohort, and only the
+  // serious ones. Per-sheet file/ingest issues - success-censoring, missing
+  // S/N, column drift, state casing - are export mechanics for the HI team and
+  // stay on the Data quality page alone, never in this headline chip.
+  const items=(dq||[]).filter(r=>r.n_records>0 && !r.sheet
+    && (r.severity==='critical'||r.severity==='high'));
   const chip=$('#statusBtn'); if(!chip) return;
   if(!items.length){chip.style.display='none'; ndClose(); return;}
   const order={critical:0,high:1,medium:2,low:3};
   items.sort((a,b)=>(order[a.severity]??9)-(order[b.severity]??9) || b.n_records-a.n_records);
   const worst=items[0].severity;
   chip.style.display='';
-  chip.classList.toggle('crit', worst==='critical'||worst==='high');
+  chip.classList.toggle('crit', worst==='critical');   // red for critical, amber for high
   $('#statusTxt').textContent=items.length+' data notice'+(items.length>1?'s':'');
   const cls={critical:'stop',high:'stop',medium:'warn',low:'info'};
   $('#ndBody').innerHTML=items.map(r=>
