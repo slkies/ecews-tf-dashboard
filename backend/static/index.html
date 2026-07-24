@@ -444,7 +444,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <h1>Treatment Failure Monitoring Dashboard</h1>
     <p>ECEWS-SPEED · Delta · Osun · Ekiti</p>
     <div class="err" id="loginErr"></div>
-    <div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username"></div>
+    <div class="field"><label for="em">Username</label><input id="em" type="text" autocomplete="username" placeholder="your username">
+      <small style="color:var(--ink-3);font-size:11px">Your email address still works.</small></div>
     <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div>
     <button class="btn btn-solid" id="btnLogin" style="width:100%;margin-top:8px;padding:11px">Sign in</button>
   </div>
@@ -930,6 +931,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
          A read-only <code>viewer@ecews.org</code> is seeded for quick testing.</p></div>
       <div class="user-form">
         <input id="nuName" placeholder="Full name">
+        <input id="nuUser" placeholder="Username">
         <input id="nuEmail" type="email" placeholder="email@ecews.org">
         <select id="nuRole"><option value="viewer">Viewer</option>
           <option value="analyst">Analyst</option><option value="admin">Admin</option></select>
@@ -938,7 +940,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
         <button class="btn btn-solid" id="nuAdd">Add user</button>
         <span id="nuMsg"></span>
       </div>
-      <div class="tw" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Email</th>
+      <div class="tw" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Username</th><th>Email</th>
         <th>Role</th><th>Scope</th><th>Status</th><th></th></tr></thead>
         <tbody id="userB"></tbody></table></div></div>
 
@@ -1026,7 +1028,7 @@ async function signIn(){
   const e=$('#loginErr'); e.style.display='none';
   try{
     const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:$('#em').value,password:$('#pw').value})});
+      body:JSON.stringify({username:$('#em').value,password:$('#pw').value})});
     if(!r.ok){const j=await r.json(); throw new Error(j.detail||'Sign-in failed');}
     const d=await r.json(); TOKEN=d.token; localStorage.setItem('tf_token',TOKEN); boot();
   }catch(err){e.textContent=err.message;e.style.display='block';}
@@ -1037,7 +1039,7 @@ function signOut(){localStorage.removeItem('tf_token');TOKEN=null;
 async function boot(){
   try{ME=await api('/me');}catch(e){return signOut();}
   $('#login').style.display='none'; $('#app').style.display='block';
-  $('#uName').textContent=ME.name||ME.email;
+  $('#uName').textContent=ME.name||ME.username||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
   if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();
     const ud=$('#usDays'); if(ud) ud.onchange=loadUsage;}
@@ -2180,12 +2182,13 @@ async function loadUsers(){
     $('#userB').innerHTML=us.map(u=>'<tr>'+
       '<td style="font-weight:500">'+esc(u.full_name||'—')
         +(u.id===ME.id?' <span class="tag t-n">you</span>':'')+'</td>'+
-      '<td>'+esc(u.email)+'</td>'+
+      '<td class="num" style="font-size:12px">'+esc(u.username||'—')+'</td>'+
+      '<td style="font-size:12px">'+esc(u.email)+'</td>'+
       '<td><span class="tag '+(roleTag[u.role]||'t-n')+'">'+esc(u.role)+'</span></td>'+
       '<td>'+esc(u.scope_state||'All states')+'</td>'+
       '<td>'+(u.is_active?'<span class="tag t-g">active</span>':'<span class="tag t-n">disabled</span>')+'</td>'+
       '<td class="r" style="white-space:nowrap">'
-        +'<button class="btn sm" data-pw="'+u.id+'" data-em="'+esc(u.email)+'">Reset password</button> '
+        +'<button class="btn sm" data-pw="'+u.id+'" data-em="'+esc(u.username||u.email)+'">Reset password</button> '
         +(u.id===ME.id?'':'<button class="btn sm" data-uid="'+u.id+'">'
         +(u.is_active?'Disable':'Enable')+'</button>')+'</td></tr>').join('');
     $$('#userB button[data-uid]').forEach(b=>b.onclick=async()=>{
@@ -2221,7 +2224,7 @@ async function loadUsage(){
     const d=await api('/usage?days='+days);
     $('#usGap').textContent=d.gap_minutes;
     $('#usB').innerHTML=d.people.map(p=>'<tr>'+
-      '<td style="font-weight:500">'+esc(p.email)
+      '<td style="font-weight:500">'+esc(p.username||p.email)
         +(p.is_active?'':' <span class="tag t-n">disabled</span>')+'</td>'+
       '<td><span class="tag t-n">'+esc(p.role)+'</span></td>'+
       '<td>'+esc(p.scope_state||'All states')+'</td>'+
@@ -2235,7 +2238,7 @@ async function loadUsage(){
         +'No activity recorded in this window.</td></tr>';
     $('#usNever').innerHTML=d.never_used.length
       ? '<div class="notice"><h3>Never signed in</h3><p>'
-        +d.never_used.map(n=>esc(n.email)).join(', ')
+        +d.never_used.map(n=>esc(n.username||n.email)).join(', ')
         +' &mdash; accounts exist but have not been used. Worth a nudge, or remove them.</p></div>'
       : '';
     $('#usPages').innerHTML=d.pages.map(p=>'<tr>'+
@@ -2260,12 +2263,13 @@ async function loadFeedback(){
 }
 async function addUser(){
   const msg=$('#nuMsg');
-  const body={full_name:$('#nuName').value.trim(),email:$('#nuEmail').value.trim(),
+  const body={full_name:$('#nuName').value.trim(),username:$('#nuUser').value.trim(),
+    email:$('#nuEmail').value.trim(),
     role:$('#nuRole').value,scope_state:$('#nuState').value,password:$('#nuPw').value};
   msg.textContent='Adding…';
   try{
     await api('/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    msg.textContent='Added.'; $('#nuName').value='';$('#nuEmail').value='';$('#nuPw').value='';
+    msg.textContent='Added.'; $('#nuName').value='';$('#nuUser').value='';$('#nuEmail').value='';$('#nuPw').value='';
     loadUsers();
   }catch(e){ msg.textContent=e.message; }
 }

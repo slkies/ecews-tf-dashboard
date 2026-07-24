@@ -8,7 +8,7 @@ ECEWS domain and integration with the ECEWS Central Data Repository.
 |---|---|
 | Document version | 1.0 |
 | Date | 22 July 2026 |
-| Application commit | `a738523` |
+| Application commit | `pending` |
 | Prepared by | Data Analytics Lead, ECEWS/SPEED Program |
 | Status | For review |
 
@@ -155,7 +155,7 @@ ECEWS reverse proxy.
 
 ### 1.5 Testing and continuous integration
 
-78 test functions, expanding to **101 test cases**, in two suites:
+86 test functions, expanding to **112 test cases**, in two suites:
 
 | Suite | Covers |
 |---|---|
@@ -356,7 +356,8 @@ one place to address, and it is configurable at the framework level.
 
 ### 4.1 Authentication
 
-- Email and password; passwords hashed with **bcrypt** (per-password salt).
+- **Username** and password. An email address is also held for every account - required, but as contact and identity rather than as the way in, because an address tells an administrator reading the usage panel far less than a name does. Sign-in accepts either handle, so the change locked nobody out; accounts predating it had a username derived from their address. Usernames are unique case-insensitively, 3-32 characters.
+- Passwords hashed with **bcrypt** (per-password salt).
   Inputs longer than 72 bytes are SHA-256 pre-hashed so a long passphrase cannot
   collide with its own prefix.
 - Successful sign-in issues a **JWT** (HS256), default lifetime 12 hours,
@@ -381,7 +382,7 @@ data set, provisioning has to be an explicit act by someone accountable for it.
 
 Passwords are managed as follows:
 
-- an administrator sets an initial password when creating the account, and can
+- an administrator sets the username, email and initial password when creating the account, and can
   **reset** any account's password without knowing the old one, which is how a
   forgotten or still-default password is recovered;
 - **users change their own** password from the header, and must supply their

@@ -122,7 +122,7 @@ def test_viewer_cannot_upload(client, viewer_h):
 
 def test_viewer_cannot_create_users(client, viewer_h):
     r = client.post("/api/users", headers=viewer_h,
-                    json={"email": "x@ecews.org", "password": "secret123"})
+                    json={"username": "x", "email": "x@ecews.org", "password": "secret123"})
     assert r.status_code == 403
 
 
@@ -140,9 +140,9 @@ def test_admin_can_export(client, admin_h, cohort):
 
 def test_analyst_can_export(client, admin_h, cohort):
     client.post("/api/users", headers=admin_h,
-                json={"email": "analyst@ecews.org", "password": "Analyst-Pass-1",
-                      "role": "analyst"})
-    h = hdr(client, ("analyst@ecews.org", "Analyst-Pass-1"))
+                json={"username": "analyst", "email": "analyst@ecews.org",
+                      "password": "Analyst-Pass-1", "role": "analyst"})
+    h = hdr(client, ("analyst", "Analyst-Pass-1"))
     assert client.get("/api/export", headers=h).status_code == 200
 
 
@@ -157,10 +157,11 @@ def test_denied_export_is_audited(client, admin_h, viewer_h, cohort):
 def _scoped_viewer(client, admin_h, state):
     email = f"{state.lower()}@ecews.org"
     r = client.post("/api/users", headers=admin_h,
-                    json={"email": email, "password": "Scoped-Pass-1",
+                    json={"username": state.lower(), "email": email,
+                          "password": "Scoped-Pass-1",
                           "role": "viewer", "scope_state": state})
     assert r.status_code == 200, r.text
-    return hdr(client, (email, "Scoped-Pass-1"))
+    return hdr(client, (state.lower(), "Scoped-Pass-1"))
 
 
 def test_unscoped_admin_sees_every_state(client, admin_h, cohort):
@@ -185,9 +186,10 @@ def test_scope_overrides_a_requested_filter(client, admin_h, cohort):
 
 def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
     client.post("/api/users", headers=admin_h,
-                json={"email": "d-analyst@ecews.org", "password": "Scoped-Pass-1",
+                json={"username": "d.analyst", "email": "d-analyst@ecews.org",
+                      "password": "Scoped-Pass-1",
                       "role": "analyst", "scope_state": "Delta"})
-    h = hdr(client, ("d-analyst@ecews.org", "Scoped-Pass-1"))
+    h = hdr(client, ("d.analyst", "Scoped-Pass-1"))
     csv = client.get("/api/export?state=Osun", headers=h).text
     assert "Osun" not in csv
     assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
@@ -222,9 +224,10 @@ def test_audit_trail_has_no_write_route(client, admin_h):
 
 
 # ── passwords ─────────────────────────────────────────────────────────
-def _make_user(client, admin_h, email="pw@ecews.org", pw="Correct-Horse-99"):
+def _make_user(client, admin_h, email="pwuser@ecews.org", pw="Correct-Horse-99"):
     r = client.post("/api/users", headers=admin_h,
-                    json={"email": email, "password": pw, "role": "viewer"})
+                    json={"username": email.split("@")[0], "email": email,
+                          "password": pw, "role": "viewer"})
     assert r.status_code == 200, r.text
     uid = next(u["id"] for u in client.get("/api/users", headers=admin_h).json()
                if u["email"] == email)
@@ -234,7 +237,7 @@ def _make_user(client, admin_h, email="pw@ecews.org", pw="Correct-Horse-99"):
 @pytest.mark.parametrize("pw", ["short", "changeme", "viewer1234", "blindalley"])
 def test_weak_or_default_passwords_are_refused(client, admin_h, pw):
     r = client.post("/api/users", headers=admin_h,
-                    json={"email": "weak@ecews.org", "password": pw})
+                    json={"username": "weak", "email": "weak@ecews.org", "password": pw})
     assert r.status_code == 400
 
 
@@ -282,6 +285,64 @@ def test_password_events_are_audited(client, admin_h):
     actions = {a["action"] for a in
                client.get("/api/audit", headers=admin_h).json()["actions"]}
     assert "user.password_reset" in actions
+
+
+# ── usernames ─────────────────────────────────────────────────────────
+def test_sign_in_by_username(client):
+    r = client.post("/api/login", json={"username": "admin",
+                                        "password": ADMIN[1]})
+    assert r.status_code == 200
+    assert r.json()["user"]["username"] == "admin"
+
+
+def test_sign_in_by_email_still_works(client):
+    """Nobody is locked out on the day usernames arrive."""
+    r = client.post("/api/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+    assert r.status_code == 200
+
+
+def test_username_is_case_insensitive(client):
+    assert client.post("/api/login", json={"username": "ADMIN",
+                                           "password": ADMIN[1]}
+                       ).status_code == 200
+
+
+def test_seeded_accounts_have_usernames(client, admin_h):
+    users = client.get("/api/users", headers=admin_h).json()
+    by_email = {u["email"]: u for u in users}
+    assert by_email[ADMIN[0]]["username"] == "admin"
+    assert by_email["viewer@ecews.org"]["username"] == "viewer"
+
+
+@pytest.mark.parametrize("bad", ["ab", "has space", "no@sign", "-leading",
+                                 "x" * 33])
+def test_invalid_usernames_are_refused(client, admin_h, bad):
+    r = client.post("/api/users", headers=admin_h,
+                    json={"username": bad, "email": "u@ecews.org",
+                          "password": "Correct-Horse-99"})
+    assert r.status_code == 400
+
+
+def test_usernames_are_unique_regardless_of_case(client, admin_h):
+    body = {"username": "Sam", "email": "sam@ecews.org",
+            "password": "Correct-Horse-99"}
+    assert client.post("/api/users", headers=admin_h, json=body).status_code == 200
+    clash = dict(body, username="SAM", email="other@ecews.org")
+    assert client.post("/api/users", headers=admin_h, json=clash).status_code == 409
+
+
+def test_lockout_counts_the_account_not_the_handle(client):
+    """
+    Five failures against the username and five against the email must not be
+    two separate budgets for one account.
+    """
+    for _ in range(3):
+        client.post("/api/login", json={"username": "admin", "password": "no"})
+    for _ in range(2):
+        client.post("/api/login", json={"email": ADMIN[0], "password": "no"})
+    r = client.post("/api/login", json={"username": "admin",
+                                        "password": ADMIN[1]})
+    assert r.status_code == 429
 
 
 # ── usage tracking ────────────────────────────────────────────────────

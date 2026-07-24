@@ -14,6 +14,32 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Sign-in handle. Added after launch: an email tells an administrator reading
+-- the usage panel far less than a name does. Email is still required, but it is
+-- now contact and identity rather than the way in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+
+-- Backfill from the email local part for accounts that predate usernames, with
+-- a numeric suffix where two addresses share one, so the unique index below can
+-- actually be created. This runs once; afterwards the WHERE clause matches
+-- nothing. It only de-duplicates within the backfilled set, which is correct
+-- because on the one run that does any work every row is in that set.
+WITH derived AS (
+  SELECT id,
+         split_part(email, '@', 1) AS base,
+         row_number() OVER (PARTITION BY lower(split_part(email, '@', 1))
+                            ORDER BY id) AS rn
+  FROM users
+  WHERE username IS NULL OR btrim(username) = ''
+)
+UPDATE users u
+   SET username = CASE WHEN d.rn = 1 THEN d.base ELSE d.base || d.rn END
+  FROM derived d
+ WHERE u.id = d.id;
+
+-- Case-insensitive: "Es" and "es" must not be two different people.
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_key ON users (lower(username));
+
 -- Every workbook upload becomes an immutable, dated snapshot.
 CREATE TABLE IF NOT EXISTS uploads (
   id           SERIAL PRIMARY KEY,

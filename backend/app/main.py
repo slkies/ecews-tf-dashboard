@@ -17,6 +17,7 @@ import io
 import json
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -48,15 +49,16 @@ async def lifespan(app: FastAPI):
     with pool.connection() as c:
         c.execute((Path(__file__).parent / "schema.sql").read_text())
         # seed each account only if absent, so both survive an existing DB
-        def _seed(email, name, role, pw):
+        def _seed(username, email, name, role, pw):
             if not c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
-                c.execute("INSERT INTO users (email,password_hash,full_name,role) "
-                          "VALUES (%s,%s,%s,%s)", (email, hash_password(pw), name, role))
-                log.warning("Seeded %s (%s) - change this password.", email, role)
-        _seed("admin@ecews.org", "Administrator", "admin",
+                c.execute("INSERT INTO users (username,email,password_hash,"
+                          "full_name,role) VALUES (%s,%s,%s,%s,%s)",
+                          (username, email, hash_password(pw), name, role))
+                log.warning("Seeded %s (%s) - change this password.", username, role)
+        _seed("admin", "admin@ecews.org", "Administrator", "admin",
               os.getenv("ADMIN_PASSWORD", "changeme"))
         # a shared read-only account so others can log in and test immediately
-        _seed("viewer@ecews.org", "Viewer", "viewer",
+        _seed("viewer", "viewer@ecews.org", "Viewer", "viewer",
               os.getenv("VIEWER_PASSWORD", "viewer1234"))
     yield
     pool.close()
@@ -71,8 +73,15 @@ app.add_middleware(
 
 # ── auth ──────────────────────────────────────────────────────────────
 class Login(BaseModel):
-    email: str
+    # Either handle works. `username` is what the sign-in page now sends;
+    # `email` is kept so existing clients, saved links and the test suite do not
+    # break on the day usernames arrive.
+    username: str | None = None
+    email: str | None = None
     password: str
+
+    def handle(self) -> str:
+        return (self.username or self.email or "").strip().lower()
 
 
 def auth(authorization: Annotated[str | None, Header()] = None) -> dict:
@@ -94,8 +103,28 @@ def admin(u: Annotated[dict, Depends(auth)]) -> dict:
 
 
 def _public(u: dict) -> dict:
-    return {"email": u["email"], "name": u["full_name"], "role": u["role"],
+    return {"username": u.get("username"), "email": u["email"],
+            "name": u["full_name"], "role": u["role"],
             "scope_state": u["scope_state"], "scope_facility": u["scope_facility"]}
+
+
+_USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
+
+
+def _clean_username(raw: str) -> str:
+    """
+    Normalise and validate a sign-in handle.
+
+    Stored lower-case so `Es` and `es` cannot become two accounts - the unique
+    index is on lower(username), and letting the stored case drift from that
+    only invites confusion in the usage panel.
+    """
+    name = (raw or "").strip().lower()
+    if not _USERNAME_RE.match(name):
+        raise HTTPException(
+            400, "Username must be 3-32 characters: letters, numbers, dot, "
+                 "dash or underscore, starting with a letter or number.")
+    return name
 
 
 # ── audit trail ───────────────────────────────────────────────────────
@@ -192,26 +221,35 @@ def _recent_failures(email: str) -> int:
 
 @app.post("/api/login")
 def login(body: Login, request: Request):
-    email = body.email.lower().strip()
+    handle = body.handle()
 
-    if _recent_failures(email) >= LOCKOUT_FAILS:
-        _audit("login.blocked", email=email, request=request,
+    with pool.connection() as c:
+        u = c.execute(
+            "SELECT * FROM users "
+            " WHERE (lower(username) = %s OR lower(email) = %s) AND is_active",
+            (handle, handle)).fetchone()
+
+    # Lockout is keyed on the ACCOUNT's email, not on what was typed. Otherwise
+    # five failures against the username and five against the email would be two
+    # separate budgets for the same account. An unknown handle has no account, so
+    # it is its own key.
+    key = u["email"] if u else handle
+
+    if _recent_failures(key) >= LOCKOUT_FAILS:
+        _audit("login.blocked", email=key, request=request,
                detail=f"{LOCKOUT_FAILS} failed attempts within "
                       f"{LOCKOUT_MINUTES} minutes")
         raise HTTPException(429, f"Too many failed attempts. Try again in "
                                  f"{LOCKOUT_MINUTES} minutes.")
 
-    with pool.connection() as c:
-        u = c.execute("SELECT * FROM users WHERE email=%s AND is_active",
-                      (email,)).fetchone()
     if not u or not verify_password(body.password, u["password_hash"]):
-        # Deliberately does not distinguish unknown address from wrong password:
-        # the response must not confirm whether an account exists.
-        _audit("login.failure", email=email, request=request,
+        # Deliberately does not distinguish an unknown handle from a wrong
+        # password: the response must not confirm whether an account exists.
+        _audit("login.failure", email=key, request=request,
                user_id=u["id"] if u else None)
-        raise HTTPException(401, "Wrong email or password")
+        raise HTTPException(401, "Wrong username or password")
 
-    _audit("login.success", user_id=u["id"], email=email, request=request)
+    _audit("login.success", user_id=u["id"], email=key, request=request)
     return {"token": create_token(u["id"]), "user": _public(u)}
 
 
@@ -611,6 +649,7 @@ def list_feedback(u: Annotated[dict, Depends(admin)]):
 
 # ── user management (admin only) ──────────────────────────────────────
 class NewUser(BaseModel):
+    username: str
     email: str
     full_name: str | None = None
     role: str = "viewer"
@@ -645,7 +684,7 @@ def _check_password(pw: str) -> None:
 def list_users(u: Annotated[dict, Depends(admin)]):
     with pool.connection() as c:
         return c.execute(
-            "SELECT id,email,full_name,role,scope_state,is_active,created_at "
+            "SELECT id,username,email,full_name,role,scope_state,is_active,created_at "
             "FROM users ORDER BY role, created_at").fetchall()
 
 
@@ -654,19 +693,24 @@ def create_user(body: NewUser, u: Annotated[dict, Depends(admin)], request: Requ
     email = (body.email or "").lower().strip()
     if "@" not in email:
         raise HTTPException(400, "A valid email is required.")
+    username = _clean_username(body.username)
     _check_password(body.password)
     role = body.role if body.role in ("admin", "analyst", "viewer") else "viewer"
     with pool.connection() as c:
+        if c.execute("SELECT 1 FROM users WHERE lower(username)=%s",
+                     (username,)).fetchone():
+            raise HTTPException(409, "That username is already taken.")
         if c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
             raise HTTPException(409, "A user with that email already exists.")
         c.execute(
-            "INSERT INTO users (email,password_hash,full_name,role,scope_state) "
-            "VALUES (%s,%s,%s,%s,%s)",
-            (email, hash_password(body.password),
-             body.full_name or email.split("@")[0], role,
+            "INSERT INTO users (username,email,password_hash,full_name,role,"
+            "scope_state) VALUES (%s,%s,%s,%s,%s,%s)",
+            (username, email, hash_password(body.password),
+             body.full_name or username, role,
              (body.scope_state or None) if (body.scope_state or "") != "All" else None))
     _audit("user.create", user_id=u["id"], email=u["email"], request=request,
-           detail=f"created {email} role={role} scope={body.scope_state or 'all states'}")
+           detail=f"created {username} <{email}> role={role} "
+                  f"scope={body.scope_state or 'all states'}")
     return {"ok": True}
 
 
@@ -734,13 +778,15 @@ def get_audit(u: Annotated[dict, Depends(admin)],
     """
     clauses, args = [], []
     if action:
-        clauses.append("action = %s")
+        clauses.append("a.action = %s")
         args.append(action)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with pool.connection() as c:
         rows = c.execute(
-            f"SELECT id,ts,email,action,detail,ip FROM audit_log {where} "
-            f"ORDER BY ts DESC LIMIT %s", (*args, limit)).fetchall()
+            f"SELECT a.id,a.ts,COALESCE(us.username,a.email) AS actor,a.email,"
+            f"a.action,a.detail,a.ip FROM audit_log a "
+            f"LEFT JOIN users us ON us.id=a.user_id {where} "
+            f"ORDER BY a.ts DESC LIMIT %s", (*args, limit)).fetchall()
         kinds = c.execute(
             "SELECT action, count(*) AS n FROM audit_log "
             "GROUP BY action ORDER BY n DESC").fetchall()
@@ -778,7 +824,7 @@ def get_usage(u: Annotated[dict, Depends(admin)], days: int = Query(90, le=365))
                      count(*) AS hits
               FROM grouped GROUP BY user_id, sid
             )
-            SELECT us.email, us.role, us.scope_state, us.is_active,
+            SELECT us.username, us.email, us.role, us.scope_state, us.is_active,
                    count(*)                                   AS sessions,
                    sum(s.hits)                                AS requests,
                    count(DISTINCT s.started::date)            AS active_days,
@@ -786,7 +832,7 @@ def get_usage(u: Annotated[dict, Depends(admin)], days: int = Query(90, le=365))
                    round(sum(EXTRACT(EPOCH FROM (s.ended - s.started)))
                          / 60.0)::int                         AS minutes
             FROM spans s JOIN users us ON us.id = s.user_id
-            GROUP BY us.email, us.role, us.scope_state, us.is_active
+            GROUP BY us.username, us.email, us.role, us.scope_state, us.is_active
             ORDER BY max(s.ended) DESC
         """).fetchall()
 
@@ -804,7 +850,7 @@ def get_usage(u: Annotated[dict, Depends(admin)], days: int = Query(90, le=365))
         """).fetchall()
 
         never = c.execute("""
-            SELECT email, role, created_at FROM users
+            SELECT username, email, role, created_at FROM users
             WHERE is_active AND id NOT IN (SELECT DISTINCT user_id
                                            FROM usage_log WHERE user_id IS NOT NULL)
             ORDER BY created_at
