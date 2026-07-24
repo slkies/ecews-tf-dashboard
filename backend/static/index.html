@@ -1813,8 +1813,8 @@ function dtcView(d){
   const s=d.summary;
   $('#dtcTiles').innerHTML=[
     stat('Still ≥ 1,000',fmt(s.still),'after the follow-up / post-EAC VL','warn'),
-    stat('…of which repeat unsuppression',fmt(s.repeat_still_episodes),
-      'a subset of the '+fmt(s.still)+' still ≥1,000 · '+fmt(s.repeat_still_clients)+' clients failed >once'),
+    stat('…repeat-unsuppression clients',fmt(s.repeat_still_clients),
+      'failed >once and still ≥1,000 — a subset of the '+fmt(s.still)+' above'),
     stat('Awaiting DTC review',fmt(s.awaiting),'1st line at index, still 1st','bad'),
     stat('Prior switch — DTC review',fmt(s.prior),'2nd/3rd line already at index','warn'),
     stat('Switched',fmt(s.switched),'1st at index → now 2nd/3rd'),
