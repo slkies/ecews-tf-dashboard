@@ -147,12 +147,23 @@ nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;paddin
 .tw th.sorted,.tbl-wrap th.sorted{color:var(--green)}
 th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle}
 
-.filters{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
-  padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
-.f{display:flex;flex-direction:column;gap:4px}
-.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.f select{min-width:132px;cursor:pointer}
-.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto}
+/* One row. The selects share the space equally and shrink together instead of
+   each claiming a fixed 132px and wrapping - the facility list in particular
+   was forcing a very wide control. */
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
+  padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
+/* 96px basis: the eight controls sit on ONE row wherever there is room and
+   share the surplus equally. Below roughly 1100px they wrap rather than
+   squeezing on - at 960 a nowrap row rendered 60px selects, too narrow to read
+   the selected value, which is worse than a second row. */
+.f{display:flex;flex-direction:column;gap:4px;flex:1 1 96px;min-width:96px}
+.f-btn{flex:0 0 auto}
+.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f select{min-width:0;width:100%;cursor:pointer;padding:7px 8px}
+.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto;
+  flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:900px){.f{flex:1 1 130px}}
 
 .panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
   padding:22px;box-shadow:var(--sh);margin-bottom:16px}
@@ -167,10 +178,14 @@ th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle
 .grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .grid>.panel{min-width:0}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;
+/* auto-FILL, not auto-fit: auto-fit collapses the empty tracks and stretches
+   the cards across the whole row, so a four-card row left ~390px cards holding
+   a two-word value - the dead space flagged in review. auto-fill keeps the
+   track size steady, so cards are the same width on every row. */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;
   margin-bottom:16px}
 .stat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
-  padding:16px 18px;box-shadow:var(--sh)}
+  padding:14px 15px;box-shadow:var(--sh)}
 .stat .k{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
 .stat .v{font-size:27px;font-weight:600;margin-top:5px;letter-spacing:-.035em;line-height:1.12}
 .stat .n{font-size:11px;color:var(--ink-3);margin-top:2px}
@@ -606,7 +621,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="f"><label>Sex</label><select id="fSex"><option>All</option><option>Female</option><option>Male</option></select></div>
     <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
     <div class="f"><label>Treatment plan</label><select id="fPlan"><option>All</option></select></div>
-    <div class="f"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
+    <div class="f f-btn"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
     <span class="chip" id="chip"></span>
   </div>
 
@@ -2204,38 +2219,36 @@ function timeView(t,km,ucurve){
     +'">'+esc(k)+'</b> median '+ucurve[k].median+' yr · n='+fmt(ucurve[k].n)+'</span>').join('');
 }
 
-const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',R:'#8A8175'};
+const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',
+            G:'#8A8175',H:'#5A5550'};
 // Why each plan is assigned. These restate the conditions in _plan() (spec §6)
 // in clinical terms: what must be true of an episode to land here, and what
 // that implies. A plan is only actionable if the reader knows the reasoning.
 const PLAN_WHY={
-  A:'Recent unsuppressed result and no EAC session on record. Most unsuppressed '
-   +'results are adherence-related, so counselling comes before any change of regimen.',
-  B:'Counselling has started but is not complete. A repeat viral load taken now '
-   +'cannot separate poor adherence from true treatment failure, so the cycle must '
-   +'be finished first.',
-  C:'The index result is more than six months old, so the repeat viral load is '
-   +'already due or overdue. The outstanding action is the sample, not more counselling.',
-  D:'The follow-up viral load came back under 1,000 copies/ml. Adherence support '
-   +'worked and the episode has resolved; the client returns to routine monitoring.',
-  E:'The client is not currently in care (interrupted treatment, transferred out, '
-   +'stopped, or died). No viral-load action is possible until they are located, so '
-   +'tracking takes priority over the cascade.',
-  F:'A full EAC cycle was completed and the viral load is still at or above 1,000 '
-   +'copies/ml. Adherence is no longer the likely explanation, which makes this a '
-   +'genuine treatment failure and a switch decision for the committee.',
-  R:'The episode does not meet the conditions for any plan above — usually a missing '
-   +'index date. It needs a person to look at the record.'};
+  A:'Recent unsuppressed result and no EAC on record.',
+  B:'EAC has commenced but not completed.',
+  C:'Index result is more than 6 months old.',
+  D:'Post-EAC / follow-up VL < 1,000 c/ml.',
+  E:'Client has a non-terminal negative outcome after the index VL.',
+  F:'Post-EAC / follow-up VL still ≥ 1,000 c/ml.',
+  G:'Episode does not meet the conditions for any plan above — usually a missing index date.',
+  H:'Client has a terminal outcome — died or transferred out.'};
 
 function plansView(plans){
   const max=Math.max.apply(null,plans.map(p=>p.n).concat([1]));
+  // Order by plan letter, not by volume: the codes follow the clinical flow
+  // (no EAC -> incomplete -> overdue -> resuppressed -> ...), so reading them
+  // in order is how the decision tree is meant to be understood. Sorting by
+  // count scrambled that into an arbitrary sequence.
+  const letter=p=>/^[A-H]\./.test(p.plan)?p.plan[0]:'G';
+  plans=plans.slice().sort((a,b)=>letter(a).localeCompare(letter(b)));
   $('#planList').innerHTML=plans.map(function(p){
-    const code=/^[A-F]\./.test(p.plan)?p.plan[0]:'R';
+    const code=letter(p);
     return '<div class="plan" data-plan="'+p.plan.replace(/"/g,'&quot;')+'">'+
       '<div class="code" style="background:'+PCOL[code]+'">'+code+'</div>'+
       '<div class="txt">'+
         '<div class="why">'+esc(PLAN_WHY[code]||'')+'</div>'+
-        '<div class="act">'+esc(p.plan.replace(/^[A-F]\. /,''))+'</div>'+
+        '<div class="act">'+esc(p.plan.replace(/^[A-H]\. /,''))+'</div>'+
         '<div class="track plan-bar">'+
         '<div class="fill" style="width:'+(p.n/max*100)+'%;background:'+PCOL[code]+'"></div></div></div>'+
       '<div style="text-align:right"><div class="cnt num">'+fmt(p.n)+'</div>'+
@@ -2492,6 +2505,10 @@ function switchTo(v){
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   const hide=['guide','method','admin','dq'].indexOf(v)>=0;
   $('#filters').style.display=hide?'none':'flex';
+  // The line-list provenance line belongs on the Overview, where the cohort is
+  // introduced. Repeating it above every page was noise, and the rail footer
+  // already carries the same date and counts everywhere.
+  const chip=$('#chip'); if(chip) chip.style.display=(v==='overview')?'':'none';
   closeRail();                 // collapse the mobile rail after a jump
   window.scrollTo({top:0});
 }

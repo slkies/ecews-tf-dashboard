@@ -654,22 +654,41 @@ def build_cohort(
 
 
 # ── §6: treatment plan decision tree (priority-ordered, exactly one) ──
-_INACTIVE = {"iit", "stopped", "lost to follow-up", "ltfu", "dead", "death",
-             "discontinued care"}
+#
+# Negative outcomes split in two, because the action differs completely.
+#
+# TERMINAL - the client has died or left this facility. No clinical action is
+# possible here, so these are checked FIRST: a VL-based plan would otherwise be
+# issued for someone who cannot receive it. Previously "Death" fell into
+# "E. Track client" (you cannot track a dead client) and "Transferred out" was
+# missing from the set entirely, so 38 episodes were told to draw a post-EAC
+# sample at a facility the client had already left.
+_TERMINAL = {"dead", "death", "died", "deceased",
+             "transferred out", "transferred-out", "transfer out", "to"}
+
+# NON-TERMINAL - disengaged but recoverable, so tracking is the action.
+# Both hyphenations of "lost to follow-up" are listed: the export writes
+# "Lost to followup", which silently missed the hyphenated-only set and sent
+# those episodes off to a VL-based plan instead.
+_NON_TERMINAL = {"iit", "stopped", "stopped treatment", "defaulted",
+                 "lost to follow-up", "lost to followup", "ltfu",
+                 "discontinued care", "discontinued"}
 
 
 def _plan(r: pd.Series, as_of: pd.Timestamp) -> str:
     # `pd.NA or ""` raises; test for nullness explicitly.
     st = r.get("art_status")
     status = "" if st is None or pd.isna(st) else str(st).strip().lower()
-    if status in _INACTIVE:
+    if status in _TERMINAL:
+        return "H. No further action, confirm outcome in register and EMR"
+    if status in _NON_TERMINAL:
         return "E. Track client"
 
     has_result = bool(r.get("post_result"))
     fu = r.get("fu_vl")
 
     if has_result and pd.notna(fu) and fu >= VL_FAIL and bool(r.get("eac_completed")):
-        return "F. Refer to switch committee, do CD4, update register & EMR"
+        return "F. Refer to Drug Therapeutic Committee, update register and EMR"
     if has_result and pd.notna(fu) and fu < VL_FAIL:
         return "D. Repeat VL in 6 months, continue adherence counselling"
 
@@ -681,8 +700,8 @@ def _plan(r: pd.Series, as_of: pd.Timestamp) -> str:
     if recent and bool(r.get("eac1")) and not bool(r.get("eac_completed")):
         return "B. Complete EAC, update register and EMR"
     if pd.notna(idx) and not recent:
-        return "C. Take post-EAC sample, update register and EMR"
-    return "Review manually"
+        return "C. Commence EAC, document register and EMR"
+    return "G. Review manually"
 
 
 # ── §4: cascade summary ───────────────────────────────────────────────
