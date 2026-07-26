@@ -228,14 +228,19 @@ td.r,th.r{text-align:right}
 .t-b{background:var(--brick-l);color:var(--brick)}
 .t-n{background:var(--rule-2);color:var(--ink-2)}
 
-.plan{display:flex;align-items:center;gap:13px;padding:12px 0;
+/* A plan row now leads with WHY it applies, then the action. Aligned to the
+   top rather than centred, because the reason wraps to several lines. */
+.plan{display:flex;align-items:flex-start;gap:14px;padding:16px 0;
   border-bottom:1px solid var(--rule-2);cursor:pointer}
 .plan:last-child{border-bottom:none}
 .plan:hover{background:var(--paper)}
-.plan .code{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
-  font-weight:700;font-size:12px;color:#fff;flex-shrink:0}
-.plan .txt{flex:1;font-size:13px}
-.plan .cnt{font-size:15px;font-weight:600}
+.plan .code{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;
+  font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.plan .txt{flex:1;min-width:0;font-size:13px}
+.plan .why{font-size:12.5px;color:var(--ink-3);line-height:1.6;max-width:88ch}
+.plan .act{font-size:13.5px;font-weight:600;color:var(--ink);margin-top:5px}
+.plan .plan-bar{height:14px;border-radius:7px;margin-top:9px}
+.plan .cnt{font-size:17px;font-weight:600}
 
 /* doc fills the card; prose keeps a readable measure while the grids and
    tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
@@ -799,6 +804,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;6</div>
       <h2>Treatment plan decision engine</h2>
       <p>Every episode receives exactly one plan from the priority-ordered decision tree.
+         Each row gives the <strong>reason the plan applies</strong> &mdash; what must be true
+         of an episode to land there &mdash; followed by the action it calls for.
          Click a plan to load its clients.</p></div>
       <div id="planList"></div></div>
     <div class="panel" id="planPanel" style="display:none">
@@ -2193,14 +2200,38 @@ function timeView(t,km,ucurve){
 }
 
 const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',R:'#8A8175'};
+// Why each plan is assigned. These restate the conditions in _plan() (spec §6)
+// in clinical terms: what must be true of an episode to land here, and what
+// that implies. A plan is only actionable if the reader knows the reasoning.
+const PLAN_WHY={
+  A:'Recent unsuppressed result and no EAC session on record. Most unsuppressed '
+   +'results are adherence-related, so counselling comes before any change of regimen.',
+  B:'Counselling has started but is not complete. A repeat viral load taken now '
+   +'cannot separate poor adherence from true treatment failure, so the cycle must '
+   +'be finished first.',
+  C:'The index result is more than six months old, so the repeat viral load is '
+   +'already due or overdue. The outstanding action is the sample, not more counselling.',
+  D:'The follow-up viral load came back under 1,000 copies/ml. Adherence support '
+   +'worked and the episode has resolved; the client returns to routine monitoring.',
+  E:'The client is not currently in care (interrupted treatment, transferred out, '
+   +'stopped, or died). No viral-load action is possible until they are located, so '
+   +'tracking takes priority over the cascade.',
+  F:'A full EAC cycle was completed and the viral load is still at or above 1,000 '
+   +'copies/ml. Adherence is no longer the likely explanation, which makes this a '
+   +'genuine treatment failure and a switch decision for the committee.',
+  R:'The episode does not meet the conditions for any plan above — usually a missing '
+   +'index date. It needs a person to look at the record.'};
+
 function plansView(plans){
   const max=Math.max.apply(null,plans.map(p=>p.n).concat([1]));
   $('#planList').innerHTML=plans.map(function(p){
     const code=/^[A-F]\./.test(p.plan)?p.plan[0]:'R';
     return '<div class="plan" data-plan="'+p.plan.replace(/"/g,'&quot;')+'">'+
       '<div class="code" style="background:'+PCOL[code]+'">'+code+'</div>'+
-      '<div class="txt">'+p.plan.replace(/^[A-F]\. /,'')+
-        '<div class="track" style="height:5px;margin-top:6px">'+
+      '<div class="txt">'+
+        '<div class="why">'+esc(PLAN_WHY[code]||'')+'</div>'+
+        '<div class="act">'+esc(p.plan.replace(/^[A-F]\. /,''))+'</div>'+
+        '<div class="track plan-bar">'+
         '<div class="fill" style="width:'+(p.n/max*100)+'%;background:'+PCOL[code]+'"></div></div></div>'+
       '<div style="text-align:right"><div class="cnt num">'+fmt(p.n)+'</div>'+
         '<div style="font-size:11px;color:var(--ink-3)" class="num">'+pc(p.pct)+'</div></div></div>';
