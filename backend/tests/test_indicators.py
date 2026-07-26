@@ -183,6 +183,31 @@ def test_blank_sn_rows_are_dropped_and_reported():
     assert any("blank S/N" in w for w in c.warnings)
 
 
+# ── §6: terminal vs non-terminal negative outcomes ────────────────────
+@pytest.mark.parametrize("status", ["Death", "Transferred out", "Deceased"])
+def test_terminal_outcomes_get_no_action_plan(status):
+    """
+    A client who has died or left the facility cannot be tracked and cannot be
+    given a viral-load action. Death previously fell into "E. Track client" and
+    "Transferred out" was missing from the inactive set entirely, so those
+    episodes were issued EAC and sampling instructions.
+    """
+    c = cohort([mk(Session_1_Date="2026-03-20")], status=status)
+    assert c.df.loc[0, "treatment_plan"].startswith("H.")
+
+
+@pytest.mark.parametrize("status", ["LTFU", "Lost to followup",
+                                    "Lost to follow-up", "Discontinued Care"])
+def test_non_terminal_outcomes_are_tracked(status):
+    """
+    'Lost to followup' is the spelling the export actually uses. The set only
+    listed the hyphenated form, so those episodes missed plan E and were sent
+    to a viral-load plan instead.
+    """
+    c = cohort([mk(Session_1_Date="2026-03-20")], status=status)
+    assert c.df.loc[0, "treatment_plan"].startswith("E.")
+
+
 # ── DTC review: the repeat-unsuppression subset must nest in "still" ──
 def test_dtc_repeat_subset_nests_in_still():
     """

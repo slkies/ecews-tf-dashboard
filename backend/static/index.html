@@ -4,30 +4,44 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ECEWS-SPEED Treatment Failure Monitoring Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Everything is served from this origin. The dashboard makes NO external
+     requests at runtime, so it renders identically behind an institutional
+     firewall, on a locked-down network, or fully offline. -->
+<link rel="stylesheet" href="vendor/fonts.css">
+<script src="vendor/chart.umd.min.js"></script>
 <style>
 :root{
-  --paper:#FBF8F3; --card:#FFF; --ink:#211E1A; --ink-2:#5C554C; --ink-3:#928A7E;
-  --rule:#E6DFD4; --rule-2:#F0EAE1; --line:#E6DFD4; --bg-2:#F5F1E9;
-  --green:#08684E; --green-d:#05402F; --green-l:#E3F0EA;
-  --honey:#B8860B; --honey-l:#FBF0D8;
-  --brick:#B83B2A; --brick-l:#FAE7E2;
-  --slate:#4A6B7C; --slate-l:#E8EEF1; --violet:#8250C9; --teal:#12A0B8; --r:10px;
-  --sh:0 1px 2px rgba(33,30,26,.05),0 1px 8px rgba(33,30,26,.03);
+  /* v4: neutral white canvas; surfaces + shadow do the separating that heavy
+     warm borders used to. Brand green is unchanged. */
+  --bg:#FFFFFF; --surface:#F7F8F7; --rail:230px;
+  --paper:#F4F6F5;           /* subtle tint kept for row hovers + dropzone */
+  --card:#FFFFFF; --ink:#12181A; --ink-2:#5A6560; --ink-3:#8E9A94;
+  --rule:#E4E8E5; --rule-2:#EFF2F0; --line:#E4E8E5; --bg-2:#EFF2F0;
+  --green:#08684E; --green-d:#05402F; --green-l:#E8F3EF;
+  --honey:#B0770E; --honey-l:#FDF3E0;
+  --brick:#B03A28; --brick-l:#FBECE9;
+  --slate:#3E6C86; --slate-l:#EAF1F5; --violet:#6B5B95; --teal:#12A0B8; --r:12px;
+  --sh:0 1px 2px rgba(18,24,26,.04),0 4px 16px rgba(18,24,26,.045);
 }
+/* Dark theme: neutral near-black, not the old warm brown. #0D0F10 rather than
+   pure #000 - dense prose and tables shimmer (halation) against true black,
+   and off-white text on it is harsher than it needs to be.
+   Accents keep their HUE and are lifted in lightness: the brand green at
+   #08684E scores ~2:1 on a dark ground and is effectively unreadable, so each
+   status colour is re-picked for this background rather than reused. */
 [data-theme=dark]{
-  --paper:#1A1815; --card:#232019; --ink:#F0EBE3; --ink-2:#B8AFA2; --ink-3:#8A8175;
-  --rule:#3A3529; --rule-2:#2E2A22; --line:#3A3529; --bg-2:#2A261E;
-  --green:#14CE9D; --green-d:#0D9B75; --green-l:#12302A;
-  --honey:#D4A72C; --honey-l:#33290F; --brick:#E0705C; --brick-l:#3A1F1A;
-  --slate:#7BA0B3; --slate-l:#1E2A30; --violet:#A98BE0; --teal:#3FC3D8;
+  --bg:#0D0F10; --surface:#151819;
+  --paper:#151819; --card:#141718; --ink:#EEF1F1; --ink-2:#AEB6B6; --ink-3:#7F8888;
+  --rule:#272B2C; --rule-2:#1E2223; --line:#272B2C; --bg-2:#1B1F20;
+  --green:#2BD39C; --green-d:#16B382; --green-l:#0E2A22;
+  --honey:#E7B23C; --honey-l:#2C2310;
+  --brick:#F2705A; --brick-l:#301A16;
+  --slate:#7FB3CC; --slate-l:#152329; --violet:#B49BE8; --teal:#4FD3E6;
+  --sh:0 1px 2px rgba(0,0,0,.5),0 4px 16px rgba(0,0,0,.35);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:15px}   /* was 14 - one step up for readability */
-body{background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
+body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;line-height:1.5;transition:background .2s,color .2s}
 .num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .wrap{max-width:1260px;margin:0 auto;padding:0 24px 64px}
@@ -63,21 +77,93 @@ input:focus,select:focus{outline:2px solid var(--green);outline-offset:-1px}
 .btn-solid:hover{background:var(--green-d);color:#fff}
 .btn.sm{padding:4px 9px;font-size:11px}
 
-nav{display:flex;gap:2px;border-bottom:1px solid var(--rule);margin-bottom:22px;
-  overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{font:inherit;font-size:13px;font-weight:500;color:var(--ink-3);background:none;
-  border:none;border-bottom:2px solid transparent;padding:10px 12px;cursor:pointer;
-  white-space:nowrap;margin-bottom:-1px;width:auto}
-nav button:hover{color:var(--ink)}
-nav button[aria-selected=true]{color:var(--green);border-bottom-color:var(--green);font-weight:600}
+/* ── v4 shell: sidebar rail + main column ─────────────────────── */
+/* minmax(0,1fr) not 1fr: a grid item defaults to min-width:min-content, so a
+   wide table would expand the main column past the viewport instead of letting
+   its own overflow-x container scroll. This is the same trap the page grids hit. */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:100vh}
+.rail{background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;
+  position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;
+  overflow-y:auto;scrollbar-width:thin;z-index:60}
+.rail .brand{display:flex;align-items:center;gap:10px;padding:2px 8px 16px}
+.rail .brand b{font-size:14px;font-weight:600;display:block;letter-spacing:-.01em;line-height:1.2}
+.rail .brand span{font-size:11px;color:var(--ink-3);display:block}
+.nav-lbl{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.09em;padding:14px 10px 5px}
+nav.rail-nav{display:flex;flex-direction:column;gap:2px}
+nav.rail-nav button{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;
+  font:inherit;font-size:13px;font-weight:500;color:var(--ink-2);background:none;border:none;
+  cursor:pointer;width:100%;text-align:left;transition:.13s}
+nav.rail-nav button:hover{background:var(--bg);color:var(--ink)}
+nav.rail-nav button[aria-selected=true]{background:var(--bg);color:var(--green);
+  font-weight:600;box-shadow:var(--sh)}
+nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;padding:1px 7px;
+  border-radius:20px;background:var(--brick-l);color:var(--brick)}
+.rail-foot{margin-top:auto;padding:12px 10px 4px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--ink-3);line-height:1.5}
+.railmain{min-width:0;display:flex;flex-direction:column}
+/* No max-width cap: the rail already frames the page, so the content fills its
+   column right up to the edges the way the prototype does. A cap + margin:auto
+   left symmetric gutters that read as dead space beside the rail. Wide prose
+   still self-limits via .narr p / .doc measures. */
+.railmain>.inner{width:100%;min-width:0;padding:0 32px 60px;flex:1}
+.burger{display:none}
+@media(max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .rail{position:fixed;left:0;top:0;bottom:0;width:250px;
+    transform:translateX(-100%);transition:transform .24s cubic-bezier(.3,.8,.3,1)}
+  .rail.on{transform:none}
+  .railmain>.inner{padding:0 16px 70px}
+  .burger{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;
+    border:1px solid var(--rule);background:var(--card);cursor:pointer;flex-shrink:0}
+  .railscrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+    transition:.2s;z-index:55}
+  .railscrim.on{opacity:1;pointer-events:auto}
+}
 
-.filters{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
-  padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
-.f{display:flex;flex-direction:column;gap:4px}
-.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.f select{min-width:132px;cursor:pointer}
-.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto}
+/* ── status chip + data-notices drawer ────────────────────────── */
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:20px;
+  background:var(--honey-l);color:var(--honey);border:none;cursor:pointer;
+  font:inherit;font-size:12px;font-weight:600;white-space:nowrap}
+.status .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.status:hover{filter:brightness(.97)}
+.status.crit{background:var(--brick-l);color:var(--brick)}
+.ndrawer-scrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+  transition:.2s;z-index:65}
+.ndrawer-scrim.on{opacity:1;pointer-events:auto}
+.ndrawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,100%);background:var(--card);
+  box-shadow:-8px 0 40px rgba(18,24,26,.14);transform:translateX(100%);
+  transition:transform .24s cubic-bezier(.3,.8,.3,1);z-index:66;display:flex;flex-direction:column}
+.ndrawer.on{transform:none}
+.ndrawer>header{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px;border-bottom:1px solid var(--line)}
+.ndrawer h3{font-size:14px;font-weight:600}
+.ndrawer .body{overflow:auto;padding:14px 20px 30px}
+.ndrawer .x{background:none;border:none;font-size:20px;color:var(--ink-3);cursor:pointer;line-height:1}
+
+/* ── sortable table headers ───────────────────────────────────── */
+.tw th,.tbl-wrap th{cursor:pointer;user-select:none}
+.tw th:hover,.tbl-wrap th:hover{color:var(--ink)}
+.tw th.sorted,.tbl-wrap th.sorted{color:var(--green)}
+th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle}
+
+/* One row. The selects share the space equally and shrink together instead of
+   each claiming a fixed 132px and wrapping - the facility list in particular
+   was forcing a very wide control. */
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
+  padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
+/* 96px basis: the eight controls sit on ONE row wherever there is room and
+   share the surplus equally. Below roughly 1100px they wrap rather than
+   squeezing on - at 960 a nowrap row rendered 60px selects, too narrow to read
+   the selected value, which is worse than a second row. */
+.f{display:flex;flex-direction:column;gap:4px;flex:1 1 96px;min-width:96px}
+.f-btn{flex:0 0 auto}
+.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f select{min-width:0;width:100%;cursor:pointer;padding:7px 8px}
+.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto;
+  flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:900px){.f{flex:1 1 130px}}
 
 .panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
   padding:22px;box-shadow:var(--sh);margin-bottom:16px}
@@ -92,12 +178,17 @@ nav button[aria-selected=true]{color:var(--green);border-bottom-color:var(--gree
 .grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .grid>.panel{min-width:0}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:1px;
-  background:var(--rule);border:1px solid var(--rule);border-radius:var(--r);
-  overflow:hidden;margin-bottom:16px}
-.stat{background:var(--card);padding:15px 17px}
+/* auto-FIT: empty tracks collapse and the cards stretch, so every KPI row
+   reaches the right-hand edge. auto-fill was tried and rejected - it holds the
+   track size steady, which left a four-card row stopping short of the edge
+   with visible dead space beside it. The seven-card row is unaffected: it
+   already fills exactly seven tracks, so the cards stay ~220px either way. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px;
+  margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
+  padding:14px 15px;box-shadow:var(--sh)}
 .stat .k{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.stat .v{font-size:25px;font-weight:600;margin-top:4px;letter-spacing:-.03em}
+.stat .v{font-size:27px;font-weight:600;margin-top:5px;letter-spacing:-.035em;line-height:1.12}
 .stat .n{font-size:11px;color:var(--ink-3);margin-top:2px}
 .stat.good .v{color:var(--green)}.stat.warn .v{color:var(--honey)}.stat.bad .v{color:var(--brick)}
 
@@ -153,22 +244,34 @@ td.r,th.r{text-align:right}
 .t-b{background:var(--brick-l);color:var(--brick)}
 .t-n{background:var(--rule-2);color:var(--ink-2)}
 
-.plan{display:flex;align-items:center;gap:13px;padding:12px 0;
+/* A plan row now leads with WHY it applies, then the action. Aligned to the
+   top rather than centred, because the reason wraps to several lines. */
+.plan{display:flex;align-items:flex-start;gap:14px;padding:16px 0;
   border-bottom:1px solid var(--rule-2);cursor:pointer}
 .plan:last-child{border-bottom:none}
 .plan:hover{background:var(--paper)}
-.plan .code{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
-  font-weight:700;font-size:12px;color:#fff;flex-shrink:0}
-.plan .txt{flex:1;font-size:13px}
-.plan .cnt{font-size:15px;font-weight:600}
+.plan .code{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;
+  font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.plan .txt{flex:1;min-width:0;font-size:13px}
+.plan .why{font-size:12.5px;color:var(--ink-3);line-height:1.6;max-width:88ch}
+.plan .act{font-size:13.5px;font-weight:600;color:var(--ink);margin-top:5px}
+.plan .plan-bar{height:14px;border-radius:7px;margin-top:9px}
+.plan .cnt{font-size:17px;font-weight:600}
 
 /* doc fills the card; prose keeps a readable measure while the grids and
    tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
 .doc{max-width:none;font-size:15px;line-height:1.75;color:var(--ink-2)}
 .narrative{font-size:15px;line-height:1.72;color:var(--ink-2)}
+/* Runs the full width of its card. A capped measure was tried and rejected in
+   review: it left visible dead space to the right of the card, which reads
+   worse than the long line it was avoiding. */
 .narrative p{margin:0 0 12px;max-width:none}
 .narrative p:last-child{margin-bottom:0}
 .narrative strong{color:var(--ink);font-weight:600}
+/* Overview narrative: the prototype sets it on a faint surface with a brand
+   eyebrow and a larger heading, so it reads as narrative rather than a data card. */
+#ovNarr{background:var(--surface)}
+#ovNarr .panel-h h2{font-size:17px;letter-spacing:-.02em}
 .disagg-h{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
   letter-spacing:.06em;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
 .doc h2{font-size:17px;font-weight:600;color:var(--ink);margin:30px 0 10px;letter-spacing:-.01em}
@@ -192,7 +295,9 @@ td.r,th.r{text-align:right}
 
 .drop{border:1.5px dashed var(--rule);border-radius:12px;padding:42px;text-align:center;background:var(--paper)}
 .drop.over{border-color:var(--green);background:var(--green-l)}
-canvas{max-height:270px}
+/* max-width guards every chart: a canvas retains the pixel width of its last
+   render, which otherwise widens any auto-sized parent when the viewport shrinks. */
+canvas{max-height:270px;max-width:100%}
 .view{display:none}.view.on{display:block}
 .spin{width:24px;height:24px;border:2.5px solid var(--rule);border-top-color:var(--green);
   border-radius:50%;animation:sp .7s linear infinite;margin:36px auto}
@@ -290,8 +395,11 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .panel.col .chart-fill{position:relative;flex:1 1 auto;min-height:236px}
 .panel.col .chart-fill canvas{position:absolute;inset:0;max-height:none!important}
 /* EAC & outcome summary: two donuts + per-state bars */
-.oc-donuts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:6px}
-.oc-d{border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
+/* minmax(0,1fr), not 1fr: a canvas keeps an intrinsic width from its last
+   render, so an auto-min track sizes to THAT instead of the space available and
+   the row blows past the viewport. */
+.oc-donuts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:6px}
+.oc-d{min-width:0;border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
 .oc-t{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
   letter-spacing:.06em;margin-bottom:8px;text-align:center}
 .oc-donut{position:relative;height:158px}
@@ -310,7 +418,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .oc-state .st i{display:block;height:100%;border-radius:5px}
 .oc-state .sv{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
 .oc-state .sv em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:5px}
-@media(max-width:760px){.oc-donuts{grid-template-columns:1fr}}
+@media(max-width:760px){.oc-donuts{grid-template-columns:minmax(0,1fr)}}
 /* methodology & data sources panel */
 .src-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
 .src-meth{margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-2)}
@@ -451,46 +559,59 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   </div>
 </div>
 
-<div class="wrap" id="app" style="display:none">
-  <header class="top">
-    <div class="mark">EC</div>
-    <div><h1>ECEWS-SPEED Treatment Failure Monitoring Dashboard</h1>
-      <div class="sub">Delta &middot; Osun &middot; Ekiti</div></div>
-    <div class="right">
-      <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
-      <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
-      <button class="btn" id="btnExport">Export</button>
-      <button class="btn" id="btnPw">Change password</button>
-      <button class="btn" id="btnOut">Sign out</button>
+<div class="shell" id="app" style="display:none">
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="mark">EC</div>
+      <div><b>TF Monitor</b><span>ECEWS&nbsp;SPEED</span></div>
     </div>
-  </header>
+    <nav class="rail-nav" role="tablist">
+      <div class="nav-lbl">Programme</div>
+      <button role="tab" aria-selected="true"  data-v="overview">Overview</button>
+      <button role="tab" aria-selected="false" data-v="cascade">Cascade</button>
+      <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
+      <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
+      <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
+      <div class="nav-lbl">Action</div>
+      <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
+      <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
+      <div class="nav-lbl">Reference</div>
+      <button role="tab" aria-selected="false" data-v="dq">Data quality</button>
+      <button role="tab" aria-selected="false" data-v="guide">Guidelines</button>
+      <button role="tab" aria-selected="false" data-v="method">Methodology</button>
+      <button role="tab" aria-selected="false" data-v="admin" id="tabAdmin" style="display:none">Admin</button>
+    </nav>
+    <div class="rail-foot" id="railFoot"></div>
+  </aside>
 
-  <div class="modal-bg" id="fbModal">
-    <div class="modal">
-      <h3>Send feedback</h3>
-      <p>Bugs, wrong numbers, or ideas — goes straight to the team.</p>
-      <textarea id="fbText" rows="5" placeholder="What did you notice?"></textarea>
-      <div class="modal-foot">
-        <span id="fbMsg"></span>
-        <button class="btn" id="fbCancel">Cancel</button>
-        <button class="btn btn-solid" id="fbSend">Send</button>
+  <div class="railmain"><div class="inner">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Menu">&#9776;</button>
+      <div><h1>Treatment Failure Monitoring Dashboard</h1>
+        <div class="sub">ECEWS-SPEED &middot; Delta &middot; Osun &middot; Ekiti</div></div>
+      <div class="right">
+        <button class="status" id="statusBtn" style="display:none">
+          <span class="dot"></span><span id="statusTxt"></span></button>
+        <div class="who"><b id="uName">—</b><span id="uRole"></span></div>
+        <button class="btn" id="btnTheme" title="Toggle theme">&#9681;</button>
+        <button class="btn" id="btnExport">Export</button>
+        <button class="btn" id="btnPw">Change password</button>
+        <button class="btn" id="btnOut">Sign out</button>
+      </div>
+    </header>
+
+    <div class="modal-bg" id="fbModal">
+      <div class="modal">
+        <h3>Send feedback</h3>
+        <p>Bugs, wrong numbers, or ideas — goes straight to the team.</p>
+        <textarea id="fbText" rows="5" placeholder="What did you notice?"></textarea>
+        <div class="modal-foot">
+          <span id="fbMsg"></span>
+          <button class="btn" id="fbCancel">Cancel</button>
+          <button class="btn btn-solid" id="fbSend">Send</button>
+        </div>
       </div>
     </div>
-  </div>
-
-  <nav role="tablist">
-    <button role="tab" aria-selected="true"  data-v="overview">Overview</button>
-    <button role="tab" aria-selected="false" data-v="cascade">Cascade</button>
-    <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
-    <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
-    <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
-    <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
-    <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
-    <button role="tab" aria-selected="false" data-v="dq">Data quality</button>
-    <button role="tab" aria-selected="false" data-v="guide">Guidelines</button>
-    <button role="tab" aria-selected="false" data-v="method">Methodology</button>
-    <button role="tab" aria-selected="false" data-v="admin" id="tabAdmin" style="display:none">Admin</button>
-  </nav>
 
   <div class="filters" id="filters">
     <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
@@ -501,7 +622,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="f"><label>Sex</label><select id="fSex"><option>All</option><option>Female</option><option>Male</option></select></div>
     <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
     <div class="f"><label>Treatment plan</label><select id="fPlan"><option>All</option></select></div>
-    <div class="f"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
+    <div class="f f-btn"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
     <span class="chip" id="chip"></span>
   </div>
 
@@ -704,6 +825,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;6</div>
       <h2>Treatment plan decision engine</h2>
       <p>Every episode receives exactly one plan from the priority-ordered decision tree.
+         Each row gives the <strong>reason the plan applies</strong> &mdash; what must be true
+         of an episode to land there &mdash; followed by the action it calls for.
          Click a plan to load its clients.</p></div>
       <div id="planList"></div></div>
     <div class="panel" id="planPanel" style="display:none">
@@ -974,6 +1097,15 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   </section>
 
   <footer><span>ECEWS-SPEED Treatment Failure Monitoring Dashboard &middot; DAP v3.0</span><span id="foot"></span></footer>
+  </div></div>
+  <div class="railscrim" id="railScrim"></div>
+
+  <div class="ndrawer-scrim" id="ndScrim"></div>
+  <aside class="ndrawer" id="ndDrawer">
+    <header><h3>Data notices</h3><button class="x" id="ndClose" aria-label="Close">&times;</button></header>
+    <div class="body" id="ndBody"></div>
+  </aside>
+
   <button id="btnFeedback" class="fab" title="Send feedback">&#128172; Feedback</button>
 </div>
 
@@ -982,10 +1114,25 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>(n==null||isNaN(n))?'\u2014':Math.round(n).toLocaleString();
 const pc=v=>(v==null||isNaN(v))?'\u2014':v.toFixed(1)+'%';
-const C={green:'#08684E',honey:'#EBA01E',honeyInk:'#9C6B08',
+// Chart colours. Charts are drawn on a canvas, so they cannot inherit the CSS
+// variables the rest of the page uses - the palette has to be swapped in JS.
+// Same hues in both themes so a colour means the same thing; the dark set is
+// lifted in lightness because the light greens/reds sit at roughly 2:1 against
+// a near-black ground and disappear.
+const C_LIGHT={green:'#08684E',honey:'#EBA01E',honeyInk:'#9C6B08',
          brick:'#E24B3B',brickInk:'#B83B2A',slate:'#5B7FA6',rule:'#E6DFD4',
          female:'#1b4965',male:'#62b6cb',maleInk:'#256d80',other:'#00b4d8',
          violet:'#8250C9',violetInk:'#6A44A8',teal:'#12A0B8',tealInk:'#0B7C8C',plum:'#8250C9'};
+const C_DARK={green:'#2BD39C',honey:'#E7B23C',honeyInk:'#E7B23C',
+         brick:'#F2705A',brickInk:'#F2705A',slate:'#7FB3CC',rule:'#272B2C',
+         female:'#6FA8CC',male:'#4FD3E6',maleInk:'#4FD3E6',other:'#57D9F2',
+         violet:'#B49BE8',violetInk:'#B49BE8',teal:'#4FD3E6',tealInk:'#4FD3E6',plum:'#B49BE8'};
+const isDark=()=>document.documentElement.dataset.theme==='dark';
+// Mutated in place on theme change so every existing `C.green` reference and
+// any captured reference stays correct without touching hundreds of call sites.
+const C=Object.assign({},C_LIGHT);
+function applyChartPalette(){Object.assign(C, isDark()?C_DARK:C_LIGHT);}
+applyChartPalette();
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#fff';
 let TOKEN=localStorage.getItem('tf_token'), ME=null, CH={}, LAST=null;
 
@@ -1039,7 +1186,7 @@ function signOut(){localStorage.removeItem('tf_token');TOKEN=null;
 
 async function boot(){
   try{ME=await api('/me');}catch(e){return signOut();}
-  $('#login').style.display='none'; $('#app').style.display='block';
+  $('#login').style.display='none'; $('#app').style.display='grid';  /* .shell is a grid */
   $('#uName').textContent=ME.name||ME.username||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
   if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();
@@ -1104,9 +1251,10 @@ async function refresh(){
       {day:'numeric',month:'short',year:'numeric'}) : '\u2014';
     const cnt=fmt(sum.n)+' episodes \u00b7 '+fmt(sum.clients)+' clients';
     $('#foot').textContent=cnt; $('#chip').textContent='Line list as of '+asof+' \u00b7 '+cnt;
+    $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
-    advanced(risk,mort,dd); dqView(dq);
+    advanced(risk,mort,dd); dqView(dq); notices(dq);
   }catch(e){
     $('#alerts').innerHTML='<div class="notice stop"><h3>Could not load</h3>'+e.message+'</div>';
   }
@@ -1128,6 +1276,36 @@ function banners(s){
   // every other view. #alerts stays reserved for genuine load errors.
   const box=$('#adminBanners'); if(box) box.innerHTML=h;
 }
+
+// Status chip + slide-out drawer: the banner stack, folded to one affordance.
+// Fed from the same /api/dq findings the Data quality page shows.
+function notices(dq){
+  // Only genuine data-quality problems in the assembled cohort, and only the
+  // serious ones. Per-sheet file/ingest issues - success-censoring, missing
+  // S/N, column drift, state casing - are export mechanics for the HI team and
+  // stay on the Data quality page alone, never in this headline chip.
+  const items=(dq||[]).filter(r=>r.n_records>0 && !r.sheet
+    && (r.severity==='critical'||r.severity==='high'));
+  const chip=$('#statusBtn'); if(!chip) return;
+  if(!items.length){chip.style.display='none'; ndClose(); return;}
+  const order={critical:0,high:1,medium:2,low:3};
+  items.sort((a,b)=>(order[a.severity]??9)-(order[b.severity]??9) || b.n_records-a.n_records);
+  const worst=items[0].severity;
+  chip.style.display='';
+  chip.classList.toggle('crit', worst==='critical');   // red for critical, amber for high
+  $('#statusTxt').textContent=items.length+' data notice'+(items.length>1?'s':'');
+  const cls={critical:'stop',high:'stop',medium:'warn',low:'info'};
+  $('#ndBody').innerHTML=items.map(r=>
+    '<div class="notice '+(cls[r.severity]||'info')+'"><h3>'+esc(r.check_name)+
+    ' &middot; '+fmt(r.n_records)+'</h3>'+esc(r.detail||'')+
+    (r.sheet?'<div style="margin-top:6px;font-size:11px;opacity:.8">Sheet: <code>'+esc(r.sheet)+'</code></div>':'')+
+    '</div>').join('')+
+    '<div style="font-size:12px;color:var(--ink-3);margin-top:14px;line-height:1.6">'+
+    'Surfaced here rather than pinned above every page. Full checks live on the '+
+    '<strong>Data quality</strong> page.</div>';
+}
+function ndOpen(){$('#ndDrawer').classList.add('on');$('#ndScrim').classList.add('on');}
+function ndClose(){$('#ndDrawer').classList.remove('on');$('#ndScrim').classList.remove('on');}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const stat=(k,v,n,cl)=>'<div class="stat '+(cl||'')+'"><div class="k">'+k+'</div>'+
   '<div class="v num">'+v+'</div><div class="n">'+n+'</div></div>';
@@ -2042,15 +2220,37 @@ function timeView(t,km,ucurve){
     +'">'+esc(k)+'</b> median '+ucurve[k].median+' yr · n='+fmt(ucurve[k].n)+'</span>').join('');
 }
 
-const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',R:'#8A8175'};
+const PCOL={A:C.brick,B:C.honey,C:C.slate,D:C.green,E:'#7B6B5A',F:'#7A2E1F',
+            G:'#8A8175',H:'#5A5550'};
+// Why each plan is assigned. These restate the conditions in _plan() (spec §6)
+// in clinical terms: what must be true of an episode to land here, and what
+// that implies. A plan is only actionable if the reader knows the reasoning.
+const PLAN_WHY={
+  A:'Recent unsuppressed result and no EAC on record.',
+  B:'EAC has commenced but not completed.',
+  C:'Index result is more than 6 months old.',
+  D:'Post-EAC / follow-up VL < 1,000 c/ml.',
+  E:'Client has a non-terminal negative outcome after the index VL.',
+  F:'Post-EAC / follow-up VL still ≥ 1,000 c/ml.',
+  G:'Episode does not meet the conditions for any plan above — usually a missing index date.',
+  H:'Client has a terminal outcome — died or transferred out.'};
+
 function plansView(plans){
   const max=Math.max.apply(null,plans.map(p=>p.n).concat([1]));
+  // Order by plan letter, not by volume: the codes follow the clinical flow
+  // (no EAC -> incomplete -> overdue -> resuppressed -> ...), so reading them
+  // in order is how the decision tree is meant to be understood. Sorting by
+  // count scrambled that into an arbitrary sequence.
+  const letter=p=>/^[A-H]\./.test(p.plan)?p.plan[0]:'G';
+  plans=plans.slice().sort((a,b)=>letter(a).localeCompare(letter(b)));
   $('#planList').innerHTML=plans.map(function(p){
-    const code=/^[A-F]\./.test(p.plan)?p.plan[0]:'R';
+    const code=letter(p);
     return '<div class="plan" data-plan="'+p.plan.replace(/"/g,'&quot;')+'">'+
       '<div class="code" style="background:'+PCOL[code]+'">'+code+'</div>'+
-      '<div class="txt">'+p.plan.replace(/^[A-F]\. /,'')+
-        '<div class="track" style="height:5px;margin-top:6px">'+
+      '<div class="txt">'+
+        '<div class="why">'+esc(PLAN_WHY[code]||'')+'</div>'+
+        '<div class="act">'+esc(p.plan.replace(/^[A-H]\. /,''))+'</div>'+
+        '<div class="track plan-bar">'+
         '<div class="fill" style="width:'+(p.n/max*100)+'%;background:'+PCOL[code]+'"></div></div></div>'+
       '<div style="text-align:right"><div class="cnt num">'+fmt(p.n)+'</div>'+
         '<div style="font-size:11px;color:var(--ink-3)" class="num">'+pc(p.pct)+'</div></div></div>';
@@ -2294,8 +2494,10 @@ async function doUpload(file){
 function chart(id,cfg){
   if(CH[id])CH[id].destroy();
   const el=document.getElementById(id); if(!el)return;
-  const dark=document.documentElement.dataset.theme==='dark';
-  Chart.defaults.color=dark?'#B8AFA2':'#5C554C';
+  // Read the live token rather than hard-coding, so axis/legend text tracks
+  // whatever the theme defines instead of drifting when the palette changes.
+  Chart.defaults.color=cssVar('--ink-2');
+  Chart.defaults.borderColor=cssVar('--rule');
   CH[id]=new Chart(el,Object.assign({},cfg,
     {options:Object.assign({responsive:true},cfg.options||{})}));
 }
@@ -2304,7 +2506,15 @@ function switchTo(v){
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   const hide=['guide','method','admin','dq'].indexOf(v)>=0;
   $('#filters').style.display=hide?'none':'flex';
+  // The line-list provenance line belongs on the Overview, where the cohort is
+  // introduced. Repeating it above every page was noise, and the rail footer
+  // already carries the same date and counts everywhere.
+  const chip=$('#chip'); if(chip) chip.style.display=(v==='overview')?'':'none';
+  closeRail();                 // collapse the mobile rail after a jump
+  window.scrollTo({top:0});
 }
+function openRail(){$('#rail').classList.add('on');$('#railScrim').classList.add('on');}
+function closeRail(){$('#rail').classList.remove('on');$('#railScrim').classList.remove('on');}
 async function download(extra){
   const r=await fetch('/api/export'+qs(extra),{headers:{Authorization:'Bearer '+TOKEN}});
   // Without this check a 403 was silently saved AS the CSV, so a viewer got a
@@ -2319,6 +2529,37 @@ async function download(extra){
 }
 
 $$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
+$('#burger').onclick=openRail;
+$('#railScrim').onclick=closeRail;
+$('#statusBtn').onclick=ndOpen;
+$('#ndClose').onclick=ndClose;
+$('#ndScrim').onclick=ndClose;
+
+// Sortable tables: one delegated handler survives every table re-render.
+// Grouped tables (a row spanning all columns) are left alone - sorting would
+// scramble the groups.
+document.addEventListener('click',e=>{
+  const th=e.target.closest('th'); if(!th) return;
+  const wrap=th.closest('.tw,.tbl-wrap'); if(!wrap) return;
+  const table=th.closest('table'), tbody=table&&table.tBodies[0];
+  if(!tbody) return;
+  const rows=[...tbody.rows];
+  if(rows.some(r=>r.querySelector('td[colspan]'))) return;   // grouped table
+  const cells=[...th.parentElement.children], idx=cells.indexOf(th);
+  if(idx<0) return;
+  const dir=th.getAttribute('data-sort')==='asc'?'desc':'asc';
+  cells.forEach(h=>{h.removeAttribute('data-sort');h.classList.remove('sorted');
+    const c=h.querySelector('.caret'); if(c)c.remove();});
+  th.setAttribute('data-sort',dir); th.classList.add('sorted');
+  th.insertAdjacentHTML('beforeend','<span class="caret">'+(dir==='asc'?'▲':'▼')+'</span>');
+  const key=r=>{const c=r.cells[idx]; if(!c) return '';
+    const t=c.innerText.trim().replace(/[,%\s]/g,'');
+    const n=parseFloat(t); return t!==''&&!isNaN(n)&&/[\d.]/.test(t[0]||'')?n:c.innerText.trim().toLowerCase();};
+  rows.sort((a,b)=>{const x=key(a),y=key(b);
+    if(typeof x==='number'&&typeof y==='number') return dir==='asc'?x-y:y-x;
+    return dir==='asc'?String(x).localeCompare(y):String(y).localeCompare(x);});
+  rows.forEach(r=>tbody.appendChild(r));
+});
 $('#btnLogin').onclick=signIn;
 $('#pw').onkeydown=e=>{if(e.key==='Enter')signIn();};
 $('#btnOut').onclick=signOut;
@@ -2359,9 +2600,14 @@ $('#planCsv').onclick=()=>download(LAST&&LAST.plan?{plan:LAST.plan}:null);
 $('#btnTheme').onclick=function(){
   const d=document.documentElement;
   const next=d.dataset.theme==='dark'?'light':'dark';
-  d.dataset.theme=next; localStorage.setItem('tf_theme',next); refresh();
+  d.dataset.theme=next; localStorage.setItem('tf_theme',next);
+  applyChartPalette();     // canvas cannot inherit CSS vars - swap before redraw
+  refresh();
 };
-if(localStorage.getItem('tf_theme')==='dark') document.documentElement.dataset.theme='dark';
+if(localStorage.getItem('tf_theme')==='dark'){
+  document.documentElement.dataset.theme='dark';
+  applyChartPalette();
+}
 $('#btnPick').onclick=()=>$('#file').click();
 $('#nuAdd').onclick=addUser;
 $('#btnFbRefresh').onclick=loadFeedback;
