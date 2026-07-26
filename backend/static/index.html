@@ -240,10 +240,10 @@ td.r,th.r{text-align:right}
    tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
 .doc{max-width:none;font-size:15px;line-height:1.75;color:var(--ink-2)}
 .narrative{font-size:15px;line-height:1.72;color:var(--ink-2)}
-/* Cap the measure: prose is only readable up to ~70-75 characters a line, and
-   on a wide monitor an uncapped paragraph runs to ~180. Data cards still fill
-   the column; only the running text is limited. */
-.narrative p{margin:0 0 12px;max-width:74ch}
+/* Runs the full width of its card. A capped measure was tried and rejected in
+   review: it left visible dead space to the right of the card, which reads
+   worse than the long line it was avoiding. */
+.narrative p{margin:0 0 12px;max-width:none}
 .narrative p:last-child{margin-bottom:0}
 .narrative strong{color:var(--ink);font-weight:600}
 /* Overview narrative: the prototype sets it on a faint surface with a brand
@@ -1322,9 +1322,7 @@ function overview(o){
   $('#ovNarr').innerHTML =
     '<div class="panel-h"><div class="eyebrow">Programme narrative</div>'
     +'<h2>Treatment-failure cohort \u2014 '+period+'</h2></div>'
-    // Two columns: prose keeps its readable measure, and the space beside it
-    // carries the headline figures instead of sitting empty on a wide screen.
-    +'<div class="narr-grid"><div class="narrative">'
+    +'<div class="narrative">'
     +'<p>In '+period+', <strong>'+fmt(o.n)+' treatment-failure episodes</strong> were recorded '
     +'across <strong>'+fmt(o.clients)+' clients</strong> ('+fmt(o.repeat_clients)+' unsuppressed more than once). '
     +'The cohort is <strong>'+pctOrNA(d.female_pct)+' female</strong> ('+fmt(d.female)+') and '
@@ -1350,18 +1348,7 @@ function overview(o){
     +(stateBits? ', and by state runs '+stateBits+'.' : '.')+' '
     +'The clearest gap is coverage, not efficacy: only <strong>'+pctOrNA(o.retest_pct)+'</strong> '
     +'of episodes have any follow-up VL on record, leaving '+fmt(o.awaiting_retest)+' untested.</p>'
-    +'</div>'
-    +'<aside class="narr-side"><div class="eb">At a glance</div>'
-    +[['Episodes',fmt(o.n)],
-      ['Clients',fmt(o.clients)],
-      ['Commenced EAC',pctOrNA(o.eac1_pct)],
-      ['Completed EAC',pctOrNA(o.completed_pct)],
-      ['Follow-up VL done',pctOrNA(o.retest_pct)],
-      ['Re-suppressed',pctOrNA(o.resupp_pct)],
-      ['Awaiting DTC review',fmt(o.awaiting_switch)]]
-      .map(([l,v])=>'<div class="row"><span class="l">'+l+'</span>'
-        +'<span class="v num">'+v+'</span></div>').join('')
-    +'</aside></div>';
+    +'</div>';
 
   $('#ovCohort').innerHTML =
     '<div class="panel-h"><div class="eyebrow">Demographics</div><h2>Cohort at a glance</h2></div>'
