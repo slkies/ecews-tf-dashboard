@@ -279,7 +279,9 @@ td.r,th.r{text-align:right}
 
 .drop{border:1.5px dashed var(--rule);border-radius:12px;padding:42px;text-align:center;background:var(--paper)}
 .drop.over{border-color:var(--green);background:var(--green-l)}
-canvas{max-height:270px}
+/* max-width guards every chart: a canvas retains the pixel width of its last
+   render, which otherwise widens any auto-sized parent when the viewport shrinks. */
+canvas{max-height:270px;max-width:100%}
 .view{display:none}.view.on{display:block}
 .spin{width:24px;height:24px;border:2.5px solid var(--rule);border-top-color:var(--green);
   border-radius:50%;animation:sp .7s linear infinite;margin:36px auto}
@@ -377,8 +379,11 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .panel.col .chart-fill{position:relative;flex:1 1 auto;min-height:236px}
 .panel.col .chart-fill canvas{position:absolute;inset:0;max-height:none!important}
 /* EAC & outcome summary: two donuts + per-state bars */
-.oc-donuts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:6px}
-.oc-d{border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
+/* minmax(0,1fr), not 1fr: a canvas keeps an intrinsic width from its last
+   render, so an auto-min track sizes to THAT instead of the space available and
+   the row blows past the viewport. */
+.oc-donuts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:6px}
+.oc-d{min-width:0;border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
 .oc-t{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
   letter-spacing:.06em;margin-bottom:8px;text-align:center}
 .oc-donut{position:relative;height:158px}
@@ -397,7 +402,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .oc-state .st i{display:block;height:100%;border-radius:5px}
 .oc-state .sv{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
 .oc-state .sv em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:5px}
-@media(max-width:760px){.oc-donuts{grid-template-columns:1fr}}
+@media(max-width:760px){.oc-donuts{grid-template-columns:minmax(0,1fr)}}
 /* methodology & data sources panel */
 .src-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
 .src-meth{margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-2)}
