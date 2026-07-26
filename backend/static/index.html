@@ -178,11 +178,12 @@ th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle
 .grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .grid>.panel{min-width:0}
 
-/* auto-FILL, not auto-fit: auto-fit collapses the empty tracks and stretches
-   the cards across the whole row, so a four-card row left ~390px cards holding
-   a two-word value - the dead space flagged in review. auto-fill keeps the
-   track size steady, so cards are the same width on every row. */
-.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;
+/* auto-FIT: empty tracks collapse and the cards stretch, so every KPI row
+   reaches the right-hand edge. auto-fill was tried and rejected - it holds the
+   track size steady, which left a four-card row stopping short of the edge
+   with visible dead space beside it. The seven-card row is unaffected: it
+   already fills exactly seven tracks, so the cards stay ~220px either way. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px;
   margin-bottom:16px}
 .stat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
   padding:14px 15px;box-shadow:var(--sh)}
