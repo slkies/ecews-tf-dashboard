@@ -22,13 +22,21 @@
   --slate:#3E6C86; --slate-l:#EAF1F5; --violet:#6B5B95; --teal:#12A0B8; --r:12px;
   --sh:0 1px 2px rgba(18,24,26,.04),0 4px 16px rgba(18,24,26,.045);
 }
+/* Dark theme: neutral near-black, not the old warm brown. #0D0F10 rather than
+   pure #000 - dense prose and tables shimmer (halation) against true black,
+   and off-white text on it is harsher than it needs to be.
+   Accents keep their HUE and are lifted in lightness: the brand green at
+   #08684E scores ~2:1 on a dark ground and is effectively unreadable, so each
+   status colour is re-picked for this background rather than reused. */
 [data-theme=dark]{
-  --bg:#1A1815; --surface:#221F19;
-  --paper:#221F19; --card:#232019; --ink:#F0EBE3; --ink-2:#B8AFA2; --ink-3:#8A8175;
-  --rule:#3A3529; --rule-2:#2E2A22; --line:#3A3529; --bg-2:#2A261E;
-  --green:#14CE9D; --green-d:#0D9B75; --green-l:#12302A;
-  --honey:#D4A72C; --honey-l:#33290F; --brick:#E0705C; --brick-l:#3A1F1A;
-  --slate:#7BA0B3; --slate-l:#1E2A30; --violet:#A98BE0; --teal:#3FC3D8;
+  --bg:#0D0F10; --surface:#151819;
+  --paper:#151819; --card:#141718; --ink:#EEF1F1; --ink-2:#AEB6B6; --ink-3:#7F8888;
+  --rule:#272B2C; --rule-2:#1E2223; --line:#272B2C; --bg-2:#1B1F20;
+  --green:#2BD39C; --green-d:#16B382; --green-l:#0E2A22;
+  --honey:#E7B23C; --honey-l:#2C2310;
+  --brick:#F2705A; --brick-l:#301A16;
+  --slate:#7FB3CC; --slate-l:#152329; --violet:#B49BE8; --teal:#4FD3E6;
+  --sh:0 1px 2px rgba(0,0,0,.5),0 4px 16px rgba(0,0,0,.35);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:15px}   /* was 14 - one step up for readability */
@@ -1077,10 +1085,25 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const fmt=n=>(n==null||isNaN(n))?'\u2014':Math.round(n).toLocaleString();
 const pc=v=>(v==null||isNaN(v))?'\u2014':v.toFixed(1)+'%';
-const C={green:'#08684E',honey:'#EBA01E',honeyInk:'#9C6B08',
+// Chart colours. Charts are drawn on a canvas, so they cannot inherit the CSS
+// variables the rest of the page uses - the palette has to be swapped in JS.
+// Same hues in both themes so a colour means the same thing; the dark set is
+// lifted in lightness because the light greens/reds sit at roughly 2:1 against
+// a near-black ground and disappear.
+const C_LIGHT={green:'#08684E',honey:'#EBA01E',honeyInk:'#9C6B08',
          brick:'#E24B3B',brickInk:'#B83B2A',slate:'#5B7FA6',rule:'#E6DFD4',
          female:'#1b4965',male:'#62b6cb',maleInk:'#256d80',other:'#00b4d8',
          violet:'#8250C9',violetInk:'#6A44A8',teal:'#12A0B8',tealInk:'#0B7C8C',plum:'#8250C9'};
+const C_DARK={green:'#2BD39C',honey:'#E7B23C',honeyInk:'#E7B23C',
+         brick:'#F2705A',brickInk:'#F2705A',slate:'#7FB3CC',rule:'#272B2C',
+         female:'#6FA8CC',male:'#4FD3E6',maleInk:'#4FD3E6',other:'#57D9F2',
+         violet:'#B49BE8',violetInk:'#B49BE8',teal:'#4FD3E6',tealInk:'#4FD3E6',plum:'#B49BE8'};
+const isDark=()=>document.documentElement.dataset.theme==='dark';
+// Mutated in place on theme change so every existing `C.green` reference and
+// any captured reference stays correct without touching hundreds of call sites.
+const C=Object.assign({},C_LIGHT);
+function applyChartPalette(){Object.assign(C, isDark()?C_DARK:C_LIGHT);}
+applyChartPalette();
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#fff';
 let TOKEN=localStorage.getItem('tf_token'), ME=null, CH={}, LAST=null;
 
@@ -2433,8 +2456,10 @@ async function doUpload(file){
 function chart(id,cfg){
   if(CH[id])CH[id].destroy();
   const el=document.getElementById(id); if(!el)return;
-  const dark=document.documentElement.dataset.theme==='dark';
-  Chart.defaults.color=dark?'#B8AFA2':'#5C554C';
+  // Read the live token rather than hard-coding, so axis/legend text tracks
+  // whatever the theme defines instead of drifting when the palette changes.
+  Chart.defaults.color=cssVar('--ink-2');
+  Chart.defaults.borderColor=cssVar('--rule');
   CH[id]=new Chart(el,Object.assign({},cfg,
     {options:Object.assign({responsive:true},cfg.options||{})}));
 }
@@ -2533,9 +2558,14 @@ $('#planCsv').onclick=()=>download(LAST&&LAST.plan?{plan:LAST.plan}:null);
 $('#btnTheme').onclick=function(){
   const d=document.documentElement;
   const next=d.dataset.theme==='dark'?'light':'dark';
-  d.dataset.theme=next; localStorage.setItem('tf_theme',next); refresh();
+  d.dataset.theme=next; localStorage.setItem('tf_theme',next);
+  applyChartPalette();     // canvas cannot inherit CSS vars - swap before redraw
+  refresh();
 };
-if(localStorage.getItem('tf_theme')==='dark') document.documentElement.dataset.theme='dark';
+if(localStorage.getItem('tf_theme')==='dark'){
+  document.documentElement.dataset.theme='dark';
+  applyChartPalette();
+}
 $('#btnPick').onclick=()=>$('#file').click();
 $('#nuAdd').onclick=addUser;
 $('#btnFbRefresh').onclick=loadFeedback;
