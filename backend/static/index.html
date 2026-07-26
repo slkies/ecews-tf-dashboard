@@ -107,15 +107,28 @@ nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;paddin
    left symmetric gutters that read as dead space beside the rail. Wide prose
    still self-limits via .narr p / .doc measures. */
 .railmain>.inner{width:100%;min-width:0;padding:0 32px 60px;flex:1}
-.burger{display:none}
+/* One control in one place: on desktop it collapses the rail, on mobile it
+   opens it as a drawer. Same button, same position, so there is nothing new
+   to learn when the window changes size. */
+.burger{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink-2);
+  cursor:pointer;flex-shrink:0;font-size:15px;transition:.15s}
+.burger:hover{border-color:var(--green);color:var(--green)}
+/* Collapse is desktop-only. Below 900px the rail is a fixed drawer, and
+   display:none there would break it, so the rule is scoped deliberately. */
+@media(min-width:901px){
+  /* ONE track, not a zero-width first track: display:none takes the rail out
+     of the grid flow, so with two tracks the content shifted into the empty
+     first one and rendered 64px wide. */
+  .shell.rail-off{grid-template-columns:minmax(0,1fr)}
+  .shell.rail-off .rail{display:none}
+}
 @media(max-width:900px){
   .shell{grid-template-columns:minmax(0,1fr)}
   .rail{position:fixed;left:0;top:0;bottom:0;width:250px;
     transform:translateX(-100%);transition:transform .24s cubic-bezier(.3,.8,.3,1)}
   .rail.on{transform:none}
   .railmain>.inner{padding:0 16px 70px}
-  .burger{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;
-    border:1px solid var(--rule);background:var(--card);cursor:pointer;flex-shrink:0}
   .railscrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
     transition:.2s;z-index:55}
   .railscrim.on{opacity:1;pointer-events:auto}
@@ -623,7 +636,6 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
     <div class="f"><label>Treatment plan</label><select id="fPlan"><option>All</option></select></div>
     <div class="f f-btn"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
-    <span class="chip" id="chip"></span>
   </div>
 
   <div id="alerts"></div>
@@ -1250,7 +1262,9 @@ async function refresh(){
     const asof=sum.as_of? new Date(sum.as_of).toLocaleDateString('en-GB',
       {day:'numeric',month:'short',year:'numeric'}) : '\u2014';
     const cnt=fmt(sum.n)+' episodes \u00b7 '+fmt(sum.clients)+' clients';
-    $('#foot').textContent=cnt; $('#chip').textContent='Line list as of '+asof+' \u00b7 '+cnt;
+    $('#foot').textContent=cnt;
+    // Provenance lives in the rail footer only - it used to repeat in the
+    // filter bar, which said the same thing twice on the same screen.
     $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
@@ -2506,15 +2520,51 @@ function switchTo(v){
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   const hide=['guide','method','admin','dq'].indexOf(v)>=0;
   $('#filters').style.display=hide?'none':'flex';
-  // The line-list provenance line belongs on the Overview, where the cohort is
-  // introduced. Repeating it above every page was noise, and the rail footer
-  // already carries the same date and counts everywhere.
-  const chip=$('#chip'); if(chip) chip.style.display=(v==='overview')?'':'none';
   closeRail();                 // collapse the mobile rail after a jump
   window.scrollTo({top:0});
 }
 function openRail(){$('#rail').classList.add('on');$('#railScrim').classList.add('on');}
 function closeRail(){$('#rail').classList.remove('on');$('#railScrim').classList.remove('on');}
+
+// Desktop: collapse the rail to reclaim its 230px - useful when projecting, or
+// on a laptop where a wide table wants the room. Remembered like the theme, so
+// it survives a reload. Mobile keeps the drawer, where hiding is the default.
+const railMQ=window.matchMedia('(max-width:900px)');
+const isMobile=()=>railMQ.matches;
+
+// The stored preference is applied ONLY on desktop. Collapsing is a desktop
+// idea; below 900px the rail becomes a drawer and the same class would hide it
+// with no way back, stranding the navigation.
+function applyRail(){
+  const off=localStorage.getItem('tf_rail')==='off' && !isMobile();
+  $('#app').classList.toggle('rail-off',off);
+  const b=$('#burger');
+  if(b){ b.setAttribute('aria-expanded',String(!off));
+         b.title=off?'Show navigation':'Hide navigation'; }
+  // Charts size to their container, so they need telling the width just moved.
+  setTimeout(()=>{Object.values(CH).forEach(c=>{try{c.resize();}catch(e){}});},260);
+}
+function setRail(off){ localStorage.setItem('tf_rail',off?'off':'on'); applyRail(); }
+function toggleRail(){
+  if(isMobile()) return openRail();
+  setRail(!$('#app').classList.contains('rail-off'));
+}
+// Crossing the breakpoint re-applies from scratch. Without this, a rail
+// collapsed on desktop stayed display:none as the window narrowed, and the
+// drawer then opened to a hidden element.
+//
+// The transition is suppressed for that one frame. A breakpoint change is a
+// layout change, not a user gesture, so the rail should not be seen sliding
+// across the screen - and a transform changed while the element was
+// display:none otherwise leaves the transition mid-flight, which stranded it
+// off-canvas with the open class applied.
+railMQ.addEventListener('change',()=>{
+  const r=$('#rail');
+  r.style.transition='none';
+  closeRail(); applyRail();
+  void r.offsetWidth;                       // flush the change before restoring
+  requestAnimationFrame(()=>{ r.style.transition=''; });
+});
 async function download(extra){
   const r=await fetch('/api/export'+qs(extra),{headers:{Authorization:'Bearer '+TOKEN}});
   // Without this check a 403 was silently saved AS the CSV, so a viewer got a
@@ -2529,8 +2579,9 @@ async function download(extra){
 }
 
 $$('nav button').forEach(b=>b.onclick=()=>switchTo(b.dataset.v));
-$('#burger').onclick=openRail;
+$('#burger').onclick=toggleRail;
 $('#railScrim').onclick=closeRail;
+applyRail();
 $('#statusBtn').onclick=ndOpen;
 $('#ndClose').onclick=ndClose;
 $('#ndScrim').onclick=ndClose;
