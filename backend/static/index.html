@@ -630,7 +630,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
     <div class="f"><label>Enrolment quarter</label><select id="fQtr"><option>All</option></select></div>
     <div class="f"><label>State</label><select id="fState"><option>All</option></select></div>
-    <div class="f"><label>LGA</label><select id="fLga"><option>All</option></select></div>
+    <div class="f"><label title="LGA of the treating facility">LGA (service)</label><select id="fLga"><option>All</option></select></div>
+    <div class="f"><label title="Where the client lives — the unit for transmission and outreach targeting">LGA (residence)</label><select id="fLgaRes"><option>All</option></select></div>
     <div class="f"><label>Facility</label><select id="fFac"><option>All</option></select></div>
     <div class="f"><label>Sex</label><select id="fSex"><option>All</option><option>Female</option><option>Male</option></select></div>
     <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
@@ -1179,6 +1180,7 @@ function qs(extra){
   const p=new URLSearchParams();
   const add=(k,el)=>{const n=$(el); if(n&&n.value&&n.value!=='All')p.set(k,n.value);};
   add('fy','#fFy'); add('quarter','#fQtr'); add('state','#fState'); add('lga','#fLga');
+  add('lga_res','#fLgaRes');
   add('facility','#fFac'); add('sex','#fSex'); add('age_band','#fAge'); add('plan','#fPlan');
   if(extra) Object.keys(extra).forEach(k=>p.set(k,extra[k]));
   const s=p.toString(); return s?'?'+s:'';
@@ -1225,6 +1227,10 @@ async function boot(){
     const geo=()=>{const st=$('#fState').value;
       const pick=(all,map)=>st==='All'?all:(all||[]).filter(v=>map[v]===st);
       fill('#fLga',pick(f.lgas,f.lga_state||{}));
+      // Residence is deliberately NOT cascaded off the service state - a
+      // client treated in Delta may live in Edo, and narrowing by the
+      // treating state would hide exactly those cross-border cases.
+      fill('#fLgaRes',f.lga_res);
       fill('#fFac',pick(f.facilities,f.facility_state||{}));};
     geo(); window.__geoFill=geo;   // Reset needs it to restore the full lists
     $('#fState').onchange=()=>{ $('#fLga').selectedIndex=0; $('#fFac').selectedIndex=0;

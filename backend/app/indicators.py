@@ -32,12 +32,19 @@ Set COHORT_MODE="snapshot" to reproduce the literal spec behaviour.
 from __future__ import annotations
 
 import datetime as dt
+import json
+import logging
 import math
+import pathlib
+import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+log = logging.getLogger("ecews")
 
 # ── thresholds (spec §1.3, §4) ────────────────────────────────────────
 VL_FAIL = 1000          # >= this = unsuppressed / treatment failure
@@ -457,6 +464,12 @@ def build_cohort(
     for rc in ("lga_res", "state_res"):
         if rc in df:
             df[rc] = df[rc].astype("string").str.strip()
+    # Residence LGA, resolved to a canonical name so it can be filtered and
+    # grouped. The raw value is kept alongside it: it is what the EMR actually
+    # holds, and an unmatched entry is only diagnosable if the original text
+    # survives. NULL here means "could not be matched", which is reported
+    # rather than hidden.
+    df["lga_res_norm"] = _col(df, "lga_res").map(canonical_lga_res)
 
     # Baseline CD4, BINARY (team review 18 Jul). Nigeria switched from a
     # quantitative CD4 assay to the semi-quantitative VISITEC LFA, so integer
@@ -1037,6 +1050,65 @@ def profile(df: pd.DataFrame) -> dict:
 
 # data-entry spelling variants -> the official normalized LGA key used in
 # static/nga_lga_3states.geojson (properties.key)
+def _norm_lga(v) -> str:
+    """Strip everything but letters and digits: 'Ughelli-North ' -> 'ughellinorth'."""
+    return re.sub(r"[^a-z0-9]", "", str(v).lower())
+
+
+@lru_cache(maxsize=1)
+def _lga_lookup() -> dict[str, tuple[str, str]]:
+    """
+    Normalised key -> (canonical LGA name, state), read from the boundary file
+    that the choropleth already draws.
+
+    Using the map's own polygons as the source means a residence LGA can never
+    be offered as a filter value that the map cannot draw, and there is no
+    second list of LGA names to keep in step.
+    """
+    path = (pathlib.Path(__file__).resolve().parents[1]
+            / "static" / "nga_lga_3states.geojson")
+    try:
+        feats = json.loads(path.read_text(encoding="utf8"))["features"]
+    except Exception:                       # noqa: BLE001 - map file is optional
+        log.warning("LGA boundary file unreadable; residence LGA left un-normalised")
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for f in feats:
+        p = f.get("properties", {})
+        name, state, key = p.get("lga"), p.get("state"), p.get("key")
+        if name and key:
+            out[key] = (name, state or "")
+    return out
+
+
+def canonical_lga_res(v) -> str | None:
+    """
+    Free-text residence -> the canonical LGA name, or None where it cannot be
+    matched confidently.
+
+    The EMR records this as free text, so the same LGA arrives as 'UGHELLI
+    NORTH', 'Ughelli North' and worse. Left raw it produced 190 distinct values
+    for 71 real LGAs - fine for the map, which normalises before drawing, but
+    unusable as a filter where each spelling would be its own option.
+
+    Deliberately returns None rather than guessing: 'Oshimili' (North or
+    South?) and 'Ile-Ife' (Central or East?) are genuinely ambiguous, and an
+    unmatched share that is reported is worth more than a wrong assignment.
+    """
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        pass
+    k = _norm_lga(v)
+    if not k:
+        return None
+    hit = _lga_lookup().get(_LGA_ALIAS.get(k, k))
+    return hit[0] if hit else None
+
+
 _LGA_ALIAS = {
     "ayedade": "aiyedaade", "ayedaade": "aiyedaade", "ayedire": "aiyedire",
     "ileshaeast": "ilesaeast", "ileshawest": "ilesawest",
@@ -1128,11 +1200,11 @@ def _lga_res_map(df) -> dict:
     s = _col(df, "lga_res") if hasattr(df, "get") else None
     if s is None:
         return {"counts": {}, "total": 0}
-    import re as _re
-    norm = lambda v: _re.sub(r"[^a-z0-9]", "", str(v).lower())
     age = pd.to_numeric(_col(df, "age"), errors="coerce")
+    # Same normalisation as canonical_lga_res, so the map and the residence-LGA
+    # filter can never disagree about which LGA a client belongs to.
     d = pd.DataFrame({
-        "k": s.astype(str).map(lambda v: _LGA_ALIAS.get(norm(v), norm(v))),
+        "k": s.astype(str).map(lambda v: _LGA_ALIAS.get(_norm_lga(v), _norm_lga(v))),
         "f": (df["sex"] == "Female").astype(int),
         "m": (df["sex"] == "Male").astype(int),
         "peds": (age < 10).fillna(False).astype(int),
@@ -1152,8 +1224,13 @@ def breakdown(df: pd.DataFrame, by: str) -> list[dict]:
     rows = []
     for k, g in df.groupby(by, dropna=False, observed=True):
         e1, r = int(g["eac1"].sum()), int(g["post_result"].sum())
+        # A null group key rendered as the literal string "nan", which is not a
+        # place, a sex, or anything else a reader can act on. For residence LGA
+        # this bucket also holds free text that matched no boundary, so the
+        # label has to cover both cases without implying the value was blank.
+        blank = k is None or (isinstance(k, float) and pd.isna(k)) or str(k).lower() == "nan"
         rows.append({
-            "group": str(k), "n": len(g),
+            "group": "Not recorded / unmatched" if blank else str(k), "n": len(g),
             "eac1": e1, "eac1_pct": round(e1 / len(g) * 100, 1) if len(g) else None,
             "post_result": r,
             "resuppressed": int(g["resuppressed"].sum()),

@@ -428,6 +428,7 @@ COHORT_COLS = [
     "art_status", "regimen_line", "regimen", "days_on_art", "dsd",
     "marital", "job", "education", "first_cd4",
     "post_eac_vl", "pregnancy", "who_stage", "bmi", "lga_res", "state_res",
+    "lga_res_norm",
     "cd4_band", "age_group", "time_to_first_vl", "time_to_first_unsupp",
     "prior_switch", "art_year", "exit_date",
     "idx_vl", "idx_date", "recv_date", "idx_samp", "vl_magnitude", "fy_quarter",

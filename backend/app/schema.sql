@@ -131,6 +131,10 @@ ALTER TABLE cohort ADD COLUMN IF NOT EXISTS prior_switch BOOLEAN;
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS art_year     INTEGER;
 -- When the client left care (Outcomes_Date, or pickup+refill+28d for LTFU).
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS exit_date DATE;
+-- Residence LGA resolved to a canonical boundary name. lga_res keeps the raw
+-- EMR free text; this is the filterable/groupable form, NULL where unmatched.
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS lga_res_norm TEXT;
+CREATE INDEX IF NOT EXISTS cohort_lga_res ON cohort(upload_id, lga_res_norm);
 
 CREATE INDEX IF NOT EXISTS cohort_upload   ON cohort(upload_id);
 CREATE INDEX IF NOT EXISTS cohort_geo      ON cohort(upload_id, state, lga, facility);

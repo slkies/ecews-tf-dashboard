@@ -262,6 +262,7 @@ def me(u: Annotated[dict, Depends(auth)]):
 class Filters(BaseModel):
     state: str | None = None
     lga: str | None = None
+    lga_res: str | None = None      # residence LGA, canonical
     facility: str | None = None
     sex: str | None = None
     age_band: str | None = None
@@ -272,12 +273,13 @@ class Filters(BaseModel):
 
 def filters(
     state: str | None = Query(None), lga: str | None = Query(None),
+    lga_res: str | None = Query(None),
     facility: str | None = Query(None), sex: str | None = Query(None),
     age_band: str | None = Query(None), quarter: str | None = Query(None),
     fy: str | None = Query(None), plan: str | None = Query(None),
 ) -> Filters:
-    return Filters(state=state, lga=lga, facility=facility, sex=sex,
-                   age_band=age_band, quarter=quarter, fy=fy, plan=plan)
+    return Filters(state=state, lga=lga, lga_res=lga_res, facility=facility,
+                   sex=sex, age_band=age_band, quarter=quarter, fy=fy, plan=plan)
 
 
 F = Annotated[Filters, Depends(filters)]
@@ -301,6 +303,7 @@ def _load(u: dict, f: Filters) -> pd.DataFrame:
         f.facility if f.facility and f.facility != "All" else None)
 
     for col, val in (("state", state), ("facility", facility), ("lga", f.lga),
+                     ("lga_res_norm", f.lga_res),
                      ("sex", f.sex), ("age_band", f.age_band),
                      ("enrol_quarter", f.quarter), ("fy", f.fy),
                      ("treatment_plan", f.plan)):
@@ -482,7 +485,7 @@ def get_survival(u: U, f: F):
     return ind.kaplan_meier(df) if not df.empty else []
 
 
-DIMS = {"state", "lga", "facility", "sex", "age_band", "regimen_line",
+DIMS = {"state", "lga", "lga_res_norm", "facility", "sex", "age_band", "regimen_line",
         "vl_magnitude", "fy_quarter", "enrol_quarter", "fy", "treatment_plan"}
 
 
@@ -1093,6 +1096,7 @@ def get_filters(u: U):
 
         out = {"states": distinct("state", drop_unknown=True),
                "lgas": distinct("lga"),
+               "lga_res": distinct("lga_res_norm"),
                "facilities": distinct("facility"),
                "age_bands": distinct("age_band", drop_unknown=True),
                "quarters": distinct("enrol_quarter"), "fys": distinct("fy"),
