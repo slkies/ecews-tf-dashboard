@@ -431,6 +431,82 @@ def test_upload_picks_the_newest_treatment_sheet(client, admin_h):
     assert "Treatment Line List_18th July" in warns or r.status_code == 200
 
 
+def test_back_dated_upload_is_warned_about(client, admin_h):
+    """
+    Time-based indicators are measured FROM as_of, so an upload dated earlier
+    than the one it replaces makes them fall on arithmetic alone. Completed EAC
+    needs 30 days since session 3; moving the clock back two days once retired
+    ten completions and read as clients un-completing a cycle.
+    """
+    client.post("/api/uploads", headers=admin_h,
+                files={"file": ("wb.parquet.zip", _workbook())},
+                data={"as_of": "2026-07-24"})
+    r = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-18"})       # six days backwards
+    assert r.status_code == 200, r.text
+    warnings = " ".join(r.json()["warnings"])
+    assert "EARLIER" in warnings
+    assert "6 days" in warnings
+    # and it is raised on the data-quality page, not only in the response
+    names = {f["check_name"] for f in client.get("/api/dq", headers=admin_h).json()}
+    assert "Upload is back-dated" in names
+
+
+def test_forward_dated_upload_is_not_warned_about(client, admin_h):
+    client.post("/api/uploads", headers=admin_h,
+                files={"file": ("wb.parquet.zip", _workbook())},
+                data={"as_of": "2026-07-18"})
+    r = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-24"})
+    assert "EARLIER" not in " ".join(r.json()["warnings"])
+
+
+# ── snapshot comparison ───────────────────────────────────────────────
+def test_compare_reports_movement_between_snapshots(client, admin_h):
+    a = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-18"}).json()["upload_id"]
+    b = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-24"}).json()["upload_id"]
+    d = client.get(f"/api/compare?a={a}&b={b}", headers=admin_h).json()
+    assert d["ok"] is True
+    assert d["days_between"] == 6
+    assert d["back_dated"] is False
+    assert d["flow"]["carried"] == 2          # same synthetic workbook both times
+    assert {m["metric"] for m in d["metrics"]} >= {"Commenced EAC", "Completed EAC"}
+
+
+def test_compare_flags_a_backwards_pair(client, admin_h):
+    a = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-24"}).json()["upload_id"]
+    b = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-18"}).json()["upload_id"]
+    d = client.get(f"/api/compare?a={a}&b={b}", headers=admin_h).json()
+    assert d["back_dated"] is True
+    assert d["days_between"] == -6
+
+
+def test_compare_is_available_to_a_viewer(client, admin_h, viewer_h):
+    """Programme movement is an analytical question, not an administrative one."""
+    a = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-18"}).json()["upload_id"]
+    b = client.post("/api/uploads", headers=admin_h,
+                    files={"file": ("wb.parquet.zip", _workbook())},
+                    data={"as_of": "2026-07-24"}).json()["upload_id"]
+    assert client.get(f"/api/compare?a={a}&b={b}", headers=viewer_h).status_code == 200
+
+
+def test_compare_rejects_an_unknown_snapshot(client, admin_h):
+    assert client.get("/api/compare?a=999998&b=999999",
+                      headers=admin_h).status_code == 404
+
+
 def test_upload_is_audited(client, admin_h):
     client.post("/api/uploads", headers=admin_h,
                 files={"file": ("wb.parquet.zip", _workbook())})

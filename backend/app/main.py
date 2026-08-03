@@ -293,8 +293,15 @@ def _current_upload(c) -> int:
     return r["id"]
 
 
-def _load(u: dict, f: Filters) -> pd.DataFrame:
-    """Current cohort, with filters AND the user's row scope applied."""
+def _load(u: dict, f: Filters, upload_id: int | None = None) -> pd.DataFrame:
+    """
+    Cohort for a snapshot, with filters AND the user's row scope applied.
+
+    Defaults to the current snapshot. `upload_id` targets an older one, which
+    the comparison view needs - and it goes through this same function
+    deliberately, so a scoped viewer cannot reach another state's rows by
+    asking for a historical snapshot instead of the live one.
+    """
     clauses, args = ["upload_id = %s"], []
 
     # Scope wins over a requested filter: a Delta viewer cannot ask for Osun.
@@ -312,7 +319,7 @@ def _load(u: dict, f: Filters) -> pd.DataFrame:
             args.append(val)
 
     with pool.connection() as c:
-        uid = _current_upload(c)
+        uid = upload_id if upload_id is not None else _current_upload(c)
         rows = c.execute(
             f"SELECT * FROM cohort WHERE {' AND '.join(clauses)}",
             (uid, *args)).fetchall()
@@ -351,6 +358,26 @@ def create_upload(
     when = pd.Timestamp(as_of) if as_of else pd.Timestamp(dt.date.today())
     raw = file.file.read()
 
+    # Time-based indicators are measured FROM this date, so moving it backwards
+    # makes them go down even when the data has only improved. "Completed EAC"
+    # needs 30 days since session 3, so an as-of two days earlier retired ten
+    # completions and looked like clients had un-completed a cycle - which is
+    # not a thing that can happen. Warn, do not block: re-loading an older list
+    # deliberately is legitimate, it just has to be a choice rather than a slip.
+    with pool.connection() as c:
+        prev = c.execute(
+            "SELECT as_of, filename FROM uploads WHERE is_current").fetchone()
+    back_dated = None
+    if prev and prev["as_of"] and when.date() < prev["as_of"]:
+        gap = (prev["as_of"] - when.date()).days
+        back_dated = (
+            f"This upload is dated {when.date()}, which is {gap} day"
+            f"{'s' if gap != 1 else ''} EARLIER than the snapshot it replaces "
+            f"({prev['as_of']}). Indicators that depend on elapsed time will "
+            f"fall as a result - completed EAC especially, since it requires 30 "
+            f"days since session 3. That is arithmetic, not a loss of data. "
+            f"Check the as-of date matches the newest line list in the workbook.")
+
     with pool.connection() as c:
         uid = c.execute(
             "INSERT INTO uploads (filename,as_of,uploaded_by,status,cohort_mode) "
@@ -360,6 +387,11 @@ def create_upload(
     try:
         coh, findings, warns, infos, primary = ingest_workbook(
             raw, when, cohort_mode, filename=file.filename or "")
+        if back_dated:
+            warns.insert(0, back_dated)        # first, so it is not scrolled past
+            findings.append({
+                "sheet": None, "check_name": "Upload is back-dated",
+                "severity": "high", "n_records": 1, "detail": back_dated})
         rows = cohort_records(coh.df, uid)
         cols = ", ".join(["upload_id"] + [f'"{c}"' for c in COHORT_COLS])
         ph = ", ".join(["%s"] * (len(COHORT_COLS) + 1))
@@ -862,6 +894,69 @@ def get_usage(u: Annotated[dict, Depends(admin)], days: int = Query(90, le=365))
     return {"people": people, "pages": pages, "daily": daily,
             "never_used": never, "gap_minutes": SESSION_GAP_MINUTES,
             "days": days}
+
+
+# ── snapshot comparison ───────────────────────────────────────────────
+# Every upload is kept, so "what changed between two line lists" is answerable
+# from data we already hold. Available to every role and scope-filtered through
+# _load, because programme movement over time is an analytical question, not an
+# administrative one - only the managing of uploads stays admin-only.
+
+# Indicators worth tracking between line lists. Each is a boolean column that
+# should only ever ratchet upwards for a given episode.
+_COMPARE_METRICS = [
+    ("eac1",               "Commenced EAC"),
+    ("eac2",               "Reached session 2"),
+    ("eac3",               "Reached session 3"),
+    ("eac_completed",      "Completed EAC"),
+    ("post_eac_vl",        "Post-EAC VL taken"),
+    ("post_result",        "Follow-up VL result"),
+    ("resuppressed",       "Re-suppressed"),
+    ("still_unsuppressed", "Still >= 1,000"),
+    ("switched",           "Switched regimen"),
+]
+
+
+@app.get("/api/compare")
+def compare(u: U, f: F, a: int = Query(...), b: int = Query(...)):
+    """Movement between two snapshots: A (earlier) -> B (later)."""
+    with pool.connection() as c:
+        meta = {r["id"]: r for r in c.execute(
+            "SELECT id, filename, as_of, uploaded_at, n_cohort FROM uploads "
+            "WHERE id = ANY(%s) AND status='ready'", ([a, b],)).fetchall()}
+    if a not in meta or b not in meta:
+        raise HTTPException(404, "One or both snapshots were not found.")
+
+    da, db = _load(u, f, upload_id=a), _load(u, f, upload_id=b)
+    if da.empty or db.empty:
+        return {"ok": False, "reason": "One of the snapshots has no rows in your scope."}
+
+    # An as-of that moves backwards makes every elapsed-time indicator fall on
+    # arithmetic alone. Say so up front, so a drop is not read as lost data.
+    days = (meta[b]["as_of"] - meta[a]["as_of"]).days
+    rows = []
+    for col, label in _COMPARE_METRICS:
+        if col not in da or col not in db:
+            continue
+        na = int(da[col].fillna(False).astype(bool).sum())
+        nb = int(db[col].fillna(False).astype(bool).sum())
+        rows.append({"metric": label, "a": na, "b": nb, "delta": nb - na,
+                     # A fall in a ratcheting indicator is worth surfacing, but
+                     # it is only surprising when the clock did NOT move back.
+                     "retreat": nb < na, "explained_by_date": nb < na and days < 0})
+
+    ea, eb = set(da["episode"]), set(db["episode"])
+    return {
+        "ok": True,
+        "a": {"id": a, "filename": meta[a]["filename"], "as_of": meta[a]["as_of"],
+              "uploaded_at": meta[a]["uploaded_at"], "n": len(da)},
+        "b": {"id": b, "filename": meta[b]["filename"], "as_of": meta[b]["as_of"],
+              "uploaded_at": meta[b]["uploaded_at"], "n": len(db)},
+        "days_between": days,
+        "back_dated": days < 0,
+        "flow": {"new": len(eb - ea), "gone": len(ea - eb), "carried": len(ea & eb)},
+        "metrics": rows,
+    }
 
 
 @app.get("/api/dq")

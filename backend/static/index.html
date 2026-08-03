@@ -585,6 +585,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       <button role="tab" aria-selected="false" data-v="deep">Deep dive</button>
       <button role="tab" aria-selected="false" data-v="dtc">DTC review</button>
       <button role="tab" aria-selected="false" data-v="time">Time metrics</button>
+      <button role="tab" aria-selected="false" data-v="compare">Line list changes</button>
       <div class="nav-lbl">Action</div>
       <button role="tab" aria-selected="false" data-v="plans">Treatment plans</button>
       <button role="tab" aria-selected="false" data-v="adv">Advanced analytics</button>
@@ -885,6 +886,24 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="panel"><div class="panel-h"><div class="eyebrow">Spec &sect;7.2</div>
       <h2>Mortality in the unsuppressed cohort</h2></div>
       <div class="stats" id="mortStats" style="margin-bottom:0"></div></div>
+  </section>
+
+  <section class="view" id="v-compare">
+    <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Line list intelligence</div>
+        <h2>What changed between two line lists</h2>
+        <p>Every upload is kept as a dated snapshot, so movement between any two can be
+           read directly. Indicators here only ever <strong>ratchet upwards</strong> for a
+           given episode &mdash; a fall is either a back-dated upload or something worth
+           investigating, and is flagged either way. The filters above apply.</p></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px">
+        <div class="f" style="flex:0 1 300px"><label>Earlier line list</label>
+          <select id="cmpA"></select></div>
+        <div class="f" style="flex:0 1 300px"><label>Later line list</label>
+          <select id="cmpB"></select></div>
+      </div>
+    </div>
+    <div id="cmpOut"></div>
   </section>
 
   <section class="view" id="v-dq"><div id="dqOut"></div></section>
@@ -1275,6 +1294,7 @@ async function refresh(){
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
     advanced(risk,mort,dd); dqView(dq); notices(dq);
+    if(CMP_LOADED) cmpRun();   // comparison respects the filters too
   }catch(e){
     $('#alerts').innerHTML='<div class="notice stop"><h3>Could not load</h3>'+e.message+'</div>';
   }
@@ -2356,6 +2376,93 @@ function advanced(r,m,dd){
   }
 }
 
+// ── line list comparison ─────────────────────────────────────────────
+let CMP_LOADED=false;
+async function cmpInit(){
+  if(CMP_LOADED) return; CMP_LOADED=true;
+  try{
+    const ups=(await api('/uploads')).filter(x=>x.status==='ready');
+    if(ups.length<2){
+      $('#cmpOut').innerHTML='<div class="panel"><div class="notice info">'
+        +'<h3>Only one line list so far</h3>A comparison needs two. The next upload '
+        +'will make this page work.</div></div>';
+      return;
+    }
+    // Newest first from the API. Label by as-of date - that is what the
+    // indicators are measured from - plus the upload time, because the same
+    // workbook re-ingested twice shares an as-of and is otherwise identical
+    // in the list.
+    const opt=u=>'<option value="'+u.id+'">'+esc(String(u.as_of))+' &middot; '
+      +esc(String(u.filename||'').slice(0,34))
+      +' &middot; loaded '+new Date(u.uploaded_at).toLocaleDateString('en-GB',
+          {day:'numeric',month:'short'})
+      +(u.is_current?' (current)':'')+'</option>';
+    $('#cmpA').innerHTML=ups.map(opt).join('');
+    $('#cmpB').innerHTML=ups.map(opt).join('');
+    // Default to the newest, against the most recent list with a DIFFERENT
+    // as-of date. Simply taking the previous upload compares a re-ingest of
+    // the same workbook against itself, which is all zeros and tells nobody
+    // anything.
+    const newest=ups[0];
+    const prior=ups.find(x=>String(x.as_of)!==String(newest.as_of)) || ups[1];
+    $('#cmpA').value=prior.id;
+    $('#cmpB').value=newest.id;
+    $('#cmpA').onchange=cmpRun; $('#cmpB').onchange=cmpRun;
+    cmpRun();
+  }catch(e){ $('#cmpOut').innerHTML='<div class="panel"><div class="notice stop">'
+      +'<h3>Could not load line lists</h3>'+esc(e.message)+'</div></div>'; }
+}
+async function cmpRun(){
+  const a=$('#cmpA').value, b=$('#cmpB').value;
+  if(!a||!b) return;
+  if(a===b){ $('#cmpOut').innerHTML='<div class="panel"><div class="notice info">'
+      +'<h3>Same line list twice</h3>Pick two different snapshots to see movement.'
+      +'</div></div>'; return; }
+  $('#cmpOut').innerHTML='<div class="spin"></div>';
+  try{
+    // qs() folds the active filters in and returns '' when none are set, so the
+    // ids go through its `extra` argument rather than being concatenated on.
+    const d=await api('/compare'+qs({a:a,b:b}));
+    if(!d.ok){ $('#cmpOut').innerHTML='<div class="panel"><div class="notice info">'
+        +'<h3>Nothing to compare</h3>'+esc(d.reason||'')+'</div></div>'; return; }
+    const arrow=n=>n>0?'&#9650;':(n<0?'&#9660;':'&ndash;');
+    const col=m=>m.delta>0?'var(--green)':(m.delta<0?'var(--brick)':'var(--ink-3)');
+    // A back-dated pair is the single most likely cause of a fall, so explain it
+    // before the reader tries to account for the numbers themselves.
+    const warn=d.back_dated
+      ? '<div class="notice warn"><h3>The later list is dated EARLIER</h3>'
+        +'These snapshots run backwards in time by '+Math.abs(d.days_between)+' day(s). '
+        +'Indicators that need elapsed time &mdash; completed EAC above all, which '
+        +'requires 30 days since session 3 &mdash; will fall for that reason alone. '
+        +'That is arithmetic, not lost data.</div>'
+      : '';
+    $('#cmpOut').innerHTML=warn
+      +'<div class="stats">'
+      + stat('Days apart',fmt(d.days_between),String(d.a.as_of)+' → '+String(d.b.as_of))
+      + stat('Episodes carried',fmt(d.flow.carried),'present in both lists')
+      + stat('New episodes',fmt(d.flow.new),'appear only in the later list',d.flow.new?'warn':'')
+      + stat('No longer present',fmt(d.flow.gone),'in the earlier list only',d.flow.gone?'bad':'')
+      +'</div>'
+      +'<div class="panel"><div class="panel-h"><h2>Cascade movement</h2>'
+      +'<p>Each figure is the number of episodes meeting that step, in your current '
+      +'filter. A red row means the indicator went backwards.</p></div>'
+      +'<div class="tw"><table><thead><tr><th>Indicator</th>'
+      +'<th class="r">'+esc(String(d.a.as_of))+'</th>'
+      +'<th class="r">'+esc(String(d.b.as_of))+'</th>'
+      +'<th class="r">Change</th><th></th></tr></thead><tbody>'
+      + d.metrics.map(m=>'<tr>'
+          +'<td style="font-weight:500">'+esc(m.metric)+'</td>'
+          +'<td class="r num">'+fmt(m.a)+'</td><td class="r num">'+fmt(m.b)+'</td>'
+          +'<td class="r num" style="font-weight:600;color:'+col(m)+'">'
+            +arrow(m.delta)+' '+(m.delta>0?'+':'')+fmt(m.delta)+'</td>'
+          +'<td>'+(m.retreat?'<span class="tag t-b">went backwards</span>'
+              +(m.explained_by_date?' <span class="tag t-n">explained by the date</span>':'')
+              :'')+'</td></tr>').join('')
+      +'</tbody></table></div></div>';
+  }catch(e){ $('#cmpOut').innerHTML='<div class="panel"><div class="notice stop">'
+      +'<h3>Comparison failed</h3>'+esc(e.message)+'</div></div>'; }
+}
+
 function dqView(rows){
   const crit=rows.filter(r=>r.severity==='critical'&&r.n_records>0);
   $('#dqOut').innerHTML=
@@ -2526,6 +2633,7 @@ function switchTo(v){
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-'+v));
   const hide=['guide','method','admin','dq'].indexOf(v)>=0;
   $('#filters').style.display=hide?'none':'flex';
+  if(v==='compare') cmpInit();
   closeRail();                 // collapse the mobile rail after a jump
   window.scrollTo({top:0});
 }
