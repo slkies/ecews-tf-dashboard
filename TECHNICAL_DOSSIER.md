@@ -6,9 +6,9 @@ ECEWS domain and integration with the ECEWS Central Data Repository.
 
 | | |
 |---|---|
-| Document version | 1.0 |
-| Date | 22 July 2026 |
-| Application commit | `f21cf41` |
+| Document version | 1.1 |
+| Date | 3 August 2026 |
+| Application commit | `0815bbc` |
 | Prepared by | Data Analytics Lead, ECEWS/SPEED Program |
 | Status | For review |
 
@@ -94,7 +94,7 @@ third-party analytics or telemetry.
 ### 1.1 Repository
 
 The complete source is a single Git repository, currently private, comprising
-26 tracked files. **No patient data has ever been committed**; the `.gitignore`
+35 tracked files. **No patient data has ever been committed**; the `.gitignore`
 excludes `*.xlsx`, `*.parquet`, `*.parquet.zip` and `.env`, this is additionally
 enforced by a CI check that fails the build (section 1.5), and it can be
 confirmed against the full commit history.
@@ -155,7 +155,7 @@ ECEWS reverse proxy.
 
 ### 1.5 Testing and continuous integration
 
-86 test functions, expanding to **112 test cases**, in two suites:
+93 test functions, expanding to **142 test cases**, in two suites:
 
 | Suite | Covers |
 |---|---|
@@ -207,7 +207,7 @@ Seven tables. The complete definition is `backend/app/schema.sql`.
 |---|---|---|
 | `users` | Accounts, bcrypt password hashes, role, row scope | Credentials |
 | `uploads` | One immutable row per ingest: filename, as-of date, counts, warnings, source-sheet manifest | Metadata |
-| `cohort` | **The derived patient-level cohort** — one row per failure episode, 72 columns | Patient data |
+| `cohort` | **The derived patient-level cohort** — one row per failure episode, 73 columns | Patient data |
 | `dq_findings` | Data-quality findings per upload | Metadata |
 | `feedback` | In-app user feedback | Low |
 | `usage_log` | One row per authenticated request, for the usage panel | Operational |
@@ -290,12 +290,41 @@ exports behave differently:
 Unsuppressed, 9 on the EAC list and 28 on the Treatment list, each documented
 with the indicator it supports.
 
-Because most columns are matched exactly and case-sensitively, a renamed header
-would otherwise be dropped silently. The ingest therefore **audits every
-analysed sheet against this list on each upload** and raises a high-severity
-finding for any column that is missing, or present under a different name.
+The ingest **audits every analysed sheet against this list on each upload** and
+raises a finding for any column that is missing, or present under a different
+name. Two mechanisms sit behind that:
 
-### 3.5 Validation
+- **Column names on the treatment list resolve case-insensitively.** This is
+  not theoretical tidiness: the 24 July export renamed `lga` to `LGA`, which
+  under exact matching would have emptied every geography field silently. The
+  finding is still raised so the drift is fixed at source, but no data is lost
+  in the meantime.
+- **Geography falls back to the register.** Where the treatment list omits
+  state, LGA or facility, those fields are taken from the Total Unsuppressed
+  register instead, and the substitution is reported. An export that drops a
+  column no longer empties the filters.
+
+### 3.5 Residence LGA
+
+Residence is the unit that matters epidemiologically — it is where onward
+transmission occurs — as distinct from the LGA a facility sits in, which
+describes service distribution. Both are available as filters and breakdowns.
+
+The EMR records residence as **free text**, which produced 190 distinct spellings
+for 71 real LGAs. Each value is therefore resolved at ingest to a canonical LGA
+name, matched against the same boundary set the choropleth draws, with a
+national LGA list behind it so residences outside the three programme states
+still resolve. The raw text is retained alongside the resolved value, because an
+unmatched entry can only be diagnosed if the original survives.
+
+**Values that cannot be resolved confidently return nothing rather than a
+guess**, and the unmatched share is reported. "Oshimili" was resolved to
+Oshimili South only once the programme team confirmed that every facility there
+sits in that LGA; "Ile-Ife", "Ilesa" and "Ede" remain unresolved because each
+spans two or more LGAs. On the current dataset 97.4% of residences resolve. A
+wrong LGA on a map used to target outreach is worse than a reported gap.
+
+### 3.6 Validation
 
 Eighteen data-quality check definitions run on every upload. Several are
 evaluated once per sheet, so the number of findings recorded depends on how many
@@ -324,7 +353,7 @@ becomes the active data set. This behaviour is covered by a regression test.
 Optional columns that an export omits are treated as absent data, not as an
 error: the affected indicator reports "not recorded" and the upload proceeds.
 
-### 3.6 Processing steps
+### 3.7 Processing steps
 
 1. Administrator submits the file over HTTPS.
 2. A row is written to `uploads` with status `processing`.
@@ -337,7 +366,7 @@ error: the affected indicator reports "not recorded" and the upload proceeds.
 6. The new snapshot atomically becomes current.
 7. The upload event is written to `audit_log`.
 
-### 3.7 How uploaded records are stored — and what is not stored
+### 3.8 How uploaded records are stored — and what is not stored
 
 **Only derived records are persisted.** The submitted workbook is parsed and
 discarded; it is never written to a durable volume, never committed to the
@@ -455,7 +484,43 @@ underlying derivations do not.
 An important operational consequence: **changing an indicator definition requires
 re-uploading the workbook**, because the derived columns are written at ingest.
 
-### 5.3 Auditability of outputs
+### 5.3 The as-of date, and why it governs several indicators
+
+Every upload carries an **as-of date**, which should match the newest line list
+in the workbook. Time-dependent indicators are measured *from* it — most
+importantly **completed EAC**, which requires 30 days to have elapsed since
+session 3. A cycle is not finished on the day the last session happens.
+
+The practical consequence is worth stating plainly, because it has already
+caused a false alarm: **an upload dated earlier than the one it replaces makes
+those indicators fall, on arithmetic alone.** In one instance a snapshot dated
+26 July was replaced by one dated 24 July, and completed EAC dropped by ten —
+which reads as clients un-completing a cycle, something that cannot happen.
+Compared at a common date, completions had in fact risen.
+
+Two guards now exist:
+
+- an upload dated earlier than the current snapshot raises a warning on the
+  upload result and a high-severity data-quality finding, naming the gap;
+- the comparison view (5.4) flags any indicator that moves backwards, and
+  marks it as explained by the date where the pair runs backwards in time.
+
+### 5.4 Comparing snapshots
+
+Because uploads are immutable, movement between any two line lists is
+answerable directly. The **Line list changes** page reports, for any pair:
+
+- the interval between their as-of dates;
+- episode flow — carried by both, new in the later list, no longer present;
+- nine cascade indicators side by side with the change between them.
+
+Those indicators only ever ratchet upward for a given episode, so a fall is
+flagged rather than left to be noticed by eye. The page is available to every
+role and is scope-filtered through the same function as every other data view,
+so a state-scoped user sees only their own state's movement. Managing uploads
+remains administrator-only.
+
+### 5.5 Auditability of outputs
 
 Because uploads are immutable and dated, any figure the dashboard has ever shown
 can be reproduced by pointing at the relevant snapshot. Each upload also records
@@ -482,7 +547,7 @@ which sheets a given set of figures was built from.
 | No patient data in source control | Implemented, and enforced by CI |
 | Automated regression tests over the controls above | Implemented (see 1.5) |
 | Password reset and self-service change | Implemented (see 4.2) |
-| Raw upload not persisted | Implemented (see 3.7) |
+| Raw upload not persisted | Implemented (see 3.8) |
 | Transport encryption | Provided by the hosting layer (see 8.3) |
 | Encryption at rest | Provided by the database host (see 8.3) |
 
@@ -537,7 +602,7 @@ baseline.
 | 7 | Seed accounts are created with default passwords | High | **Open** — must be rotated at deployment; see 8.4 |
 | 8 | Password policy | Medium | **Largely resolved** — 10-character floor (configurable), known defaults refused, admin reset and self-service change; complexity rules and expiry still pending ECEWS policy |
 | 9 | Filter lists (LGA names) are not scope-filtered | Low | **Open** — exposes place names, no patient data |
-| 10 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.7 |
+| 10 | Uploads >1 MB spool briefly to container-local `/tmp` | Low | **Open** — see 3.8 |
 | 11 | No automated schema down-migration | Low | Accepted by design |
 | 12 | No multi-factor authentication | — | **Not implemented** — available if ECEWS requires it |
 
@@ -592,7 +657,7 @@ host.
 
 ## Appendix A — API endpoints
 
-30 routes. All require authentication except `/api/health` and `/api/login`.
+34 routes. All require authentication except `/api/health` and `/api/login`.
 
 **Authentication:** `POST /api/login`, `GET /api/me`
 
