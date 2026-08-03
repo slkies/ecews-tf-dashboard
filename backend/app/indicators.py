@@ -1058,26 +1058,42 @@ def _norm_lga(v) -> str:
 @lru_cache(maxsize=1)
 def _lga_lookup() -> dict[str, tuple[str, str]]:
     """
-    Normalised key -> (canonical LGA name, state), read from the boundary file
-    that the choropleth already draws.
+    Normalised key -> (canonical LGA name, state).
 
-    Using the map's own polygons as the source means a residence LGA can never
-    be offered as a filter value that the map cannot draw, and there is no
-    second list of LGA names to keep in step.
+    Two layers, and the order matters:
+
+    1. The three programme states, from the boundary file the choropleth draws.
+       These win, because their spellings are the ones the map can render and
+       the ones the team recognises.
+    2. Every other Nigerian LGA, names only. Clients do live outside the
+       programme states, and before this they simply fell into "unmatched".
+       They are filterable and groupable; they have no polygon, so the map
+       leaves them out - which is right, they are outside the mapped area.
     """
-    path = (pathlib.Path(__file__).resolve().parents[1]
-            / "static" / "nga_lga_3states.geojson")
+    static = pathlib.Path(__file__).resolve().parents[1] / "static"
+    out: dict[str, tuple[str, str]] = {}
+
+    # Layer 2 first, so layer 1 overwrites any name the two spell differently
+    # (the national set writes Ayedaade / Ilesha East where ours writes
+    # Aiyedaade / Ilesa East).
     try:
-        feats = json.loads(path.read_text(encoding="utf8"))["features"]
+        national = json.loads((static / "nga_lga_names.json").read_text(encoding="utf8"))
+        for name in national.get("lgas", []):
+            out[_norm_lga(name)] = (name, "")
+    except Exception:                       # noqa: BLE001 - optional
+        log.warning("national LGA name list unreadable; residences outside the "
+                    "programme states will not resolve")
+
+    try:
+        feats = json.loads((static / "nga_lga_3states.geojson").read_text(encoding="utf8"))
+        for f in feats["features"]:
+            p = f.get("properties", {})
+            name, state, key = p.get("lga"), p.get("state"), p.get("key")
+            if name and key:
+                out[key] = (name, state or "")
     except Exception:                       # noqa: BLE001 - map file is optional
         log.warning("LGA boundary file unreadable; residence LGA left un-normalised")
-        return {}
-    out: dict[str, tuple[str, str]] = {}
-    for f in feats:
-        p = f.get("properties", {})
-        name, state, key = p.get("lga"), p.get("state"), p.get("key")
-        if name and key:
-            out[key] = (name, state or "")
+
     return out
 
 
@@ -1115,10 +1131,17 @@ _LGA_ALIAS = {
     "atakumosaeast": "atakunmosaeast", "atakumosawest": "atakunmosawest",
     "adoekiti": "adoekiti", "idoosiekiti": "idoosi",
     # unambiguous fixes only: misspellings and HQ-town -> LGA facts.
-    # Plain "Oshimili" (North vs South) and "Ile-Ife" (Central vs East) are
-    # ambiguous and deliberately left unmatched.
+    # "Ile-Ife" (Central vs East) stays ambiguous and is left unmatched.
     "sepele": "sapele", "ikire": "irewole",
     "iseeleuku": "aniochanorth", "isseleuku": "aniochanorth",
+    # Bare "Oshimili" resolves to Oshimili South: every programme facility in
+    # Oshimili sits in the South LGA (confirmed by the programme team, 3 Aug).
+    # This is the single largest unmatched value - 221 episodes.
+    "oshimili": "oshimilisouth",
+    # Bare "Ado" is Ado Ekiti, not the Ado LGA in Benue that the national list
+    # would otherwise match. Confirmed by the programme team: these are Ekiti
+    # clients naming the state capital.
+    "ado": "adoekiti",
 }
 
 

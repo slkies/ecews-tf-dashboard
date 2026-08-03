@@ -6,8 +6,8 @@ detecting a success-censored EAC export.
 import pandas as pd
 import pytest
 
-from app.indicators import (build_cohort, cascade, dtc_review, fiscal_quarter,
-                            fiscal_year, norm_state, vl_category)
+from app.indicators import (build_cohort, canonical_lga_res, cascade, dtc_review,
+                            fiscal_quarter, fiscal_year, norm_state, vl_category)
 from app.ingest import audit_censoring
 
 AS_OF = pd.Timestamp("2026-07-11")
@@ -211,6 +211,31 @@ def test_treatment_list_lga_wins_when_present():
     """Older exports still carry `lga`; the fallback must not override them."""
     c = _cohort_geo(treatment_has_lga=True)
     assert c.df.loc[0, "lga"] == "Oshimili"      # the treatment list's value
+
+
+# ── residence LGA: free text -> a canonical, filterable LGA ───────────
+@pytest.mark.parametrize("raw,expect", [
+    ("WARRI SOUTH", "Warri South"),          # casing only
+    ("Ughelli north", "Ughelli North"),
+    ("  uvwie  ", "Uvwie"),                  # padding
+    ("OSHIMILI", "Oshimili South"),          # every programme facility there
+    ("Oshimili", "Oshimili South"),
+    ("ADO", "Ado Ekiti"),                    # NOT Ado in Benue
+    ("ORHIONMWON", "Orhionmwon"),            # outside the programme states
+    ("Ondo West", "Ondo West"),
+])
+def test_residence_lga_resolves_to_canonical(raw, expect):
+    assert canonical_lga_res(raw) == expect
+
+
+@pytest.mark.parametrize("raw", ["ILE-IFE", "ILESA", "EDE", "", None, "   "])
+def test_ambiguous_residence_is_left_unmatched(raw):
+    """
+    Ife Central or East? Ilesa East or West? Ede North or South? An unmatched
+    share that gets reported is worth more than a wrong assignment on a map
+    used to target outreach.
+    """
+    assert canonical_lga_res(raw) is None
 
 
 # ── §6: terminal vs non-terminal negative outcomes ────────────────────
