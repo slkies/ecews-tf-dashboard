@@ -101,7 +101,13 @@ CASE_INSENSITIVE: dict[str, set[str]] = {
     "total": {"currentViralLoad", "dateofCurrentViralLoad",
               "dateResultReceivedFacility", "lastDateOfSampleCollection"},
     "eac": {"Total_EAC_Sessions_All_Cycles", "EAC_Cycle_Number"},
-    "treatment": set(),
+    # The whole treatment mapping resolves case-insensitively now. The 24-July
+    # export renamed "lga" to "LGA", which under exact matching would have
+    # dropped every geography silently; the resolver was made tolerant instead.
+    # Listing them here keeps the finding honest - casing drift on this sheet is
+    # worth fixing at source, but it no longer loses data, so it must not be
+    # reported as ignored.
+    "treatment": set(EXPECTED_COLS["treatment"]),
 }
 
 

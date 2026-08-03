@@ -403,8 +403,19 @@ def build_cohort(
              "daysOfArvRefill": "days_refill",
              # residence (free-text in the EMR - normalised only at map time)
              "lgaOfResidence": "lga_res", "stateOfResidence": "state_res"}
-    keep = ["sn"] + [c for c in tcols if c in t]
-    df = df.merge(t[keep].rename(columns=tcols), on="sn", how="left")
+    # Resolve the mapping case-insensitively. The export renames columns between
+    # cycles without warning - the 24-July treatment list ships "LGA" where every
+    # earlier one shipped "lga" - and an exact-match lookup drops the column
+    # silently, leaving the geography blank with nothing on screen to say why.
+    # First match wins, so a sheet carrying both spellings still resolves once.
+    _lower = {str(c).strip().lower(): c for c in t.columns}
+    resolved: dict[str, str] = {}
+    for src, dest in tcols.items():
+        hit = _lower.get(src.lower())
+        if hit is not None and hit not in resolved:
+            resolved[hit] = dest
+    keep = ["sn"] + list(resolved)
+    df = df.merge(t[keep].rename(columns=resolved), on="sn", how="left")
 
     # Apply the register's geography wherever the treatment list left a gap -
     # whether the column was dropped from the export entirely or is simply

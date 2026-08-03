@@ -756,7 +756,7 @@
 "Yamaltu/Deba",
 "Yankwashi",
 "Yauri",
-"Yenegoa",
+"Yenagoa",
 "Yewa North",
 "Yewa South",
 "Yola North",
@@ -771,5 +771,6 @@
 "Zing",
 "Zurmi",
 "Zuru"
-]
+],
+"corrections": "Yenegoa -> Yenagoa (spelling error in the upstream ADM2 set)"
 }
