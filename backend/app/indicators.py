@@ -348,6 +348,21 @@ def build_cohort(
     if "CurrentRegimenLine" in base:
         base = base.rename(columns={"CurrentRegimenLine": "idx_regimen_line"})
 
+    # Geography fallback, taken from the cohort register.
+    #
+    # State / LGA / facility normally come from the treatment line list, but the
+    # 24-July export dropped its `lga` column - only `lgaOfResidence` survived,
+    # which is a DIFFERENT measure (where the client lives, not where they are
+    # treated). Total Unsuppressed carries the facility's own State / LGA /
+    # FacilityName per episode, so it can stand in and the geography filters
+    # keep working. Matched case-insensitively because this sheet capitalises
+    # its headers where the treatment list does not.
+    for _src, _dst in (("State", "_geo_state"), ("LGA", "_geo_lga"),
+                       ("FacilityName", "_geo_facility")):
+        _c = _pick(tu, _src)
+        if _c is not None:
+            base[_dst] = tu[_c]
+
     # --- attach EAC sessions + demographics -----------------------------
     ecols = [c for c in (
         "sn", "Session_1_Date", "Session_2_Date", "Session_3_Date",
@@ -383,6 +398,20 @@ def build_cohort(
              "lgaOfResidence": "lga_res", "stateOfResidence": "state_res"}
     keep = ["sn"] + [c for c in tcols if c in t]
     df = df.merge(t[keep].rename(columns=tcols), on="sn", how="left")
+
+    # Apply the register's geography wherever the treatment list left a gap -
+    # whether the column was dropped from the export entirely or is simply
+    # blank for that episode. The treatment list wins when it has a value, so
+    # exports that still carry `lga` behave exactly as before.
+    for _dst, _fallback in (("state", "_geo_state"), ("lga", "_geo_lga"),
+                            ("facility", "_geo_facility")):
+        if _fallback in df.columns:
+            have = df[_dst] if _dst in df.columns else pd.Series(pd.NA, index=df.index)
+            df[_dst] = have.where(have.notna() & (have.astype("string").str.strip() != ""),
+                                  df[_fallback])
+    df = df.drop(columns=[c for c in ("_geo_state", "_geo_lga", "_geo_facility")
+                          if c in df.columns])
+
     df["current_vl"] = pd.to_numeric(_col(df, "current_vl"), errors="coerce")
     df["current_vl_samp"] = pd.to_datetime(_col(df, "current_vl_samp"), errors="coerce")
 

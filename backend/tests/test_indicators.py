@@ -183,6 +183,36 @@ def test_blank_sn_rows_are_dropped_and_reported():
     assert any("blank S/N" in w for w in c.warnings)
 
 
+# ── geography falls back to the register when the export drops it ─────
+def _cohort_geo(treatment_has_lga: bool):
+    """Build a one-episode cohort where Total Unsuppressed carries geography
+    and the treatment list may or may not."""
+    e = pd.DataFrame([mk(Session_1_Date="2026-03-20")])
+    t = treat()
+    if not treatment_has_lga:
+        t = t.drop(columns=["lga"])          # the 24-July export dropped it
+    tu = pd.DataFrame([{
+        "S/N": "0.123456789012345", "currentViralLoad": 5000,
+        "dateofCurrentViralLoad": "2026-03-01",
+        "lastDateOfSampleCollection": "2026-03-01",
+        "dateResultReceivedFacility": "2026-03-01",
+        # the register capitalises its headers
+        "State": "DELTA", "LGA": "Ughelli North", "FacilityName": "Register Clinic",
+    }])
+    return build_cohort(tu, t, e, as_of=AS_OF, mode="snapshot")
+
+
+def test_lga_falls_back_to_the_register_when_the_export_drops_it():
+    c = _cohort_geo(treatment_has_lga=False)
+    assert c.df.loc[0, "lga"] == "Ughelli North"
+
+
+def test_treatment_list_lga_wins_when_present():
+    """Older exports still carry `lga`; the fallback must not override them."""
+    c = _cohort_geo(treatment_has_lga=True)
+    assert c.df.loc[0, "lga"] == "Oshimili"      # the treatment list's value
+
+
 # ── §6: terminal vs non-terminal negative outcomes ────────────────────
 @pytest.mark.parametrize("status", ["Death", "Transferred out", "Deceased"])
 def test_terminal_outcomes_get_no_action_plan(status):
