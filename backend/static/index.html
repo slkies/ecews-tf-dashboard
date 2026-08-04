@@ -1081,6 +1081,14 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       <div class="tw"><table><thead><tr><th>File</th><th>As of</th><th>Uploaded</th>
         <th class="r">Episodes</th><th>Status</th><th></th></tr></thead><tbody id="upB"></tbody></table></div></div>
 
+    <div class="panel"><div class="panel-h"><h2>Deployment check</h2>
+      <p>Whether each derived field actually holds data in the <strong>current</strong>
+         snapshot. These are computed when a workbook is loaded, so a field can be
+         empty simply because the workbook was uploaded before the code that fills
+         it &mdash; in which case re-uploading the same workbook fixes it. Useful when
+         a filter is blank on one deployment but not another.</p></div>
+      <div id="diagOut"></div></div>
+
     <div class="panel"><div class="panel-h"><h2>Users &amp; access</h2>
       <p>Create accounts for the team. <strong>Viewers</strong> and <strong>analysts</strong> see
          every page except this Admin tab; only <strong>admins</strong> can upload and manage users.
@@ -1222,7 +1230,7 @@ async function boot(){
   $('#login').style.display='none'; $('#app').style.display='grid';  /* .shell is a grid */
   $('#uName').textContent=ME.name||ME.username||ME.email;
   $('#uRole').textContent=ME.role+(ME.scope_state?' \u00b7 '+ME.scope_state:'');
-  if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();
+  if(ME.role==='admin'){$('#tabAdmin').style.display='';loadUploads();loadUsers();loadFeedback();loadUsage();loadDiag();
     const ud=$('#usDays'); if(ud) ud.onchange=loadUsage;}
   // Bulk export of patient-level rows is analyst/admin only, enforced server
   // side. Hide the control for viewers so the rule is visible, not a surprise.
@@ -2574,6 +2582,32 @@ async function loadUsage(){
       '<td class="r num">'+fmt(p.n)+'</td>'+
       '<td class="r num">'+fmt(p.users)+'</td></tr>').join('');
   }catch(e){}
+}
+
+async function loadDiag(){
+  try{
+    const d=await api('/diagnostics');
+    if(!d.ok){ $('#diagOut').innerHTML='<div class="notice info">'+esc(d.reason||'')+'</div>'; return; }
+    const tag={ok:'t-g',partial:'t-h',empty:'t-b',missing:'t-b'};
+    const word={ok:'populated',partial:'partly filled',empty:'EMPTY',missing:'column absent'};
+    const anyEmpty=d.columns.some(c=>c.status==='empty'||c.status==='missing');
+    $('#diagOut').innerHTML=
+      '<div class="prov" style="margin-bottom:10px">Snapshot <b>'+esc(String(d.snapshot.filename||''))
+        +'</b> &middot; dated '+esc(String(d.snapshot.as_of))+' &middot; '+fmt(d.snapshot.rows)
+        +' episodes &middot; app version <code>'+esc(d.app_version)+'</code></div>'
+      +(anyEmpty?'<div class="notice warn"><h3>One or more fields are empty</h3>'
+        +'Anything marked EMPTY will show as a blank filter or a missing breakdown. '
+        +'If the field is one this version of the app derives, re-uploading the same '
+        +'workbook will fill it &mdash; the values are computed at upload time.</div>':'')
+      +'<div class="tw"><table><thead><tr><th>Field</th><th>Powers</th>'
+      +'<th class="r">Filled</th><th class="r">%</th><th>Status</th></tr></thead><tbody>'
+      +d.columns.map(c=>'<tr><td style="font-weight:500">'+esc(c.label)+'</td>'
+        +'<td style="color:var(--ink-3)">'+esc(c.powers)+'</td>'
+        +'<td class="r num">'+(c.filled==null?'—':fmt(c.filled))+'</td>'
+        +'<td class="r num">'+(c.pct==null?'—':pc(c.pct))+'</td>'
+        +'<td><span class="tag '+tag[c.status]+'">'+word[c.status]+'</span></td></tr>').join('')
+      +'</tbody></table></div>';
+  }catch(e){ $('#diagOut').innerHTML='<div class="notice stop">'+esc(e.message)+'</div>'; }
 }
 
 async function loadFeedback(){

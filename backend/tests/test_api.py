@@ -463,6 +463,28 @@ def test_forward_dated_upload_is_not_warned_about(client, admin_h):
     assert "EARLIER" not in " ".join(r.json()["warnings"])
 
 
+# ── deployment diagnostics ────────────────────────────────────────────
+def test_diagnostics_reports_derived_column_fill(client, admin_h):
+    """
+    An empty filter has two causes that look identical from the interface: the
+    column was never derived (workbook loaded by older code) or the export
+    never carried it. This endpoint separates them.
+    """
+    client.post("/api/uploads", headers=admin_h,
+                files={"file": ("wb.parquet.zip", _workbook())},
+                data={"as_of": "2026-07-24"})
+    d = client.get("/api/diagnostics", headers=admin_h).json()
+    assert d["ok"] is True
+    by = {c["column"]: c for c in d["columns"]}
+    assert by["lga_res_norm"]["status"] in ("ok", "partial", "empty")
+    assert by["treatment_plan"]["pct"] == 100.0      # every episode gets a plan
+    assert "app_version" in d
+
+
+def test_diagnostics_is_admin_only(client, viewer_h):
+    assert client.get("/api/diagnostics", headers=viewer_h).status_code == 403
+
+
 # ── snapshot comparison ───────────────────────────────────────────────
 def test_compare_reports_movement_between_snapshots(client, admin_h):
     a = client.post("/api/uploads", headers=admin_h,

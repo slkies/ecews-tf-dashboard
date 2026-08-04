@@ -1213,6 +1213,66 @@ def health():
     return {"ok": True}
 
 
+# Columns that are DERIVED at ingest. Each depends on the code that was running
+# when the workbook was loaded, so a deployment can have the column (the schema
+# adds it on startup) while every value is empty - which is exactly what an
+# empty filter dropdown looks like from the outside.
+_DERIVED_COLS = [
+    ("lga",           "LGA (service)",       "the LGA filter"),
+    ("lga_res_norm",  "LGA (residence)",     "the residence LGA filter"),
+    ("state",         "State",               "the state filter"),
+    ("facility",      "Facility",            "the facility filter"),
+    ("treatment_plan", "Treatment plan",     "the treatment plans page"),
+    ("exit_date",     "Care exit date",      "exit timing on the deep dive"),
+    ("cd4_band",      "CD4 band",            "CD4 breakdowns"),
+]
+
+
+@app.get("/api/diagnostics")
+def diagnostics(u: Annotated[dict, Depends(admin)]):
+    """
+    Why is a filter empty on one deployment and not another?
+
+    An empty dropdown has two very different causes and they are impossible to
+    tell apart from the interface: the code that derives the column was not yet
+    running when the workbook was loaded (so the column is empty), or the
+    export never carried the source column. This reports the fill rate of every
+    derived column in the current snapshot, which distinguishes them at a
+    glance and tells an operator whether a re-upload will fix it.
+    """
+    with pool.connection() as c:
+        up = c.execute(
+            "SELECT id, filename, as_of, uploaded_at, n_cohort FROM uploads "
+            "WHERE is_current").fetchone()
+        if not up:
+            return {"ok": False, "reason": "No data loaded yet."}
+        total = c.execute("SELECT count(*) AS n FROM cohort WHERE upload_id=%s",
+                          (up["id"],)).fetchone()["n"]
+        cols = []
+        for col, label, powers in _DERIVED_COLS:
+            try:
+                n = c.execute(
+                    f"SELECT count({col}) AS n FROM cohort WHERE upload_id=%s",
+                    (up["id"],)).fetchone()["n"]
+            except Exception:               # noqa: BLE001 - column may not exist yet
+                cols.append({"column": col, "label": label, "powers": powers,
+                             "filled": None, "pct": None, "status": "missing"})
+                continue
+            pct = round(n / total * 100, 1) if total else 0.0
+            cols.append({"column": col, "label": label, "powers": powers,
+                         "filled": n, "pct": pct,
+                         "status": "ok" if pct >= 50 else
+                                   ("empty" if n == 0 else "partial")})
+    return {
+        "ok": True,
+        "app_version": os.getenv("APP_VERSION", "not set"),
+        "snapshot": {"id": up["id"], "filename": up["filename"],
+                     "as_of": up["as_of"], "uploaded_at": up["uploaded_at"],
+                     "rows": total},
+        "columns": cols,
+    }
+
+
 _static = Path(__file__).parent.parent / "static"
 if _static.exists():
     app.mount("/", StaticFiles(directory=_static, html=True), name="static")
