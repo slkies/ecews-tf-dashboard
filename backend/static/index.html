@@ -1239,7 +1239,13 @@ async function boot(){
   try{
     const f=await api('/filters');
     const fill=(sel,vals)=>{const s=$(sel); if(!s)return; const cur=s.value;
-      s.innerHTML='<option>All</option>'+(vals||[]).map(v=>'<option>'+esc(v)+'</option>').join('');
+      // The value attribute is NOT decoration. Without it an option's value is
+      // its text, and the HTML parser collapses runs of whitespace when reading
+      // that back - so "os State Hospital -  Asubiaro" (two spaces, as the EMR
+      // stores it) was sent to the API with one, matched no rows, and the page
+      // reported no data for a facility carrying 199 episodes.
+      s.innerHTML='<option value="All">All</option>'
+        +(vals||[]).map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
       if([].slice.call(s.options).some(o=>o.value===cur)) s.value=cur;};
     fill('#fFy',f.fys); fill('#fState',f.states);
     fill('#fAge',f.age_bands); fill('#fPlan',f.plans);
@@ -2538,7 +2544,8 @@ async function loadUsers(){
            alert('Password updated for '+b.dataset.em+'.'); }
       catch(e){ alert(e.message); }});
     // populate the scope-state dropdown from the loaded filters
-    const st=$('#fState'); if(st) $('#nuState').innerHTML=[...st.options].map(o=>'<option>'+o.value+'</option>').join('');
+    const st=$('#fState'); if(st) $('#nuState').innerHTML=
+      [...st.options].map(o=>'<option value="'+esc(o.value)+'">'+esc(o.value)+'</option>').join('');
   }catch(e){}
 }
 // Friendly page names: the API path is what gets logged, but "Overview" is what
