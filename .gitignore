@@ -24,3 +24,7 @@ __pycache__/
 # dev screenshots
 *.jpeg
 *.jpg
+
+# ...but brand assets are part of the app and must ship with it
+!backend/static/brand/
+!backend/static/brand/*.png
