@@ -833,6 +833,17 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
       <div id="dtcGap"></div>
       <div class="tbl-wrap" style="margin-top:12px"><table id="dtcGapTbl"></table></div></div>
     <div class="panel">
+      <div class="panel-h"><div class="eyebrow">Switch evidence</div>
+        <h2>Is the viral load responding at all?</h2>
+        <p>&ldquo;Still &ge;&nbsp;1,000&rdquo; hides two opposite situations. A client whose viral load
+           fell from 400,000 to 3,000 <strong>is</strong> responding to adherence support and may
+           finish the job with another cycle. A client whose viral load is unchanged or has
+           risen is not an adherence problem &mdash; another cycle spends months to arrive at
+           the same place. A <strong>1-log fall is a tenfold reduction</strong>, the conventional
+           threshold for calling a response credible.</p></div>
+      <div id="dtcLog"></div></div>
+
+    <div class="panel">
       <div class="panel-h"><div class="eyebrow">Repeat unsuppression</div>
         <h2>Who unsuppresses more than once</h2>
         <p>A client with more than one unsuppression episode. Univariate odds ratios for
@@ -2085,11 +2096,44 @@ function ddCd4(c){
 }
 
 // ---- DTC review: switch gap + repeat unsuppression ------------------
+// Log drop: how far the viral load actually moved, for episodes still >= 1,000.
+// Bars are drawn from the same track/seg pieces the cascade uses, so the page
+// reads as one thing rather than a chart bolted on.
+function dtcLogDrop(L){
+  const host=$('#dtcLog'); if(!host) return;
+  if(!L||!L.ok||!L.n){ host.innerHTML='<div class="empty">No episodes with both an index '
+    +'and a follow-up viral load in this filter.</div>'; return; }
+  // Red where the virus did not respond, green where it did - the colour IS the
+  // recommendation, so it must not be decorative.
+  const COL={'Viral load rose':C.brick,'Fell <0.5 log':'#D4763F',
+             'Fell 0.5-1 log':C.honey,'Fell 1-2 log':'#4E9E6A','Fell >2 log':C.green};
+  const max=Math.max.apply(null,L.bands.map(b=>b.n).concat([1]));
+  host.innerHTML=
+    '<div class="prov" style="margin-bottom:12px">'
+      +'<b>'+fmt(L.no_response_completed_eac)+'</b> episodes completed a full EAC cycle and the '
+      +'viral load still fell by less than half a log. Adherence has been addressed and the virus '
+      +'did not respond &mdash; the clearest switch argument in the data. '
+      +'Median fall across all '+fmt(L.n)+' still-unsuppressed episodes: <b>'+L.median+' log</b>.</div>'
+    +'<div class="ofun">'
+    +L.bands.map(b=>'<div class="ofrow"><div class="top">'
+        +'<span class="lbl">'+esc(b.band)+' <em style="color:var(--ink-3);font-style:normal">'
+          +esc(b.meaning)+'</em></span>'
+        +'<span class="val">'+fmt(b.n)+'<em>'+pc(b.pct)+'</em></span></div>'
+      // .otrack styles an <i> child; a .seg span needs a flex parent it does
+      // not have here, which drew empty tracks.
+      +'<div class="otrack fat"><i style="width:'+(b.n/max*100).toFixed(1)
+        +'%;background:'+(COL[b.band]||C.slate)+'"></i></div>'
+      +(b.completed_eac?'<div style="font-size:11px;color:var(--ink-3);margin-top:3px">'
+        +fmt(b.completed_eac)+' of these completed EAC</div>':'')
+      +'</div>').join('')
+    +'</div>';
+}
+
 function dtcView(d){
  try{
   if(!d||!d.ok){
     $('#dtcTiles').innerHTML='<div class="empty">No data for this filter.</div>';
-    ['#dtcGap','#dtcGapTbl','#dtcRepeat','#dtcFlags'].forEach(s=>$(s)&&($(s).innerHTML=''));
+    ['#dtcGap','#dtcGapTbl','#dtcRepeat','#dtcFlags','#dtcLog'].forEach(s=>$(s)&&($(s).innerHTML=''));
     return;
   }
   const s=d.summary;
@@ -2154,6 +2198,7 @@ function dtcView(d){
   $('#dtcFlags').innerHTML=wl.map(w=>'<tr><td style="font-weight:500">'+esc(w[1])+'</td>'
     +'<td class="r num" style="font-weight:600">'+fmt(w[2])+'</td>'
     +'<td class="r"><button class="btn sm" data-flag="'+w[0]+'">View</button></td></tr>').join('');
+  dtcLogDrop(d.log_drop);
   $$('#dtcFlags button').forEach(b=>b.onclick=()=>loadClients(b.dataset.flag));
  }catch(err){
    $('#dtcTiles').innerHTML='<div class="err">DTC render error: '+esc(err&&err.message||err)+'</div>';

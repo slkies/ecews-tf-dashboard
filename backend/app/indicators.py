@@ -1677,6 +1677,63 @@ def dtc_review(df: pd.DataFrame) -> dict:
             "by_months": gap_by("_mub", ["<3 mo", "3-6 mo", "6-12 mo", "12+ mo"]),
             "by_cd4": gap_by("_cd4", ["<200", ">=200"]),
         },
+        # Computed from idx_vl and fu_vl at request time, so it works on every
+        # snapshot already loaded - no re-upload needed to see it.
+        "log_drop": log_drop(df),
+    }
+
+
+# ── log drop: is the viral load responding at all? ────────────────────
+# Among episodes still >= 1,000 after EAC, "still failing" lumps together two
+# clinically opposite situations. A client whose VL fell from 400,000 to 3,000
+# is responding to adherence support and may finish the job with another cycle.
+# A client whose VL is unchanged, or has risen, is not an adherence problem -
+# that is the resistance picture, and another counselling cycle spends months
+# to reach the same place.
+#
+# log10(index) - log10(follow-up). A 1-log fall is a tenfold reduction and the
+# conventional threshold for calling a response credible.
+_LOG_BANDS = [
+    (2.0,  float("inf"), "Fell >2 log",        "responding well"),
+    (1.0,  2.0,          "Fell 1-2 log",       "substantial response"),
+    (0.5,  1.0,          "Fell 0.5-1 log",     "partial response"),
+    (0.0,  0.5,          "Fell <0.5 log",      "essentially no fall"),
+    (float("-inf"), 0.0, "Viral load rose",    "worse than at index"),
+]
+
+
+def log_drop(df: pd.DataFrame) -> dict:
+    """Distribution of the log10 fall in VL among episodes still >= 1,000."""
+    still = df["still_unsuppressed"].fillna(False).astype(bool)
+    idx = pd.to_numeric(_col(df, "idx_vl"), errors="coerce")
+    fu = pd.to_numeric(_col(df, "fu_vl"), errors="coerce")
+    ok = still & idx.notna() & fu.notna() & (idx > 0) & (fu > 0)
+    if not ok.any():
+        return {"ok": False, "n": 0}
+
+    d = np.log10(idx[ok]) - np.log10(fu[ok])
+    done = df["eac_completed"].fillna(False).astype(bool)[ok]
+
+    bands = []
+    for lo, hi, label, meaning in _LOG_BANDS:
+        m = (d >= lo) & (d < hi)
+        bands.append({"band": label, "meaning": meaning, "n": int(m.sum()),
+                      "pct": round(m.sum() / len(d) * 100, 1),
+                      # completed a full cycle AND barely moved: the clearest
+                      # switch argument the data can make
+                      "completed_eac": int((m & done).sum())})
+
+    # <0.5 log or rising, after a completed cycle. Adherence has been addressed
+    # and the virus did not respond.
+    flat = d < 0.5
+    return {
+        "ok": True,
+        "n": int(len(d)),
+        "still": int(still.sum()),
+        "median": round(float(d.median()), 2),
+        "bands": bands,
+        "no_response": int(flat.sum()),
+        "no_response_completed_eac": int((flat & done).sum()),
     }
 
 
