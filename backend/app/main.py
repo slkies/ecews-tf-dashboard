@@ -170,6 +170,34 @@ SESSION_GAP_MINUTES = int(os.getenv("SESSION_GAP_MINUTES", "30"))
 
 
 @app.middleware("http")
+async def _cache_headers(request: Request, call_next):
+    """
+    Tell caches what may be reused. StaticFiles sends an ETag but no
+    Cache-Control, which leaves browsers free to apply *heuristic* caching -
+    reusing a copy without revalidating, for a fraction of the time since it
+    last changed. For an HTML file that is rewritten on every deploy that is
+    exactly wrong: a site can be pulled, rebuilt and restarted, and still serve
+    the previous page until the browser decides to look again.
+
+    - API responses: never stored. They carry patient-level data and must not
+      sit in a browser or an intermediate proxy.
+    - HTML: revalidate every time. With an ETag that costs a 304 and a few
+      hundred bytes, not a re-download.
+    - vendor/ and brand/: a day, still ETag-validated. Fonts, Chart.js and the
+      logo are not fingerprinted, so an unbounded cache would strand a change.
+    """
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store"
+    elif path.startswith(("/vendor/", "/brand/")):
+        resp.headers["Cache-Control"] = "public, max-age=86400, must-revalidate"
+    else:
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.middleware("http")
 async def _record_usage(request: Request, call_next):
     """
     One row per authenticated API call, for the usage panel.
