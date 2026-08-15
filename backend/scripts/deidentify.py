@@ -67,6 +67,7 @@ EAC_PII_COLUMNS = ["DOB"]
 KEY = "S/N"
 VAULT_NEW = "Datim_PEPID"      # current ordering, matches the line list
 VAULT_OLD = "PEPID_Datim"      # retained for historical continuity
+LEGACY = "S/N_legacy"          # the pre-migration key - see migrate_keys()
 
 
 def norm_key(s: pd.Series) -> pd.Series:
@@ -129,6 +130,62 @@ class Vault:
             out = k.map(self.lookup)
             log.info("vault: %s new client(s) assigned a key", f"{len(self.added):,}")
         return out
+
+    def legacy_map(self) -> dict[str, str]:
+        """
+        Old key -> new key. Not a convenience: the EAC export carries S/N but
+        neither pepId nor datimCode, so once keys are migrated the ONLY way to
+        re-key that sheet is through this mapping. Losing the legacy column
+        would orphan every EAC record.
+        """
+        if LEGACY not in self.df.columns:
+            return {}
+        d = self.df.dropna(subset=[LEGACY])
+        return dict(zip(d[LEGACY].astype(str).str.strip(), d[KEY].astype(str)))
+
+    def migrate_keys(self, backup_dir: Path, dry_run: bool) -> int:
+        """
+        Issue every existing client a new cryptographically secure key, once.
+
+        The old key moves to S/N_legacy and stays there permanently. Two things
+        depend on it: re-keying the EAC export, which has no other identifier,
+        and resolving worklists already distributed under the old key.
+
+        What this DOES break, unavoidably: snapshots already in the dashboard
+        are keyed on the old value, so the comparison page cannot match
+        episodes across the migration boundary. It will read as though the
+        entire cohort was replaced. Snapshots either side remain internally
+        correct, and every comparison after this point works normally.
+        """
+        if LEGACY in self.df.columns and self.df[LEGACY].notna().any():
+            raise SystemExit(
+                "Keys have already been migrated - S/N_legacy is populated. "
+                "Running again would issue a SECOND new key to every client "
+                "and orphan everything issued under the first.")
+
+        n = len(self.df)
+        log.warning("KEY MIGRATION: issuing a new key to all %s clients", f"{n:,}")
+        if dry_run:
+            log.warning("  dry run - vault untouched")
+            return n
+
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        pre = backup_dir / f"{self.path.stem}-PRE-MIGRATION-{stamp}.xlsx"
+        shutil.copy2(self.path, pre)
+        log.warning("  pre-migration vault saved as %s", pre.name)
+
+        self.df[LEGACY] = self.df[KEY]
+        self.df[KEY] = [new_sn() for _ in range(n)]
+        if self.df[KEY].duplicated().any():        # 128-bit, but check anyway
+            raise SystemExit("generated a duplicate key - aborting")
+        self.lookup = dict(zip(self.df["_k"], self.df[KEY]))
+
+        tmp = self.path.with_suffix(".tmp.xlsx")
+        self.df.drop(columns=["_k"]).to_excel(tmp, index=False)
+        tmp.replace(self.path)
+        log.warning("  %s clients re-keyed; old keys kept in %s", f"{n:,}", LEGACY)
+        return n
 
     def save(self, backup_dir: Path) -> None:
         if not self.added:
@@ -299,6 +356,11 @@ def main() -> int:
     ap.add_argument("--config", required=True, type=Path)
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would happen; write nothing, upload nothing")
+    ap.add_argument("--migrate-keys", action="store_true",
+                    help="ONE TIME: issue every existing client a new secure key. "
+                         "The old key is kept in S/N_legacy, which is then required "
+                         "permanently to re-key the EAC export. Snapshots already in "
+                         "the dashboard will not compare across this boundary.")
     a = ap.parse_args()
 
     cfg = configparser.ConfigParser()
@@ -314,6 +376,9 @@ def main() -> int:
     log.info("de-identification run%s", "  (DRY RUN)" if a.dry_run else "")
 
     vault = Vault(Path(P["vault"]))
+    if a.migrate_keys:
+        vault.migrate_keys(Path(P["backups"]), a.dry_run)
+
     treat = pd.read_excel(Path(P["treatment"]), dtype=str)
     log.info("treatment list: %s rows x %d cols", f"{len(treat):,}", len(treat.columns))
     check_key_collisions(treat)
@@ -339,6 +404,32 @@ def main() -> int:
 
     register = pd.read_excel(Path(P["register"]), dtype=str) \
         if Path(P["register"]).exists() else treat.iloc[0:0].copy()
+
+    # The EAC export and the register carry S/N but no pepId or datimCode, so
+    # after a migration their keys are stale and can only be translated through
+    # the legacy mapping. Anything that fails to translate is reported rather
+    # than silently carried forward under a key that no longer means anything.
+    legacy = vault.legacy_map()
+    if legacy:
+        for label, frame in (("EAC list", eac), ("register", register)):
+            if KEY not in frame.columns or frame.empty:
+                continue
+            old = frame[KEY].astype("string").str.strip()
+            already = old.isin(set(vault.lookup.values()))
+            translated = old.map(legacy)
+            stale = translated.isna() & ~already & old.notna()
+            frame[KEY] = translated.where(translated.notna(), frame[KEY])
+            if int(already.sum()):
+                log.info("%s: %s row(s) already on current keys",
+                         label, f"{int(already.sum()):,}")
+            if int((~already & translated.notna()).sum()):
+                log.info("%s: %s row(s) re-keyed from the legacy mapping",
+                         label, f"{int((~already & translated.notna()).sum()):,}")
+            if int(stale.sum()):
+                log.warning("%s: %s row(s) carry a key found in neither the "
+                            "current nor the legacy mapping - these clients "
+                            "cannot be linked and need investigating",
+                            label, f"{int(stale.sum()):,}")
     register, added = append_new_unsuppressed(register, treat)
     log.info("register: %s newly unsuppressed episode(s) appended, %s total",
              f"{added:,}", f"{len(register):,}")
