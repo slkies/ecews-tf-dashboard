@@ -1,0 +1,38 @@
+# Copy to your SECURE machine as secure.ini and edit the paths.
+#
+# Keep this file, and everything it points at, OUTSIDE the repository folder.
+# The repository syncs to GitHub: anything inside it is one careless `git add`
+# away from being published. The .gitignore and the CI check are backstops, not
+# the defence - the defence is that patient data never sits in that tree.
+#
+#   python deidentify.py --config secure.ini --dry-run   # change nothing
+#   python deidentify.py --config secure.ini             # do it
+
+[paths]
+# The identity vault. The single most valuable file in the system: lose it and
+# every historical S/N becomes unresolvable, AND the next run mints new keys for
+# everyone, severing the whole cohort from its own history.
+vault    = C:\ECEWS_Secure\vault\SN_Key.xlsx
+backups  = C:\ECEWS_Secure\vault\backups
+
+# Raw exports, with PII. Treatment list weekly, EAC list fortnightly.
+treatment = C:\ECEWS_Secure\incoming\ECEWS_Treatment_Linelist.xlsx
+eac       = C:\ECEWS_Secure\incoming\EAC_Linelist.xlsx
+
+# The cumulative unsuppressed register. The script appends newly unsuppressed
+# active clients to it each run and rewrites it, so it is state, not input -
+# it belongs with the vault, not with the disposable exports.
+register = C:\ECEWS_Secure\Total_Unsuppressed.xlsx
+
+# De-identified output, safe to upload. And one log per run.
+output = C:\ECEWS_Secure\output
+logs   = C:\ECEWS_Secure\logs
+
+# Optional. Omit the whole section to stop after writing the parquet and upload
+# by hand on the Admin tab. With it, the run ends with the dashboard refreshed.
+# The account needs the admin role; give it its own login rather than reusing a
+# person's, so the audit trail shows the pipeline acted, not an individual.
+[upload]
+base_url = https://your-ecews-host
+username = pipeline
+password = set-a-real-one
