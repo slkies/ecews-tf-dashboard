@@ -17,7 +17,9 @@ backups  = C:\ECEWS_Secure\vault\backups
 
 # Raw exports, with PII. Treatment list weekly, EAC list fortnightly.
 treatment = C:\ECEWS_Secure\incoming\ECEWS_Treatment_Linelist.xlsx
-eac       = C:\ECEWS_Secure\incoming\EAC_Linelist.xlsx
+# A glob: the EAC list is NOT cumulative - clients drop out as cycles close -
+# so the dashboard unions every sheet and the pipeline must carry them all.
+eac       = C:\ECEWS_Secure\incoming\eac\*.xlsx
 
 # The cumulative unsuppressed register. The script appends newly unsuppressed
 # active clients to it each run and rewrites it, so it is state, not input -
