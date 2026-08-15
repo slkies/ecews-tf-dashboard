@@ -399,8 +399,18 @@ def main() -> int:
                         f"{mismatch:,}", VAULT_NEW)
     treat[KEY] = vault.resolve(built)
 
-    eac = pd.read_excel(Path(P["eac"]), dtype=str)
-    log.info("EAC list: %s rows x %d cols", f"{len(eac):,}", len(eac.columns))
+    # The EAC list is not cumulative - clients drop out once a cycle closes -
+    # so the dashboard unions every sheet it is given and the pipeline has to
+    # carry them all forward, not just the newest. `eac` may therefore be a
+    # single file or a glob.
+    eac_paths = sorted(Path(P["eac"]).parent.glob(Path(P["eac"]).name)) \
+        if any(ch in P["eac"] for ch in "*?[") else [Path(P["eac"])]
+    if not eac_paths:
+        raise SystemExit(f"no EAC list matched {P['eac']}")
+    eac_sheets = {p.stem: pd.read_excel(p, dtype=str) for p in eac_paths}
+    for name, df in eac_sheets.items():
+        log.info("EAC list %-28s %8s rows x %3d cols", name,
+                 f"{len(df):,}", len(df.columns))
 
     register = pd.read_excel(Path(P["register"]), dtype=str) \
         if Path(P["register"]).exists() else treat.iloc[0:0].copy()
@@ -411,7 +421,8 @@ def main() -> int:
     # than silently carried forward under a key that no longer means anything.
     legacy = vault.legacy_map()
     if legacy:
-        for label, frame in (("EAC list", eac), ("register", register)):
+        targets = [(f"EAC {n}", d) for n, d in eac_sheets.items()]                   + [("register", register)]
+        for label, frame in targets:
             if KEY not in frame.columns or frame.empty:
                 continue
             old = frame[KEY].astype("string").str.strip()
@@ -438,8 +449,9 @@ def main() -> int:
     sheets = {
         "Total Unsuppressed": register.drop(columns=drop, errors="ignore"),
         Path(P["treatment"]).stem: treat.drop(columns=drop, errors="ignore"),
-        Path(P["eac"]).stem: eac.drop(columns=EAC_PII_COLUMNS, errors="ignore"),
     }
+    for name, df in eac_sheets.items():
+        sheets[name] = df.drop(columns=EAC_PII_COLUMNS, errors="ignore")
 
     problems = validate(sheets)
     if problems:
