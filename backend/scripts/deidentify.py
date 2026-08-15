@@ -387,6 +387,21 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
                     "episodes are matched on S/N and value alone, which is "
                     "weaker; check the appended rows before publishing")
 
+    # A register row with neither a viral load nor a result date is not an
+    # episode - it is the residue of an earlier append that lost its columns to
+    # a case mismatch. Drop them so a re-run repairs the register rather than
+    # stacking a second copy on top of the wreckage.
+    if len(register):
+        rvl = pd.to_numeric(col_ci(register, "currentViralLoad"), errors="coerce")
+        rdt = pd.to_datetime(col_ci(register, "dateResultReceivedFacility"),
+                             errors="coerce")
+        empty = rvl.isna() & rdt.isna()
+        if empty.any():
+            log.warning("register: dropping %s row(s) with no viral load and "
+                        "no result date - not episodes, and they would be "
+                        "re-appended as duplicates", f"{int(empty.sum()):,}")
+            register = register[~empty].reset_index(drop=True)
+
     have = set(episode(register)) if len(register) else set()
 
     # Results dated on or before the watermark are outside the agreed cut-off,
@@ -417,7 +432,29 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     if cand.empty:
         return register, 0
 
-    keep = [c for c in register.columns if c in cand.columns] or list(cand.columns)
+    # The register and the export spell the same fields differently -
+    # DateResultReceivedFacility vs dateResultReceivedFacility, State vs state.
+    # An exact-case intersection matched 2 of 63 columns, so appended rows
+    # carried an S/N and nothing else: no viral load, no date, no status. They
+    # counted as episodes and charted as nothing. Map by lower-case name.
+    reg_by_lower = {str(c).strip().lower(): c for c in register.columns}
+    cand = cand.rename(columns={c: reg_by_lower[str(c).strip().lower()]
+                                for c in cand.columns
+                                if str(c).strip().lower() in reg_by_lower})
+    keep = [c for c in register.columns if c in cand.columns]
+
+    # Fail rather than publish blank episodes again. Every appended row must
+    # carry the two fields the dashboard cannot do without.
+    need_cols = [reg_by_lower.get(n) for n in
+                 ("dateresultreceivedfacility", "currentviralload")]
+    for col in filter(None, need_cols):
+        if col not in keep or cand[col].isna().all():
+            raise SystemExit(
+                f"appended rows would have no '{col}'. Only {len(keep)} of "
+                f"{len(register.columns)} register columns could be matched to "
+                f"the export, so these rows would be published empty. The "
+                f"column naming has probably changed - stopping.")
+
     out = pd.concat([register, cand[keep]], ignore_index=True)
     return out, len(cand)
 
