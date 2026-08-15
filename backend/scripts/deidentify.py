@@ -579,6 +579,33 @@ def main() -> int:
         raise SystemExit(f"no EAC list matched {P['eac']}")
     eac_sheets = {p.stem: read_excel_any(p, S.get("eac_password"), dtype=str)
                   for p in eac_paths}
+
+    # ORDER MATTERS. The dashboard treats sheet order as the authority for
+    # which EAC list is newest and takes the LAST one. Writing them in glob
+    # order meant alphabetical order, so 'EAC Line List_4th July' sorted after
+    # '24th July' and was declared newest - two weeks of session dates lost
+    # their precedence.
+    #
+    # Sorted by the latest session date each sheet actually contains, not by
+    # its name: the content cannot drift out of step with itself the way a
+    # filename can, and ingest.py is explicit that parsing dates out of names
+    # is the fragile option.
+    def newest_session(df: pd.DataFrame) -> pd.Timestamp:
+        cols = [c for c in df.columns if "session" in str(c).lower()
+                and "date" in str(c).lower()]
+        best = pd.NaT
+        for c in cols:
+            m = pd.to_datetime(df[c], errors="coerce").max()
+            if pd.notna(m) and (pd.isna(best) or m > best):
+                best = m
+        return best
+
+    order = sorted(eac_sheets, key=lambda n: (pd.Timestamp.min
+                                              if pd.isna(newest_session(eac_sheets[n]))
+                                              else newest_session(eac_sheets[n])))
+    eac_sheets = {n: eac_sheets[n] for n in order}
+    log.info("EAC sheets in chronological order, newest last: %s",
+             " -> ".join(order))
     for name, df in eac_sheets.items():
         log.info("EAC list %-28s %8s rows x %3d cols", name,
                  f"{len(df):,}", len(df.columns))
