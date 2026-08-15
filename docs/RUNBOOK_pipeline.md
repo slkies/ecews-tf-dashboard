@@ -222,13 +222,40 @@ already happened — but do not rely on that; just leave the flag off.
    recently modified file matching `*Treatment*`.
 2. When a new EAC list arrives (fortnightly), add it to `eac\` — **add**, do not
    replace.
-3. Rehearse:
+3. Rehearse, then run:
+
+```powershell
+cd "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts"
+```
+
+```powershell
+.\weekly.ps1
+```
+
+`weekly.ps1` is the whole routine in one command. It checks the inputs before
+starting — that the password is filled in, that a treatment export exists and
+how old it is, that the EAC folder and the vault are present — and stops with a
+plain reason rather than a stack trace.
+
+It rehearses by default and changes nothing. Add `-Go` to run for real, and
+`-IncludeLate` to sweep up late-reported results:
+
+```powershell
+.\weekly.ps1 -Go -IncludeLate
+```
+
+It never passes `--migrate-keys` — that was the one-time changeover. When it
+finishes it prints the exact file to upload.
+
+4. Upload the file it names, on the Admin tab.
+
+### The long form
+
+If you would rather run the pipeline directly:
 
 ```powershell
 python "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts\deidentify.py" --config "C:\Users\eesar\Downloads\Public_Health_Work\Data\TF_Dashboard Files\secure.ini" --dry-run
 ```
-
-4. If it looks right, run again without `--dry-run`, then upload.
 
 From here on, existing clients keep their key and only genuinely new clients get
 a new one.
