@@ -397,7 +397,13 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     if pd.notna(watermark):
         stale = treat[unsuppressed & got.notna() & (got <= watermark)]
         missed = int((~episode(stale).isin(have)).sum()) if len(stale) else 0
-        if missed:
+        if missed and include_late:
+            # Telling someone to pass a flag they have already passed reads as
+            # though it was ignored. With the flag on these ARE being added.
+            log.info("%s late-reported result(s) dated on or before the "
+                     "cut-off are being included (--include-late)",
+                     f"{missed:,}")
+        elif missed:
             log.warning("%s unsuppressed result(s) dated on or before the "
                         "cut-off are absent from the register - late facility "
                         "reporting. Outside the agreed cut-off, so NOT "
