@@ -30,6 +30,14 @@ register = C:\ECEWS_Secure\Total_Unsuppressed.xlsx
 output = C:\ECEWS_Secure\output
 logs   = C:\ECEWS_Secure\logs
 
+# The weekly treatment export arrives password-protected. The pipeline
+# decrypts it in memory; the plaintext is never written to disk. This is a
+# real credential - one more reason this file stays out of the repository.
+[secrets]
+treatment_password = 
+# eac_password      = 
+# register_password = 
+
 # Optional. Omit the whole section to stop after writing the parquet and upload
 # by hand on the Admin tab. With it, the run ends with the dashboard refreshed.
 # The account needs the admin role; give it its own login rather than reusing a

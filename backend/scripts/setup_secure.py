@@ -1,17 +1,19 @@
-"""One-time setup for the secure pipeline folder.
+"""One-time setup for the pipeline folder.
 
-Run this once, before the first `deidentify.py` run. It:
+Run this once, before the first `deidentify.py` run. It works IN PLACE in the
+folder where you already keep the data - it does not move your files. It:
 
-  1. creates C:\\ECEWS_Secure and its subfolders,
-  2. splits the existing TF_Dashboard_Dataset workbook into the separate
-     files the pipeline expects (one file per EAC sheet, plus the register),
-  3. writes a secure.ini pointing at all of it,
-  4. tells you what is still missing and why.
+  1. adds the subfolders the pipeline needs (eac, backups, output, logs),
+  2. splits the EAC sheets and the register out of the TF_Dashboard_Dataset
+     workbook into separate files, because the pipeline reads one file per
+     EAC list and the dashboard unions them all,
+  3. writes secure.ini pointing at everything, including the files already
+     sitting there,
+  4. reports anything still missing.
 
-It never deletes anything and never overwrites a file that already exists,
-so running it twice is safe.
+It never deletes and never overwrites, so running it twice is safe.
 
-    python setup_secure.py --dataset "C:\\...\\TF_Dashboard_Dataset.xlsx"
+    python setup_secure.py
 """
 from __future__ import annotations
 
@@ -21,39 +23,43 @@ from pathlib import Path
 
 import pandas as pd
 
-# The workbook holds several kinds of sheet. Only two kinds move into the
-# secure folder as files: the EAC sheets (all of them - the list is not
-# cumulative, so the dashboard unions every one) and the register.
-#
-# The treatment sheets deliberately do NOT come across. The pipeline needs
-# `pepId` and `datimCode` to build the vault key, and those columns were
-# removed from the workbook by hand. The raw weekly export has them; that is
-# what the pipeline reads from now on.
+# Where the data already lives. Outside the repository, which is the point:
+# the repo syncs to GitHub, and anything inside it is one careless `git add`
+# from being published.
+DEFAULT_ROOT = Path(r"C:\Users\eesar\Downloads\Public_Health_Work\Data\TF_Dashboard Files")
+
 REGISTER_SHEET = "Total Unsuppressed"
 EAC_PREFIX = "EAC"
 TREAT_PREFIX = "Treatment"
 
 INI = """\
-# Written by setup_secure.py. Edit if your paths differ.
+# Written by setup_secure.py. Edit if your paths change.
 #
 # Keep this file, and everything it points at, OUTSIDE the repository folder.
 
 [paths]
-vault    = {root}\\vault\\SN_Key.xlsx
-backups  = {root}\\vault\\backups
+vault    = {root}\\SN_Key.xlsx
+backups  = {root}\\backups
 
-treatment = {root}\\incoming\\ECEWS_Treatment_Linelist.xlsx
-# A glob: every EAC sheet must be carried forward, not just the newest.
-eac       = {root}\\incoming\\eac\\*.xlsx
+treatment = {treatment}
+# A glob: the EAC list is not cumulative - clients drop out as cycles close -
+# so every sheet must be carried forward, not just the newest.
+eac       = {root}\\eac\\*.xlsx
 
 register = {root}\\Total_Unsuppressed.xlsx
 
 output = {root}\\output
 logs   = {root}\\logs
 
-# Uncomment and fill in to have the run end with the dashboard refreshed.
-# Until then the run stops after writing the parquet, and you upload it
-# yourself on the Admin tab - which is the safer way to start.
+# The weekly export arrives password-protected. Put the password here and the
+# pipeline decrypts it in memory - the plaintext never touches the disk.
+# This is a real credential: this file must stay out of the repository.
+[secrets]
+treatment_password = PUT-THE-PASSWORD-HERE
+
+# Uncomment to have the run end with the dashboard refreshed. Until then the
+# run stops after writing the parquet and you upload it on the Admin tab,
+# which is the safer way to start.
 #
 # [upload]
 # base_url = https://your-ecews-host
@@ -65,34 +71,47 @@ logs   = {root}\\logs
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dataset", required=True, type=Path,
-                    help="the existing TF_Dashboard_Dataset.xlsx")
-    ap.add_argument("--root", type=Path, default=Path(r"C:\ECEWS_Secure"),
-                    help="secure folder to create (default C:\\ECEWS_Secure)")
+    ap.add_argument("--root", type=Path, default=DEFAULT_ROOT,
+                    help="folder holding SN_Key.xlsx and the line lists")
+    ap.add_argument("--dataset", type=Path, default=None,
+                    help="the TF_Dashboard_Dataset workbook "
+                         "(default: TF_Dashboard_Dataset.xlsx inside --root)")
     a = ap.parse_args()
 
-    if not a.dataset.exists():
-        print(f"  dataset not found: {a.dataset}")
+    root = a.root
+    if not root.is_dir():
+        print(f"  folder not found: {root}")
+        return 1
+    dataset = a.dataset or root / "TF_Dashboard_Dataset.xlsx"
+    print(f"\n  working in: {root}")
+
+    for sub in ("eac", "backups", "output", "logs"):
+        (root / sub).mkdir(exist_ok=True)
+    print("  subfolders ready: eac, backups, output, logs")
+
+    # The treatment export is named with its date, so match on a pattern
+    # rather than a fixed name and take the most recent.
+    treats = sorted(root.glob(f"*{TREAT_PREFIX}*.xls*"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)
+    treatment = treats[0] if treats else root / "ECEWS_Treatment_Linelist.xlsx"
+    if treats:
+        print(f"  treatment list: {treatment.name}")
+        if len(treats) > 1:
+            print(f"                  ({len(treats) - 1} older one(s) ignored)")
+
+    if not dataset.exists():
+        print(f"\n  dataset not found: {dataset}")
         return 1
 
-    root = a.root
-    print(f"\n  secure folder: {root}")
-    for sub in ("vault", "vault/backups", "incoming", "incoming/eac",
-                "output", "logs"):
-        (root / sub).mkdir(parents=True, exist_ok=True)
-    print("  folders created\n")
-
-    xl = pd.ExcelFile(a.dataset)
+    xl = pd.ExcelFile(dataset)
     eac = [s for s in xl.sheet_names if s.startswith(EAC_PREFIX)]
-    treat = [s for s in xl.sheet_names if s.startswith(TREAT_PREFIX)]
+    treat_sheets = [s for s in xl.sheet_names if s.startswith(TREAT_PREFIX)]
 
-    # Splitting a large workbook is slow - minutes, not seconds. Say so, and
-    # report each sheet as it lands so a long run does not look like a hang.
-    print(f"  splitting {len(eac)} EAC sheet(s) + the register out of the")
-    print("  workbook. This reads a very large file - expect several minutes.\n")
+    print(f"\n  splitting {len(eac)} EAC sheet(s) + the register out of")
+    print(f"  {dataset.name}. It is large - expect several minutes.\n")
 
-    written, skipped = 0, 0
-    jobs = [(s, root / "incoming" / "eac" / f"{s}.xlsx") for s in eac]
+    written = skipped = 0
+    jobs = [(s, root / "eac" / f"{s}.xlsx") for s in eac]
     if REGISTER_SHEET in xl.sheet_names:
         jobs.append((REGISTER_SHEET, root / "Total_Unsuppressed.xlsx"))
 
@@ -110,22 +129,24 @@ def main() -> int:
     if ini.exists():
         print(f"\n  secure.ini already exists, left alone")
     else:
-        ini.write_text(INI.format(root=str(root)), encoding="utf8")
-        print(f"\n  wrote {ini}")
-
+        ini.write_text(INI.format(root=str(root), treatment=str(treatment)),
+                       encoding="utf8")
+        print(f"\n  wrote {ini.name}")
     print(f"\n  {written} file(s) written, {skipped} left alone")
 
-    # What the user still has to supply by hand. Both are things only they
-    # can provide, so be explicit rather than letting the pipeline fail later
-    # with a stack trace.
-    print("\n  STILL NEEDED before the first run:")
-    print(f"    1. the vault  ->  {root}\\vault\\SN_Key.xlsx")
-    print("       Copy it from wherever you keep it offline. Without it the")
-    print("       pipeline mints new keys for everyone and the cohort loses")
-    print("       its history.")
-    print(f"    2. the raw treatment export  ->  {root}\\incoming\\ECEWS_Treatment_Linelist.xlsx")
-    print("       It must still have pepId and datimCode. The copy in the")
-    print(f"       workbook does not ({len(treat)} treatment sheet(s) found, none moved).")
+    print("\n  BEFORE THE FIRST RUN:")
+    print(f"    1. Open {ini.name} and put the treatment list's password in")
+    print("       the [secrets] section. The export is encrypted and cannot")
+    print("       be read without it.")
+    print(f"    2. Copy SN_Key.xlsx somewhere else as a safety net. The script")
+    print("       backs it up, but a copy you made yourself, before an")
+    print("       irreversible step, costs nothing.")
+    # The workbook's own treatment sheets cannot be used: the vault key is
+    # built from pepId and datimCode, and those were deleted by hand.
+    if treat_sheets:
+        print(f"\n  Note: the {len(treat_sheets)} treatment sheet(s) inside the workbook are NOT")
+        print("  used. They have had pepId and datimCode deleted, so they cannot")
+        print("  be matched to the vault. The raw weekly export is the input now.")
     return 0
 
 

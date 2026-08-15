@@ -76,6 +76,53 @@ def norm_key(s: pd.Series) -> pd.Series:
     return s.astype("string").str.strip().str.upper()
 
 
+def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
+    """
+    The vault key: datimCode immediately followed by pepId, NO separator.
+
+        datimCode AAA0aaAAaAA + pepId XXX00000000 -> AAA0aaAAaAAXXX00000000
+
+    Built here rather than read from the export's own column. If an export ever
+    reverses the order, joining on its column silently matches nothing, every
+    client looks new, and the run mints a fresh key for all 180,000 of them.
+    Building it ourselves means a format change fails loudly instead.
+    """
+    return (datim.astype("string").str.strip()
+            + pep.astype("string").str.strip())
+
+
+def read_excel_any(path: Path, password: str | None = None, **kw):
+    """
+    Read an .xlsx, including a password-protected one.
+
+    The weekly export arrives encrypted - correctly so, it is raw PII. An
+    encrypted workbook is an OLE2 container holding an EncryptedPackage stream,
+    which pandas cannot read and which it misreports as a legacy .xls, so the
+    error you get without this is about a missing 'xlrd' and tells you nothing.
+
+    Decryption happens in memory. The plaintext is never written to disk.
+    """
+    with path.open("rb") as fh:
+        encrypted = fh.read(8).startswith(b"\xd0\xcf\x11\xe0")
+    if not encrypted:
+        return pd.read_excel(path, **kw)
+    if not password:
+        raise SystemExit(
+            f"{path.name} is password-protected. Add the password to the "
+            "[secrets] section of your config:\n\n"
+            "    [secrets]\n    treatment_password = ...\n\n"
+            "Keep that file outside the repository - it is a real credential.")
+    import msoffcrypto
+    buf = io.BytesIO()
+    with path.open("rb") as fh:
+        office = msoffcrypto.OfficeFile(fh)
+        office.load_key(password=password)
+        office.decrypt(buf)
+    buf.seek(0)
+    log.info("%s: decrypted in memory", path.name)
+    return pd.read_excel(buf, **kw)
+
+
 def new_sn() -> str:
     """
     Cryptographically secure, unguessable, and not enumerable.
@@ -101,31 +148,47 @@ class Vault:
                     f"{path.name} has no '{col}' column. Found: "
                     f"{', '.join(self.df.columns)}")
         self.df["_k"] = norm_key(self.df[VAULT_NEW])
-        dupes = self.df["_k"].duplicated().sum()
-        if dupes:
+        # An identity mapping to two different S/Ns is ambiguous: the same
+        # person is carried as two clients, and any run would have to guess
+        # which key to use. Refuse - but write out exactly which rows are
+        # involved, because "resolve 91 rows by hand" is not actionable
+        # without knowing which 91.
+        ambiguous = self.df.groupby("_k")[KEY].nunique()
+        ambiguous = ambiguous[ambiguous > 1]
+        if len(ambiguous):
+            report = path.parent / f"{path.stem}-AMBIGUOUS.csv"
+            self.df[self.df["_k"].isin(ambiguous.index)] \
+                .drop(columns=["_k"]).to_csv(report, index=False)
             raise SystemExit(
-                f"{path.name} maps {dupes} key(s) to more than one S/N. "
-                "That is ambiguous and must be resolved by hand before any "
-                "run - the script will not guess which mapping is correct.")
+                f"{path.name} maps {len(ambiguous):,} identit(ies) to more than "
+                f"one S/N - the same client carried twice.\n"
+                f"The affected rows are listed in {report.name}.\n"
+                "Decide for each whether it is one client (keep one S/N) or "
+                "genuinely two, then correct the vault. The script will not "
+                "guess which mapping is right.")
         self.lookup = dict(zip(self.df["_k"], self.df[KEY]))
         self.added: list[dict] = []
         log.info("vault: %s existing mappings", f"{len(self.lookup):,}")
 
-    def resolve(self, keys: pd.Series) -> pd.Series:
-        """Existing keys are reused; unseen ones get a new S/N."""
+    def resolve(self, datim: pd.Series, pep: pd.Series) -> pd.Series:
+        """Existing clients keep their S/N; unseen ones get a new one.
+
+        Takes the two components rather than the finished key, because the
+        vault stores both orderings and there is no separator to split on -
+        `datimCode + pepId` cannot be taken apart again once joined.
+        """
+        keys = build_key(datim, pep)
         k = norm_key(keys)
         out = k.map(self.lookup)
         missing = out.isna() & k.notna()
+        # Both orderings, from the components. The vault is the only record of
+        # who a key belongs to; leaving the legacy column blank on new rows
+        # would make it progressively less usable for anyone reading it.
+        rev = dict(zip(k[missing], norm_key(build_key(pep, datim))[missing]))
         for key in k[missing].dropna().unique():
             sn = new_sn()
             self.lookup[key] = sn
-            # Write both orderings. The vault is the only record of who a key
-            # belongs to, and leaving the legacy column blank on new rows would
-            # make it progressively less usable for anyone reading it directly.
-            datim, _, pep = key.partition("_")
-            self.added.append({VAULT_NEW: key,
-                               VAULT_OLD: f"{pep}_{datim}" if pep else None,
-                               KEY: sn})
+            self.added.append({VAULT_NEW: key, VAULT_OLD: rev.get(key), KEY: sn})
         if len(self.added):
             out = k.map(self.lookup)
             log.info("vault: %s new client(s) assigned a key", f"{len(self.added):,}")
@@ -259,19 +322,33 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     highest-priority switch candidates. De-duplicating on the person would
     quietly discard exactly those.
     """
-    date_col = "dateResultReceivedFacility"
-    if date_col not in treat.columns:
-        raise SystemExit(f"treatment list has no '{date_col}' column")
+    # Resolve column names case-insensitively, and REQUIRE each one. These
+    # exports have already renamed a column by case once (lga -> LGA). Reading
+    # the ART status with .get() and a blank default meant a renamed column
+    # made every client look non-active, and the run appended nobody - the
+    # feature silently doing nothing, which is worse than it failing.
+    def need(df: pd.DataFrame, name: str) -> pd.Series:
+        lower = {str(c).strip().lower(): c for c in df.columns}
+        hit = lower.get(name.lower())
+        if hit is None:
+            raise SystemExit(
+                f"treatment list has no '{name}' column (case-insensitive). "
+                f"Without it newly unsuppressed clients cannot be identified.\n"
+                f"Columns present: {', '.join(map(str, df.columns))}")
+        return df[hit]
 
-    reg_dates = pd.to_datetime(register.get(date_col), errors="coerce")
+    date_col = "dateResultReceivedFacility"
+    got = pd.to_datetime(need(treat, date_col), errors="coerce")
+    vl = pd.to_numeric(need(treat, "currentViralLoad"), errors="coerce")
+    active = need(treat, "currentArtStatus") \
+        .astype("string").str.strip().str.lower().eq("active")
+
+    reg_lower = {str(c).strip().lower(): c for c in register.columns}
+    reg_dates = pd.to_datetime(register.get(reg_lower.get(date_col.lower())),
+                               errors="coerce")
     watermark = reg_dates.max() if reg_dates.notna().any() else pd.NaT
     log.info("register covers results received up to %s",
              watermark.date() if pd.notna(watermark) else "(empty register)")
-
-    vl = pd.to_numeric(treat.get("currentViralLoad"), errors="coerce")
-    got = pd.to_datetime(treat[date_col], errors="coerce")
-    active = treat.get("currentArtStatus", pd.Series("", index=treat.index)) \
-        .astype("string").str.strip().str.lower().eq("active")
 
     fresh = got > watermark if pd.notna(watermark) else got.notna()
     cand = treat[active & (vl >= vl_threshold) & fresh].copy()
@@ -288,12 +365,31 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     if cand.empty:
         return register, 0
 
+    def col_ci(d: pd.DataFrame, name: str) -> pd.Series:
+        """Case-insensitive column fetch that always returns a Series.
+
+        `d.get(missing)` returns None, and pd.to_datetime(None) is a scalar
+        NaT, so the old code raised AttributeError on `.dt` the moment a
+        column was absent - which the register genuinely can be.
+        """
+        hit = {str(c).strip().lower(): c for c in d.columns}.get(name.lower())
+        if hit is None:
+            return pd.Series(pd.NA, index=d.index, dtype="object")
+        return d[hit]
+
     def episode(d: pd.DataFrame) -> pd.Series:
         return (d[KEY].astype(str) + "|"
-                + pd.to_datetime(d.get("dateofCurrentViralLoad"),
+                + pd.to_datetime(col_ci(d, "dateofCurrentViralLoad"),
                                  errors="coerce").dt.strftime("%Y-%m-%d").fillna("NA")
-                + "|" + pd.to_numeric(d.get("currentViralLoad"),
+                + "|" + pd.to_numeric(col_ci(d, "currentViralLoad"),
                                       errors="coerce").astype("string"))
+
+    # If the register cannot supply the episode date, every candidate looks new
+    # and a client already in the register would be appended a second time.
+    if len(register) and col_ci(register, "dateofCurrentViralLoad").isna().all():
+        log.warning("the register has no usable 'dateofCurrentViralLoad' - "
+                    "episodes are matched on S/N and value alone, which is "
+                    "weaker; check the appended rows before publishing")
 
     have = set(episode(register)) if len(register) else set()
     cand = cand[~episode(cand).isin(have)]
@@ -379,25 +475,37 @@ def main() -> int:
     if a.migrate_keys:
         vault.migrate_keys(Path(P["backups"]), a.dry_run)
 
-    treat = pd.read_excel(Path(P["treatment"]), dtype=str)
+    S = cfg["secrets"] if cfg.has_section("secrets") else {}
+    treat = read_excel_any(Path(P["treatment"]), S.get("treatment_password"),
+                           dtype=str)
     log.info("treatment list: %s rows x %d cols", f"{len(treat):,}", len(treat.columns))
     check_key_collisions(treat)
 
-    # Build the key ourselves rather than trusting the pre-built column: if the
-    # export ever reverses the order, joining on it silently matches nothing and
-    # every client looks new.
     if not {"pepId", "datimCode"} <= set(treat.columns):
         raise SystemExit("treatment list needs both 'pepId' and 'datimCode'")
-    built = (treat["datimCode"].astype("string").str.strip() + "_"
-             + treat["pepId"].astype("string").str.strip())
+    built = build_key(treat["datimCode"], treat["pepId"])
+
+    # A key format that no longer matches the vault is the most dangerous
+    # failure this script has: nothing errors, every client simply looks new,
+    # and the run mints 180,000 keys and severs the cohort from its history.
+    # So check the built key actually hits the vault before using it.
+    hit = norm_key(built).isin(vault.lookup).mean()
+    log.info("key check: %.1f%% of the export matches the vault", hit * 100)
+    if hit < 0.5 and len(vault.lookup):
+        raise SystemExit(
+            f"only {hit:.1%} of the treatment list matches the vault. The key "
+            f"format has probably changed.\n"
+            f"  built from the export : {built.dropna().iloc[0]}\n"
+            f"  a key in the vault    : {next(iter(vault.lookup))}\n"
+            "Refusing to continue - carrying on would issue a new key to "
+            "nearly every client and orphan the entire published history.")
     if VAULT_NEW in treat.columns:
-        given = norm_key(treat[VAULT_NEW])
-        mismatch = int((given != norm_key(built)).sum())
+        mismatch = int((norm_key(treat[VAULT_NEW]) != norm_key(built)).sum())
         if mismatch:
             log.warning("%s row(s) where the export's %s differs from "
-                        "datimCode_pepId - using the value we built",
+                        "datimCode+pepId - using the value we built",
                         f"{mismatch:,}", VAULT_NEW)
-    treat[KEY] = vault.resolve(built)
+    treat[KEY] = vault.resolve(treat["datimCode"], treat["pepId"])
 
     # The EAC list is not cumulative - clients drop out once a cycle closes -
     # so the dashboard unions every sheet it is given and the pipeline has to
@@ -407,12 +515,14 @@ def main() -> int:
         if any(ch in P["eac"] for ch in "*?[") else [Path(P["eac"])]
     if not eac_paths:
         raise SystemExit(f"no EAC list matched {P['eac']}")
-    eac_sheets = {p.stem: pd.read_excel(p, dtype=str) for p in eac_paths}
+    eac_sheets = {p.stem: read_excel_any(p, S.get("eac_password"), dtype=str)
+                  for p in eac_paths}
     for name, df in eac_sheets.items():
         log.info("EAC list %-28s %8s rows x %3d cols", name,
                  f"{len(df):,}", len(df.columns))
 
-    register = pd.read_excel(Path(P["register"]), dtype=str) \
+    register = read_excel_any(Path(P["register"]), S.get("register_password"),
+                              dtype=str) \
         if Path(P["register"]).exists() else treat.iloc[0:0].copy()
 
     # The EAC export and the register carry S/N but no pepId or datimCode, so
