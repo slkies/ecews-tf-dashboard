@@ -71,7 +71,34 @@ Open `secure.ini` (in that same folder) with Notepad and replace
 That file now holds a real credential. It sits outside the repository and must
 stay there.
 
-## Step 3 — the rehearsal
+## Step 3 — clean up 93 duplicate identities (once, ever)
+
+The vault maps 93 identities to two different S/Ns each — the same PEPID at the
+same facility, but with different ART start dates. A reused patient ID, or a
+re-enrolment recorded as a new client. The pipeline refuses to run until these
+are settled, because it cannot know which key is the right one.
+
+```powershell
+python "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts\resolve_vault_duplicates.py" --config "C:\Users\eesar\Downloads\Public_Health_Work\Data\TF_Dashboard Files\secure.ini" --dry-run
+```
+
+It reports its decision for each, changes nothing, and shows a worked example.
+Run it again without `--dry-run` to apply. The vault is backed up first and the
+dropped rows are written to `SN_Key-MERGED.csv`, so nothing is lost.
+
+**How it decides.** If one of the two S/Ns already appears in the EAC sheets or
+the register, that one is kept — dropping a key in use would orphan those rows.
+That settles 15. The other 78 have no history at all, so neither choice can
+break anything; those keep the earliest ART start date, which is what the
+evidence supports: of the 15 settled by history, 14 kept the *earlier*
+enrolment. The original registration is the one that stayed in use.
+
+**Importantly, there are no genuine conflicts** — not one of the 93 has both
+S/Ns in use in the published data. So no client's history is being fused with
+another's. If a future vault does contain such a case, the script stops and
+lists it rather than merging.
+
+## Step 4 — the rehearsal
 
 ```powershell
 python "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts\deidentify.py" --config "C:\Users\eesar\Downloads\Public_Health_Work\Data\TF_Dashboard Files\secure.ini" --migrate-keys --dry-run
@@ -116,7 +143,7 @@ dry run - vault not written, no file produced
    on the register — clients who have since left the programme. Many more than
    that, stop and tell me.
 
-## Step 4 — the real run
+## Step 5 — the real run
 
 Same command, `--dry-run` removed:
 
@@ -129,7 +156,7 @@ and produces `output\TF_Dashboard_Dataset_YYYY-MM-DD.parquet.zip`.
 
 That file is de-identified and safe to upload.
 
-## Step 5 — publish
+## Step 6 — publish
 
 Open the dashboard, go to the **Admin** tab, upload the `.parquet.zip`.
 
@@ -185,8 +212,8 @@ can tell you what happened.
 The failures worth recognising yourself:
 
 - **"maps N identities to more than one S/N"** — the same client is carried
-  twice in the vault. The script writes `SN_Key-AMBIGUOUS.csv` listing exactly
-  which rows, so you can decide each one. There are currently **91** of these.
+  twice in the vault. Run `resolve_vault_duplicates.py` (Step 3). The refusal
+  also writes `SN_Key-AMBIGUOUS.csv` listing exactly which rows.
 - **"is password-protected"** — the password in `secure.ini` is missing or
   wrong.
 - **"only X% of the treatment list matches the vault"** — the key format
