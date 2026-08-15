@@ -312,7 +312,8 @@ def check_key_collisions(df: pd.DataFrame) -> None:
 
 # ── register: newly unsuppressed clients ──────────────────────────────
 def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
-                            vl_threshold: int = 1000) -> tuple[pd.DataFrame, int]:
+                            vl_threshold: int = 1000,
+                            include_late: bool = False) -> tuple[pd.DataFrame, int]:
     """
     Add active clients whose viral load came back at or above the threshold
     AFTER the register's current coverage date.
@@ -350,20 +351,15 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     log.info("register covers results received up to %s",
              watermark.date() if pd.notna(watermark) else "(empty register)")
 
-    fresh = got > watermark if pd.notna(watermark) else got.notna()
-    cand = treat[active & (vl >= vl_threshold) & fresh].copy()
-
-    # A late-arriving result dated before the watermark would be skipped in
-    # silence; say so rather than let it vanish.
-    late = int((active & (vl >= vl_threshold) & got.notna() &
-                (got <= watermark)).sum()) if pd.notna(watermark) else 0
-    if late:
-        log.warning("%s unsuppressed result(s) dated on or before the "
-                    "watermark were NOT appended - late facility reporting?",
-                    f"{late:,}")
-
-    if cand.empty:
-        return register, 0
+    # Normally only results received after the register's cut-off. With
+    # --include-late, everything unsuppressed is considered and the episode
+    # key alone decides what is new, which sweeps up late-reported results.
+    if include_late or pd.isna(watermark):
+        fresh = got.notna()
+    else:
+        fresh = got > watermark
+    unsuppressed = active & (vl >= vl_threshold)
+    cand = treat[unsuppressed & fresh].copy()
 
     def col_ci(d: pd.DataFrame, name: str) -> pd.Series:
         """Case-insensitive column fetch that always returns a Series.
@@ -392,6 +388,25 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
                     "weaker; check the appended rows before publishing")
 
     have = set(episode(register)) if len(register) else set()
+
+    # Results dated on or before the watermark are outside the agreed cut-off,
+    # so they are not appended. But reporting the raw count was crying wolf:
+    # of 1,853 on the first real run, 1,720 were already in the register. Only
+    # the ones genuinely absent are worth a warning - those are late facility
+    # reporting, and the number is small enough to act on.
+    if pd.notna(watermark):
+        stale = treat[unsuppressed & got.notna() & (got <= watermark)]
+        missed = int((~episode(stale).isin(have)).sum()) if len(stale) else 0
+        if missed:
+            log.warning("%s unsuppressed result(s) dated on or before the "
+                        "cut-off are absent from the register - late facility "
+                        "reporting. Outside the agreed cut-off, so NOT "
+                        "appended; use --include-late to add them.",
+                        f"{missed:,}")
+
+    if cand.empty:
+        return register, 0
+
     cand = cand[~episode(cand).isin(have)]
     if cand.empty:
         return register, 0
@@ -452,6 +467,10 @@ def main() -> int:
     ap.add_argument("--config", required=True, type=Path)
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would happen; write nothing, upload nothing")
+    ap.add_argument("--include-late", action="store_true",
+                    help="also append unsuppressed results dated on or before "
+                         "the register's cut-off that are missing from it - "
+                         "late facility reporting")
     ap.add_argument("--migrate-keys", action="store_true",
                     help="ONE TIME: issue every existing client a new secure key. "
                          "The old key is kept in S/N_legacy, which is then required "
@@ -551,17 +570,41 @@ def main() -> int:
                             "current nor the legacy mapping - these clients "
                             "cannot be linked and need investigating",
                             label, f"{int(stale.sum()):,}")
-    register, added = append_new_unsuppressed(register, treat)
+    register, added = append_new_unsuppressed(register, treat,
+                                             include_late=a.include_late)
     log.info("register: %s newly unsuppressed episode(s) appended, %s total",
              f"{added:,}", f"{len(register):,}")
 
-    drop = PII_COLUMNS + SENSITIVE_COLUMNS
-    sheets = {
-        "Total Unsuppressed": register.drop(columns=drop, errors="ignore"),
-        Path(P["treatment"]).stem: treat.drop(columns=drop, errors="ignore"),
-    }
+    # Drop by name, case-insensitively, and apply the SAME list everywhere.
+    # Matching on the exact spelling let 'DOB' through where the list said
+    # 'dob', and the EAC sheets were only ever checked for DOB, so two of them
+    # kept PatientHospitalNo. Validation caught both, but a de-identification
+    # step that relies on the export's capitalisation is not a safeguard.
+    banned = {c.lower() for c in PII_COLUMNS + SENSITIVE_COLUMNS + EAC_PII_COLUMNS}
+
+    def strip_pii(df: pd.DataFrame) -> pd.DataFrame:
+        gone = [c for c in df.columns if str(c).strip().lower() in banned]
+        return df.drop(columns=gone, errors="ignore")
+
+    sheets = {"Total Unsuppressed": strip_pii(register),
+              Path(P["treatment"]).stem: strip_pii(treat)}
     for name, df in eac_sheets.items():
-        sheets[name] = df.drop(columns=EAC_PII_COLUMNS, errors="ignore")
+        sheets[name] = strip_pii(df)
+
+    # A row with no S/N cannot be linked to anything: the dashboard keys every
+    # join, worklist and episode on it. These are blank in the source exports,
+    # not a re-keying failure. Drop them, but never quietly - say which sheet
+    # and how many, so a sudden jump is visible.
+    for name, df in sheets.items():
+        if KEY not in df.columns:
+            continue
+        sn = df[KEY].astype("string").str.strip()
+        keyless = sn.isna() | sn.eq("")
+        if keyless.any():
+            log.warning("%s: dropping %s row(s) with no %s - blank in the "
+                        "source export, so they cannot be linked to anything",
+                        name, f"{int(keyless.sum()):,}", KEY)
+            sheets[name] = df[~keyless]
 
     problems = validate(sheets)
     if problems:
