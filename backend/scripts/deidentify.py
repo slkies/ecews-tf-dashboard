@@ -57,6 +57,7 @@ PII_COLUMNS = [
     "patientId", "pepId", "Datim_PEPID", "PEPID_Datim", "patientHospitalNo",
     "previousId", "surname", "firstname", "phoneNo", "address",
     "uniqueId", "uniquePatientId", "dob",
+    "patient_id",           # raw EAC export
 ]
 # Not identifying, but sensitive and unused by the dashboard.
 SENSITIVE_COLUMNS = ["causeOfDeath", "vaCauseOfDeath", "facilityTransferredTo"]
@@ -74,6 +75,18 @@ def norm_key(s: pd.Series) -> pd.Series:
     """Upper-case and strip. A key differing only by case or padding is the
     same patient, and treating it otherwise mints a duplicate S/N."""
     return s.astype("string").str.strip().str.upper()
+
+
+def norm_col(name: object) -> str:
+    """Column name reduced to letters and digits, lower-cased.
+
+    Matching PII by exact spelling already failed once on case (dob vs DOB).
+    The raw EAC export breaks it again on punctuation: it writes `patient_id`
+    where the treatment export writes `patientId`, and a per-patient
+    identifier would have survived on an underscore. Compare on the letters
+    alone and both spellings land on the same name.
+    """
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
 
 
 def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
@@ -275,11 +288,11 @@ class Vault:
 def validate(sheets: dict[str, pd.DataFrame]) -> list[str]:
     """Every reason this dataset must not be published. Empty list = safe."""
     problems: list[str] = []
-    banned = {c.lower() for c in PII_COLUMNS + SENSITIVE_COLUMNS + EAC_PII_COLUMNS}
+    banned = {norm_col(c) for c in PII_COLUMNS + SENSITIVE_COLUMNS + EAC_PII_COLUMNS}
 
     for name, df in sheets.items():
         for col in df.columns:
-            if str(col).lower() in banned:
+            if norm_col(col) in banned:
                 problems.append(f"{name}: prohibited column '{col}' still present")
         if KEY not in df.columns:
             problems.append(f"{name}: no '{KEY}' column")
@@ -613,6 +626,30 @@ def main() -> int:
                                        dtype=str)
                   for p in eac_paths}
 
+    # A RAW EAC export carries no S/N - that is our pseudonym, not something
+    # the source system knows. The five sheets split out of the old workbook
+    # have one because they were de-identified by hand; anything arriving
+    # straight from source does not, and must be keyed here exactly as the
+    # treatment list is: build datimCode+pepId, look it up, reuse the client's
+    # existing S/N. Column names differ between exports (Datim_Code vs
+    # datimCode, PepID vs pepId), so they are matched on letters alone.
+    for name, df in eac_sheets.items():
+        by_norm = {norm_col(c): c for c in df.columns}
+        if by_norm.get(norm_col(KEY)) is not None:
+            continue
+        datim_c, pep_c = by_norm.get("datimcode"), by_norm.get("pepid")
+        if datim_c is None or pep_c is None:
+            raise SystemExit(
+                f"'{name}' has no '{KEY}' column, and cannot be keyed: it needs "
+                f"a DATIM code and a PEPID to look each client up in the vault.\n"
+                f"Found: {', '.join(map(str, df.columns))}")
+        before = len(vault.added)
+        df[KEY] = vault.resolve(df[datim_c], df[pep_c])
+        unmatched = int(df[KEY].isna().sum())
+        log.info("%s: keyed from %s + %s (%s new client(s)%s)", name,
+                 datim_c, pep_c, f"{len(vault.added) - before:,}",
+                 f", {unmatched:,} unresolvable" if unmatched else "")
+
     # ORDER MATTERS. The dashboard treats sheet order as the authority for
     # which EAC list is newest and takes the LAST one. Writing them in glob
     # order meant alphabetical order, so 'EAC Line List_4th July' sorted after
@@ -683,10 +720,10 @@ def main() -> int:
     # 'dob', and the EAC sheets were only ever checked for DOB, so two of them
     # kept PatientHospitalNo. Validation caught both, but a de-identification
     # step that relies on the export's capitalisation is not a safeguard.
-    banned = {c.lower() for c in PII_COLUMNS + SENSITIVE_COLUMNS + EAC_PII_COLUMNS}
+    banned = {norm_col(c) for c in PII_COLUMNS + SENSITIVE_COLUMNS + EAC_PII_COLUMNS}
 
     def strip_pii(df: pd.DataFrame) -> pd.DataFrame:
-        gone = [c for c in df.columns if str(c).strip().lower() in banned]
+        gone = [c for c in df.columns if norm_col(c) in banned]
         return df.drop(columns=gone, errors="ignore")
 
     sheets = {"Total Unsuppressed": strip_pii(register),
