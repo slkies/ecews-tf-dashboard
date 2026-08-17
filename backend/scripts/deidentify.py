@@ -91,7 +91,8 @@ def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
             + pep.astype("string").str.strip())
 
 
-def read_excel_any(path: Path, password: str | None = None, **kw):
+def read_excel_any(path: Path, password: str | None = None,
+                   key: str = "treatment_password", **kw):
     """
     Read an .xlsx, including a password-protected one.
 
@@ -107,10 +108,13 @@ def read_excel_any(path: Path, password: str | None = None, **kw):
     if not encrypted:
         return pd.read_excel(path, **kw)
     if not password:
+        # Name the setting that actually applies to THIS file. The message
+        # used to say treatment_password whatever was being read, which sends
+        # you to check a setting that is already correct.
         raise SystemExit(
-            f"{path.name} is password-protected. Add the password to the "
-            "[secrets] section of your config:\n\n"
-            "    [secrets]\n    treatment_password = ...\n\n"
+            f"{path.name} is password-protected, and no password is configured "
+            f"for it.\n\nAdd it to the [secrets] section of your config:\n\n"
+            f"    [secrets]\n    {key} = ...\n\n"
             "Keep that file outside the repository - it is a real credential.")
     import msoffcrypto
     buf = io.BytesIO()
@@ -538,8 +542,36 @@ def main() -> int:
         vault.migrate_keys(Path(P["backups"]), a.dry_run)
 
     S = cfg["secrets"] if cfg.has_section("secrets") else {}
-    treat = read_excel_any(Path(P["treatment"]), S.get("treatment_password"),
-                           dtype=str)
+
+    # The treatment export is named with its date, so a fixed path in the
+    # config goes stale the moment a new one arrives - and stale in the worst
+    # way: the run succeeds, having quietly re-processed last week's file.
+    # A pattern here means the weekly routine is "drop the file in", with
+    # nothing to edit. The chosen file is always logged.
+    tpath = Path(P["treatment"])
+    if any(ch in P["treatment"] for ch in "*?["):
+        found = sorted(tpath.parent.glob(tpath.name),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        if not found:
+            raise SystemExit(f"no treatment export matched {P['treatment']}")
+        tpath = found[0]
+        if len(found) > 1:
+            log.info("treatment: %d files match, using the most recent",
+                     len(found))
+    elif not tpath.exists():
+        raise SystemExit(
+            f"treatment export not found:\n  {tpath}\n"
+            "If the file was replaced by a newer dated export, set `treatment`"
+            " in the config to a pattern such as *Treatment*.xls* so the newest"
+            " is picked automatically.")
+
+    age = (dt.datetime.now()
+           - dt.datetime.fromtimestamp(tpath.stat().st_mtime)).days
+    log.info("treatment export: %s (%d day(s) old)", tpath.name, age)
+    if age > 14:
+        log.warning("that export is %d days old - is it the current one?", age)
+
+    treat = read_excel_any(tpath, S.get("treatment_password"), dtype=str)
     log.info("treatment list: %s rows x %d cols", f"{len(treat):,}", len(treat.columns))
     check_key_collisions(treat)
 
@@ -577,7 +609,8 @@ def main() -> int:
         if any(ch in P["eac"] for ch in "*?[") else [Path(P["eac"])]
     if not eac_paths:
         raise SystemExit(f"no EAC list matched {P['eac']}")
-    eac_sheets = {p.stem: read_excel_any(p, S.get("eac_password"), dtype=str)
+    eac_sheets = {p.stem: read_excel_any(p, S.get("eac_password"), key="eac_password",
+                                       dtype=str)
                   for p in eac_paths}
 
     # ORDER MATTERS. The dashboard treats sheet order as the authority for
@@ -611,7 +644,7 @@ def main() -> int:
                  f"{len(df):,}", len(df.columns))
 
     register = read_excel_any(Path(P["register"]), S.get("register_password"),
-                              dtype=str) \
+                              key="register_password", dtype=str) \
         if Path(P["register"]).exists() else treat.iloc[0:0].copy()
 
     # The EAC export and the register carry S/N but no pepId or datimCode, so
@@ -657,7 +690,7 @@ def main() -> int:
         return df.drop(columns=gone, errors="ignore")
 
     sheets = {"Total Unsuppressed": strip_pii(register),
-              Path(P["treatment"]).stem: strip_pii(treat)}
+              tpath.stem: strip_pii(treat)}
     for name, df in eac_sheets.items():
         sheets[name] = strip_pii(df)
 

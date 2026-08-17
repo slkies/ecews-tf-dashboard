@@ -16,7 +16,9 @@ vault    = C:\ECEWS_Secure\vault\SN_Key.xlsx
 backups  = C:\ECEWS_Secure\vault\backups
 
 # Raw exports, with PII. Treatment list weekly, EAC list fortnightly.
-treatment = C:\ECEWS_Secure\incoming\ECEWS_Treatment_Linelist.xlsx
+# A pattern: the export is named with its date, so the newest match wins.
+# A fixed name goes stale silently - the run succeeds on last week's file.
+treatment = C:\ECEWS_Secure\incoming\*Treatment*.xls*
 # A glob: the EAC list is NOT cumulative - clients drop out as cycles close -
 # so the dashboard unions every sheet and the pipeline must carry them all.
 eac       = C:\ECEWS_Secure\incoming\eac\*.xlsx
