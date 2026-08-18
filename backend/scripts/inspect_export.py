@@ -20,9 +20,15 @@ from __future__ import annotations
 import argparse
 import configparser
 import sys
+import warnings
 from pathlib import Path
 
 import pandas as pd
+
+# pandas warns once per column that it could not infer a date format.
+# On a 130-column export that buries the table this script exists to
+# print - and output nobody can read is output nobody checks.
+warnings.filterwarnings("ignore", category=UserWarning)
 
 sys.path.insert(0, str(Path(__file__).parent))
 from deidentify import (EAC_PII_COLUMNS, PII_COLUMNS,  # noqa: E402
@@ -71,6 +77,9 @@ def main() -> int:
     ap.add_argument("--config", required=True, type=Path)
     ap.add_argument("--which", choices=("treatment", "eac", "register"),
                     default="treatment")
+    ap.add_argument("--all", action="store_true",
+                    help="describe every file matching, not just the newest. "
+                         "Each one has to be decrypted, so this is slow.")
     a = ap.parse_args()
 
     cfg = configparser.ConfigParser()
@@ -85,8 +94,10 @@ def main() -> int:
         if any(c in spec for c in "*?[") else [Path(spec)]
     if not paths:
         raise SystemExit(f"nothing matched {spec}")
-    if a.which == "treatment":
-        paths = paths[:1]          # newest only, as the pipeline does
+    # Newest only unless asked otherwise: describing six EAC files means
+    # decrypting six EAC files, and the newest is what changed shape.
+    if not a.all:
+        paths = paths[:1]
 
     print(f"\n  Shape only. No cell value from these files is printed.")
     for p in paths:
