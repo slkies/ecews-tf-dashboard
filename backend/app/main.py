@@ -1301,6 +1301,47 @@ def diagnostics(u: Annotated[dict, Depends(admin)]):
     }
 
 
+@app.get("/api/version")
+def version():
+    """Which build is actually being served.
+
+    Deploys that look done and are not have cost this project more time than
+    any bug. The page is served by a static mount, so nothing in it says which
+    version it is, and the only way to tell has been to look at the screen and
+    argue about it. A pull that ran, a container that was restarted without
+    being rebuilt, and a browser holding an old copy all look identical from
+    the outside.
+
+    This makes it checkable. `index_sha` is the hash of the file being served
+    right now; compare it against the same hash computed from the repository:
+
+        curl -s https://<host>/api/version
+        git show <ref>:backend/static/index.html | sha256sum
+
+    Matching hashes mean the deploy is current, whatever the screen shows -
+    at which point the problem is the browser cache, not the deploy. No
+    authentication, and it discloses nothing: a file hash and a timestamp.
+    """
+    import hashlib
+    idx = _static / "index.html"
+    if not idx.exists():
+        return {"app_version": os.getenv("APP_VERSION", "not set"),
+                "index_sha": None, "index_modified": None}
+    # Hash with line endings normalised. Git stores LF and checks out CRLF on
+    # Windows, so the same commit yields two different hashes depending on
+    # where it was checked out - which would make this tool accuse a correct
+    # deploy of being stale. Normalising makes the value comparable to
+    # `git show <ref>:backend/static/index.html | sha256sum` anywhere.
+    raw = idx.read_bytes()
+    return {
+        "app_version": os.getenv("APP_VERSION", "not set"),
+        "index_sha": hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()[:12],
+        "index_bytes": len(raw),
+        "index_modified": dt.datetime.fromtimestamp(
+            idx.stat().st_mtime, dt.timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
 _static = Path(__file__).parent.parent / "static"
 if _static.exists():
     app.mount("/", StaticFiles(directory=_static, html=True), name="static")
