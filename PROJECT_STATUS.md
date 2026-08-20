@@ -93,7 +93,13 @@ spec (`..._v3_1.md`) is authoritative; this is the short list.
    - Follow-up coverage rose 20.8% → **47.2%**.
    - A repeat failure resolves automatically as a failed switch on the earlier episode.
 7. **Dates:** quarter/cohort by **date result received at facility**; follow-up by
-   **sample collection date**, after the index result was received.
+   **sample collection date**, after the index result was received — **and its VALUE
+   must differ from the index** (19 Aug 2026). A later sample date alone does not
+   prove a new test: where no repeat has been done the treatment list restates the
+   index result as the client's current VL, and the two sources date it differently.
+   247 of 2,089 follow-up VLs were the index result counted twice. Switch-eligible
+   falls 599 → 366 as a result — those clients have no repeat VL to switch on.
+   See Plan v3.1 §2.8.
 8. **EAC dated before index = "not yet commenced"** — retained in cohort, counted as
    no-EAC (not dropped).
 9. **Switching:** numerator = on **2nd/3rd line** in the Treatment list; denominator =

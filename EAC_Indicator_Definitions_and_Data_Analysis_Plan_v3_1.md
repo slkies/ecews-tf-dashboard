@@ -25,6 +25,7 @@ v2.1 was written before the pipeline was built. Building it surfaced defects tha
 | **0.6** | **Duplicate index rows are classified, not dropped.** | The rule (§2.6) separates an erroneous duplicate row from a genuine new failure. |
 | **0.7** | **Column matching is case-insensitive; schema drift is tolerated.** | The quarterly index sheet ships `CurrentViralLoad`; the treatment line list ships `currentViralLoad`. Case-sensitive matching yields an all-null column and a cohort of **zero**, silently. |
 | **0.8** | **Parquet is the wire format.** | 5.7× smaller, **96× faster** to parse, and it carries dtypes — which is what structurally protects `S/N`. |
+| **0.10** | **A current VL counts as a follow-up only if its VALUE differs from the index.** A later sample date alone is not enough. | The index VL comes from the unsuppressed register and the current VL from the treatment line list. Where no repeat test has been done, the treatment list still reports the index result as the client's current VL — and the two sources date it differently, so a sample-date test passes and the same result is counted twice. On the 15 Aug snapshot **247 of 2,089 follow-up VLs were the index result restated**. See §2.8. |
 | **0.9** | **Architecture is a server-side web app.** Analysts do not upload workbooks. | An admin uploads once per cycle; everyone else reads. See §8. |
 
 ---
@@ -205,6 +206,46 @@ Consequences if used naively:
 3. **EAC *initiation* remains comparable across all lists** — `Session_1_Date` is populated correctly everywhere. Only outcome fields are affected.
 
 **Action for the HI team**: re-export May and June with unsuppressed follow-up VLs included, or retire those lists.
+
+### 2.8 A later sample date does not prove a new test. The VALUE must differ.
+
+An episode's follow-up VL is the client's next viral load after the index result
+reached the facility. It can come from the client's next failure episode in the
+register, or from the current VL on the treatment line list.
+
+The second source needed a guard it did not have. Where a client has had **no
+repeat test since**, the treatment line list still reports the index result as
+their current VL. The two sources date that result differently — the register on
+when it was received at the facility, the treatment list on last sample
+collection — so a test of "was it sampled after the index was received?" passes,
+and the same result is counted a second time as a follow-up.
+
+Measured on the 15 August 2026 snapshot, rebuilding the same file three ways:
+
+| Rule | post_result | re-suppressed | still unsuppressed | follow-up = index |
+|---|---:|---:|---:|---:|
+| Sample date only *(previous)* | 2,089 | 1,455 | 634 | **247** |
+| **Value must differ** *(adopted)* | 1,843 | 1,455 | 388 | **1** |
+| Value + sample date + result date | 1,774 | 1,391 | 383 | 1 |
+
+**The value is the test.** It removes 246 of the 247 duplicates on its own.
+Adding the two date conditions removes 5 more and costs **64 genuine
+re-suppressions** — clients who did have a repeat test with a different result,
+but whose sample or report date matched the index or was missing. The same
+inconsistency that makes the dates unreliable evidence *for* a new test makes
+them unreliable evidence against one; the value is not ambiguous.
+
+Consequences of the previous rule, now corrected:
+
+- **post-EAC VL coverage was overstated** — 315 episodes counted a follow-up
+  that had not happened
+- **the switch backlog was overstated** — switch-eligible falls from 599 to 366,
+  because 238 of those clients had no repeat VL on which to base a switch
+- **a decision looked evidenced when nothing had been repeated**
+
+A client with one viral load is not a client whose viral load is unchanged. The
+first needs a repeat test; the second needs a regimen decision. The dashboard
+now separates them.
 
 ### 2.8 Wire format: Parquet, not Excel
 

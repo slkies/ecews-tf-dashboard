@@ -581,7 +581,45 @@ def build_cohort(
     cur_vl, cur_samp = df["current_vl"], df["current_vl_samp"]
     after = df["recv_date"]           # "any later VL" = sampled after the index
                                       # result was received at the facility
-    cur_ok = (cur_samp.notna() & (cur_samp > after)).fillna(False).astype(bool)
+
+    # A LATER SAMPLE DATE IS NOT ENOUGH TO PROVE A NEW TEST.
+    #
+    # The index VL comes from the unsuppressed register and the current VL from
+    # the treatment line list. Where a client has had no repeat test since, the
+    # treatment list still reports the index result as their current VL - and
+    # the two sources date it differently, so `cur_samp > recv_date` passes and
+    # the same result was counted a second time as a follow-up.
+    #
+    # It is not rare. On the 15 August snapshot 280 of the 671 episodes still
+    # unsuppressed carried an identical index and follow-up value, 261 of them
+    # with different dates. Those clients have had ONE viral load, not two, and
+    # counting the restatement inflated post-EAC VL coverage, understated the
+    # gap, and made a switch decision look evidenced when nothing had been
+    # repeated.
+    #
+    # So a current VL is a new result only when it differs from the index on
+    # all three of value, sample date and result date. Where a date is missing
+    # the difference cannot be established, and the conservative reading is
+    # that it is not a new test - better to under-count a follow-up than to
+    # invent one.
+    # The test is on the VALUE. Requiring the sample date and the result date
+    # to differ as well was tried and measured on the 15 August snapshot: it
+    # removed only 5 further duplicates, and cost 64 genuine re-suppressions -
+    # clients who did have a repeat test with a different result, but whose
+    # sample or report date happened to match the index or was missing. The
+    # two sources date the same test inconsistently, which is what makes their
+    # dates unreliable as evidence either way; the value is not ambiguous.
+    #
+    #   rule                     post_result  resuppressed  still unsupp  fu==idx
+    #   sample date only (old)         2,089         1,455           634      247
+    #   value must differ              1,843         1,455           388        1
+    #   value + both dates             1,774         1,391           383        1
+    differs = (
+        cur_vl.notna() & df["idx_vl"].notna() & (cur_vl != df["idx_vl"])
+    ).fillna(False).astype(bool)
+
+    cur_ok = (cur_samp.notna() & (cur_samp > after)
+              & differs).fillna(False).astype(bool)
     nxt_ok = (nxt_samp.notna() & (nxt_samp > after)).fillna(False).astype(bool)
     # if both exist, take the earlier sample
     take_nxt = nxt_ok & (~cur_ok | (nxt_samp <= cur_samp).fillna(False).astype(bool))
