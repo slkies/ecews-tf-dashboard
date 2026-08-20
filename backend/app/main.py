@@ -685,6 +685,46 @@ def get_dtc(u: U, f: F):
     return ind.dtc_review(df) if not df.empty else {"ok": False}
 
 
+@app.get("/api/dtc/awaiting")
+def get_awaiting(u: U, f: F, request: Request,
+                 limit: int = Query(300, ge=1, le=2000)):
+    """
+    Post-EAC samples collected but not yet reported by the laboratory.
+
+    Waiting time is measured to the snapshot's as-of date, not to today, so the
+    same file reports the same wait however long it is left open.
+    """
+    df = _load(u, f)
+    if df.empty:
+        return {"ok": False, "n": 0, "rows": [], "by_facility": []}
+    with pool.connection() as c:
+        up = c.execute("SELECT as_of FROM uploads WHERE is_current").fetchone()
+    out = ind.awaiting_results(df, up["as_of"], limit=limit)
+    if out.get("n"):
+        _audit("clients.view", user_id=u["id"], email=u["email"], request=request,
+               detail=f"awaiting lab result, {out.get('shown', 0)} of {out['n']} rows")
+    return out
+
+
+@app.get("/api/dtc/trajectory")
+def get_trajectory(u: U, f: F, request: Request,
+                   limit: int = Query(300, ge=1, le=2000)):
+    """
+    Per-client viral load trajectories for everyone still unsuppressed on
+    their follow-up VL, whether or not they completed EAC.
+
+    This returns client-level rows, so it is audited like the other
+    patient-level views rather than treated as an aggregate.
+    """
+    df = _load(u, f)
+    if df.empty:
+        return {"ok": False, "rows": [], "n": 0}
+    out = ind.vl_trajectory(df, limit=limit)
+    _audit("clients.view", user_id=u["id"], email=u["email"], request=request,
+           detail=f"vl trajectory, {out.get('shown', 0)} of {out.get('n', 0)} rows")
+    return out
+
+
 class Feedback(BaseModel):
     message: str
     page: str | None = None
