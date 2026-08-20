@@ -134,6 +134,26 @@ ALTER TABLE cohort ADD COLUMN IF NOT EXISTS exit_date DATE;
 -- Residence LGA resolved to a canonical boundary name. lga_res keeps the raw
 -- EMR free text; this is the filterable/groupable form, NULL where unmatched.
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS lga_res_norm TEXT;
+
+-- Viral load history, for the trajectory a DTC needs when deciding whether to
+-- switch. The cohort held two points per episode - the index VL and the
+-- follow-up - so 46% of clients had a single point and almost none had more
+-- than two. That was never a data limitation: the EAC export carries these
+-- two dated results at near-full coverage and the pipeline was discarding
+-- them. They reach back years, well before this dashboard held anything.
+--
+-- Only these two come from the EAC list. Current results stay with the
+-- clinical line lists, which own them; older treatment lists will supply
+-- the points in between.
+--
+-- Kept as reported. A handful of values are implausible (one first-ever VL of
+-- 7.1 billion c/mL, 13 rows above 10 million), but a clinical result is not
+-- something to quietly rewrite - the display caps its scale and the data
+-- quality page can flag them.
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_vl        NUMERIC;
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_vl_date   DATE;
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_high_vl   NUMERIC;
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_high_date DATE;
 CREATE INDEX IF NOT EXISTS cohort_lga_res ON cohort(upload_id, lga_res_norm);
 
 CREATE INDEX IF NOT EXISTS cohort_upload   ON cohort(upload_id);

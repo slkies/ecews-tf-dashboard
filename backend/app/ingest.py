@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import logging
 import pathlib
+import re
 import zipfile
 from dataclasses import dataclass
 
@@ -447,13 +448,52 @@ COHORT_COLS = [
     "resuppressed", "undetectable", "llv", "still_unsuppressed", "switched",
     "time_to_eac", "eac_lead_time", "time_to_resupp", "months_unsuppressed",
     "treatment_plan", "episode", "enrol_quarter", "fy",
+    "first_vl", "first_vl_date", "first_high_vl", "first_high_date",
 ]
+
+
+def _series(d: pd.DataFrame, name: str) -> pd.Series:
+    """Column by name, case- and punctuation-insensitively, always a Series.
+
+    `d.get(missing)` returns None, and pd.to_datetime(None) is a scalar NaT -
+    so a renamed column does not raise, it silently produces one value for
+    every row. The exports have renamed columns on case three times already.
+    """
+    hit = {re.sub(r"[^a-z0-9]", "", str(c).lower()): c for c in d.columns} \
+        .get(re.sub(r"[^a-z0-9]", "", name.lower()))
+    if hit is None:
+        return pd.Series(pd.NA, index=d.index, dtype="object")
+    return d[hit]
+
+
+# The two dated viral loads taken from the EAC export: the client's first ever
+# result, and their first unsuppressed one. Both are near-fully populated and
+# neither exists anywhere else - they reach back years, well before this
+# dashboard held anything.
+#
+# Nothing else is taken from here, deliberately. The EAC list also carries a
+# most-recent and a triggering VL, but the clinical line lists are the
+# authority for current results; reading the same fact from two sources
+# invites them to disagree and leaves nobody able to say which is right. The
+# follow-up VL is excluded for a second reason too: it has been
+# success-censored in past sheets - May and June recorded nothing above 49.9,
+# which would have made every client look re-suppressed.
+VL_HISTORY = {
+    "first_vl":        "First_Ever_VL_Value",
+    "first_vl_date":   "First_Ever_VL_Result_Date",
+    "first_high_vl":   "First_High_VL_Value",
+    "first_high_date": "First_High_VL_Result_Date",
+}
 
 
 def cohort_records(df: pd.DataFrame, upload_id: int) -> list[tuple]:
     d = df.copy()
     d["s1_date"] = pd.to_datetime(d.get("Session_1_Date"), errors="coerce")
     d["fu_date"] = pd.to_datetime(d.get("Followup_VL_Result_Date"), errors="coerce")
+    for dest, src in VL_HISTORY.items():
+        col = _series(d, src)
+        d[dest] = (pd.to_datetime(col, errors="coerce") if dest.endswith("date")
+                   else pd.to_numeric(col, errors="coerce"))
     for c in COHORT_COLS:
         if c not in d:
             d[c] = None
