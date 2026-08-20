@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action   TEXT NOT NULL,   -- login.success | login.failure | login.blocked
                             -- | export.csv | clients.view
                             -- | upload.create | upload.delete | upload.prune
-                            -- | user.create  | user.toggle
+                            -- | user.create  | user.toggle | user.access
   detail   TEXT,
   ip       TEXT
 );

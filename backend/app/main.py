@@ -720,6 +720,12 @@ class NewUser(BaseModel):
     scope_state: str | None = None
 
 
+class AccessPatch(BaseModel):
+    """Change what an existing account may see. Omit a field to leave it alone."""
+    role: str | None = None
+    scope_state: str | None = None
+
+
 class NewPassword(BaseModel):
     password: str
     current_password: str | None = None   # required when changing your own
@@ -789,6 +795,67 @@ def toggle_user(uid: int, u: Annotated[dict, Depends(admin)], request: Request):
     _audit("user.toggle", user_id=u["id"], email=u["email"], request=request,
            detail=f"{r['email']} -> {'activated' if r['is_active'] else 'deactivated'}")
     return {"ok": True}
+
+
+@app.post("/api/users/{uid}/access")
+def set_access(uid: int, body: AccessPatch, request: Request,
+               u: Annotated[dict, Depends(admin)]):
+    """
+    Change an existing account's role or state scope.
+
+    Both were previously fixed at creation: PATCH only toggled is_active, so
+    promoting a viewer to analyst meant deleting the account and making a new
+    one, which loses the audit trail tying past activity to that person.
+
+    Changing your OWN role is refused. A sole admin demoting themselves would
+    lock everyone out of the Admin tab, and there is no way back in from the
+    dashboard - it would need someone in the database.
+    """
+    if uid == u["id"]:
+        raise HTTPException(
+            400, "You cannot change your own role. Ask another admin to do it.")
+    if body.role is not None and body.role not in ("admin", "analyst", "viewer"):
+        raise HTTPException(400, "Role must be admin, analyst or viewer.")
+
+    with pool.connection() as c:
+        cur = c.execute("SELECT username, email, role, scope_state FROM users "
+                        "WHERE id=%s", (uid,)).fetchone()
+        if not cur:
+            raise HTTPException(404, "User not found.")
+
+        # Cannot be reached today - the caller is a second active admin by
+        # definition, so demoting someone else never empties the set. Kept so
+        # the invariant is stated where it is enforced, in case the rule above
+        # is ever relaxed.
+        if (body.role is not None and cur["role"] == "admin"
+                and body.role != "admin"):
+            n = c.execute("SELECT count(*) AS n FROM users WHERE role='admin' "
+                          "AND is_active").fetchone()["n"]
+            if n <= 1:
+                raise HTTPException(
+                    400, "That is the only active admin. Promote someone else "
+                         "first, or this dashboard has no administrator.")
+
+        role = body.role or cur["role"]
+        # "All" is how the dashboard says "every state", and NULL is how the
+        # database says it. None means the caller did not send the field.
+        if body.scope_state is None:
+            scope = cur["scope_state"]
+        else:
+            scope = None if body.scope_state == "All" else body.scope_state
+        c.execute("UPDATE users SET role=%s, scope_state=%s WHERE id=%s",
+                  (role, scope, uid))
+
+    changed = []
+    if role != cur["role"]:
+        changed.append(f"role {cur['role']} -> {role}")
+    if scope != cur["scope_state"]:
+        changed.append(f"scope {cur['scope_state'] or 'all states'} -> "
+                       f"{scope or 'all states'}")
+    _audit("user.access", user_id=u["id"], email=u["email"], request=request,
+           detail=f"{cur['username'] or cur['email']}: "
+                  f"{'; '.join(changed) if changed else 'no change'}")
+    return {"ok": True, "role": role, "scope_state": scope}
 
 
 @app.post("/api/users/{uid}/password")

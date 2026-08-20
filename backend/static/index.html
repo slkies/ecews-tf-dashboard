@@ -2616,13 +2616,29 @@ async function loadUsers(){
   try{
     const us=await api('/users');
     const roleTag={admin:'t-b',analyst:'t-h',viewer:'t-g'};
+    // States offered come from the same list the filters use, so a scope can
+    // only ever be set to a state that actually exists in the data.
+    const stOpt=$('#fState'), stList=stOpt?[...stOpt.options].map(o=>o.value):[];
+    const states=stList.length?stList:['All'];
+    // Your own row shows tags, not controls: the server refuses a self-change,
+    // and offering a dropdown that always errors is worse than not offering it.
     $('#userB').innerHTML=us.map(u=>'<tr>'+
       '<td style="font-weight:500">'+esc(u.full_name||'—')
         +(u.id===ME.id?' <span class="tag t-n">you</span>':'')+'</td>'+
       '<td class="num" style="font-size:12px">'+esc(u.username||'—')+'</td>'+
       '<td style="font-size:12px">'+esc(u.email)+'</td>'+
-      '<td><span class="tag '+(roleTag[u.role]||'t-n')+'">'+esc(u.role)+'</span></td>'+
-      '<td>'+esc(u.scope_state||'All states')+'</td>'+
+      '<td>'+(u.id===ME.id
+        ?'<span class="tag '+(roleTag[u.role]||'t-n')+'">'+esc(u.role)+'</span>'
+        :'<select class="asel" data-f="role" data-uid="'+u.id+'">'
+          +['viewer','analyst','admin'].map(r=>'<option value="'+r+'"'
+            +(u.role===r?' selected':'')+'>'+r+'</option>').join('')
+          +'</select>')+'</td>'+
+      '<td>'+(u.id===ME.id
+        ?esc(u.scope_state||'All states')
+        :'<select class="asel" data-f="scope" data-uid="'+u.id+'">'
+          +states.map(s=>'<option value="'+esc(s)+'"'
+            +((u.scope_state||'All')===s?' selected':'')+'>'+esc(s)+'</option>').join('')
+          +'</select>')+'</td>'+
       '<td>'+(u.is_active?'<span class="tag t-g">active</span>':'<span class="tag t-n">disabled</span>')+'</td>'+
       '<td class="r" style="white-space:nowrap">'
         +'<button class="btn sm" data-pw="'+u.id+'" data-em="'+esc(u.username||u.email)+'">Reset password</button> '
@@ -2630,6 +2646,20 @@ async function loadUsers(){
         +(u.is_active?'Disable':'Enable')+'</button>')+'</td></tr>').join('');
     $$('#userB button[data-uid]').forEach(b=>b.onclick=async()=>{
       try{ await api('/users/'+b.dataset.uid,{method:'PATCH'}); loadUsers(); }catch(e){ alert(e.message); }});
+    // Role and scope save on change. Both are sent together so one dropdown
+    // cannot quietly revert what the other just set. On failure the table is
+    // reloaded, so the control shows what the server actually holds rather
+    // than the value that was refused.
+    $$('#userB select.asel').forEach(s=>s.onchange=async()=>{
+      const row=s.closest('tr');
+      const role=row.querySelector('select[data-f=role]').value;
+      const scope=row.querySelector('select[data-f=scope]').value;
+      try{
+        await api('/users/'+s.dataset.uid+'/access',
+          {method:'POST',body:JSON.stringify({role:role,scope_state:scope})});
+        loadUsers();
+      }catch(e){ alert(e.message); loadUsers(); }
+    });
     $$('#userB button[data-pw]').forEach(b=>b.onclick=async()=>{
       const pw=prompt('New password for '+b.dataset.em+'\n\nAt least 10 characters. '
         +'Give it to them directly and ask them to change it themselves afterwards.');
