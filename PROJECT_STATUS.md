@@ -237,7 +237,28 @@ blank the page. (This replaced the recurring "X is not defined" full-page crash.
    should not be possible under any reading of the two columns.
 
 2. **Drug history, IIT history, appointment compliance and visit dates** are to come
-   from a separate file that Es will supply. Deliberately not taken from the current
+   from a separate file that Es will supply.
+
+   **To build on that branch — a hover timeline per client.** The trajectory table
+   currently shows one coloured block per viral load, which reads well at a glance
+   but flattens time: two results three years apart look the same as two results
+   three months apart. On hover, show a proper timeline instead, plotted on a real
+   date axis:
+
+   - **ART start** — already in the cohort as `art_year` / `days_on_art`, so this
+     costs nothing to add and is the anchor the rest hangs off
+   - **First ever VL**, **first detectable VL** *(subject to the naming question in
+     item 1 above)*, any results in between, and the **current VL**
+   - once the separate dataset lands: **regimen changes**, **interruptions and
+     returns**, and **missed appointments** on the same axis
+
+   The point of doing it together rather than in two passes is that a viral load
+   rising three months after an interruption, or two months after a regimen change,
+   is a different clinical story from one rising against perfect adherence — and
+   that only reads if the events share an axis. Built separately, the VL timeline
+   would have to be redrawn to make room.
+
+   Deferred deliberately until the dataset arrives, so it is built once. Deliberately not taken from the current
    line lists: `dateofFirstTldPickup` looked like a switch marker and is not — the
    whole first-line cohort was transitioned to TLD as programme policy, so it would
    have flagged a switch for almost everyone. Branch to be opened when the dataset
