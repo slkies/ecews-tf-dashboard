@@ -378,6 +378,11 @@ def build_cohort(
         # first-ever and first-unsuppressed VL, for time-to-VL indicators
         "First_Ever_VL_Sample_Collection_Date",
         "First_High_VL_Sample_Collection_Date",
+        # ...and their VALUES and result dates, for the trajectory. This is a
+        # whitelist: a column absent from it does not reach the cohort at all,
+        # which is why carrying these through ingest was not enough on its own.
+        "First_Ever_VL_Value", "First_Ever_VL_Result_Date",
+        "First_High_VL_Value", "First_High_VL_Result_Date",
     ) if c in e]
     df = base.merge(e[ecols], on="sn", how="left")
 
