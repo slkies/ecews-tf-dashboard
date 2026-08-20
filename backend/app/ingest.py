@@ -479,10 +479,12 @@ def _series(d: pd.DataFrame, name: str) -> pd.Series:
 # success-censored in past sheets - May and June recorded nothing above 49.9,
 # which would have made every client look re-suppressed.
 VL_HISTORY = {
-    "first_vl":        "First_Ever_VL_Value",
-    "first_vl_date":   "First_Ever_VL_Result_Date",
-    "first_high_vl":   "First_High_VL_Value",
-    "first_high_date": "First_High_VL_Result_Date",
+    "first_vl":        ("First_Ever_VL_Value",),
+    "first_vl_date":   ("First_Ever_VL_Result_Date",
+                        "First_Ever_VL_Sample_Collection_Date"),
+    "first_high_vl":   ("First_High_VL_Value",),
+    "first_high_date": ("First_High_VL_Result_Date",
+                        "First_High_VL_Sample_Collection_Date"),
 }
 
 
@@ -490,8 +492,11 @@ def cohort_records(df: pd.DataFrame, upload_id: int) -> list[tuple]:
     d = df.copy()
     d["s1_date"] = pd.to_datetime(d.get("Session_1_Date"), errors="coerce")
     d["fu_date"] = pd.to_datetime(d.get("Followup_VL_Result_Date"), errors="coerce")
-    for dest, src in VL_HISTORY.items():
-        col = _series(d, src)
+    for dest, names in VL_HISTORY.items():
+        # First name that exists wins; the sample collection date stands in
+        # where an export omits the result date.
+        col = next((_series(d, n) for n in names if _series(d, n).notna().any()),
+                   pd.Series(pd.NA, index=d.index, dtype="object"))
         d[dest] = (pd.to_datetime(col, errors="coerce") if dest.endswith("date")
                    else pd.to_numeric(col, errors="coerce"))
     for c in COHORT_COLS:

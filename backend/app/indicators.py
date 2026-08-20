@@ -378,6 +378,11 @@ def build_cohort(
         # first-ever and first-unsuppressed VL, for time-to-VL indicators
         "First_Ever_VL_Sample_Collection_Date",
         "First_High_VL_Sample_Collection_Date",
+        # ...and their VALUES and result dates, for the trajectory. This is a
+        # whitelist: a column absent from it does not reach the cohort at all,
+        # which is why carrying these through ingest was not enough on its own.
+        "First_Ever_VL_Value", "First_Ever_VL_Result_Date",
+        "First_High_VL_Value", "First_High_VL_Result_Date",
     ) if c in e]
     df = base.merge(e[ecols], on="sn", how="left")
 
@@ -1924,3 +1929,203 @@ def mortality(df: pd.DataFrame) -> dict:
     return {"ok": True, "n": int(len(df)), "deaths": int(dead.sum()),
             "crude_pct": round(float(dead.sum()) / len(df) * 100, 2) if len(df) else 0,
             "by_eac": by}
+
+
+# ── VL trajectory ─────────────────────────────────────────────────────
+# The dated viral loads a client may have, oldest first. Not every client has
+# all four: first_vl and first_high arrive from the EAC export and are absent
+# from snapshots uploaded before that ingest change, so the trajectory is built
+# from whatever exists rather than assuming a fixed shape.
+# Each entry gives the value column, the date columns to try in order, and the
+# label. More than one date column because they are not reliably populated:
+# fu_date comes from the EAC sheet's Followup_VL_Result_Date and is empty for
+# every one of the 671 still-unsuppressed episodes in the current snapshot,
+# while fu_samp - the sample collection date, which the post-EAC clock already
+# runs on - is present for all of them. Taking the first that exists is the
+# difference between a two-point trajectory and no trajectory at all.
+_VL_POINTS = (
+    ("first_vl", ("first_vl_date",), "First ever VL"),
+    ("first_high_vl", ("first_high_date",), "First high VL"),
+    ("idx_vl", ("idx_date", "idx_samp", "recv_date"), "Index VL"),
+    ("fu_vl", ("fu_date", "fu_samp"), "Follow-up VL"),
+)
+
+# Above this a result is almost certainly a data-entry artefact rather than a
+# viral load: the highest plausible figures in the literature are a few million.
+# The point is kept - a clinical result is not ours to rewrite - but it is
+# flagged so a chart can cap its axis and a reviewer knows not to trust it.
+VL_IMPLAUSIBLE = 10_000_000
+
+
+def _vl_pattern(points: list[dict]) -> str:
+    """
+    Describe the shape of a client's viral load history in the terms a DTC
+    uses. Order matters: a rebound and a sharp rise can both be true, and the
+    rebound is the more useful thing to say, because it means the client has
+    demonstrably suppressed before and something changed.
+    """
+    vals = [p["value"] for p in points]
+    if len(vals) < 2:
+        return "Single result"
+    high = [v >= VL_FAIL for v in vals]
+    # Suppressed at some point, unsuppressed after it.
+    if any(not high[i] and any(high[i + 1:]) for i in range(len(high) - 1)):
+        return "Rebound after suppression"
+    # An order of magnitude up on the previous result.
+    if vals[-2] > 0 and vals[-1] >= vals[-2] * 10:
+        return "Sharp rise"
+    if len(vals) >= 3:
+        rises = any(vals[i + 1] > vals[i] for i in range(len(vals) - 1))
+        falls = any(vals[i + 1] < vals[i] for i in range(len(vals) - 1))
+        if rises and falls:
+            return "Erratic"
+    if all(high):
+        return "Persistently high"
+    return "Mixed"
+
+
+def vl_trajectory(df: pd.DataFrame, limit: int = 500) -> dict:
+    """
+    Per-client viral load trajectories for the clients who need a decision.
+
+    The population is every episode whose FOLLOW-UP viral load is still at or
+    above 1,000 - whether or not EAC was completed. Someone who never finished
+    counselling and remains unsuppressed needs review at least as urgently as
+    someone who did; on this snapshot their median follow-up VL is in fact
+    higher (34,000 with no EAC on record against 17,362 having completed it).
+    """
+    if df.empty or "still_unsuppressed" not in df.columns:
+        return {"ok": False, "rows": [], "n": 0}
+
+    d = df[df["still_unsuppressed"].fillna(False).astype(bool)].copy()
+    if d.empty:
+        return {"ok": False, "rows": [], "n": 0}
+
+    rows: list[dict] = []
+    for _, r in d.iterrows():
+        pts: list[dict] = []
+        for vcol, dcols, label in _VL_POINTS:
+            v = pd.to_numeric(r.get(vcol), errors="coerce")
+            t = pd.NaT
+            for dc in dcols:
+                t = pd.to_datetime(r.get(dc), errors="coerce")
+                if pd.notna(t):
+                    break
+            if pd.isna(v) or pd.isna(t):
+                continue
+            pts.append({"label": label, "date": t.strftime("%Y-%m-%d"),
+                        "value": float(v),
+                        "suppressed": bool(float(v) < VL_FAIL),
+                        "implausible": bool(float(v) > VL_IMPLAUSIBLE)})
+        # Chronological, then collapse ADJACENT repeats of the same value.
+        #
+        # This matters more than it sounds. The index VL comes from the
+        # unsuppressed register and the follow-up from the clinical line list,
+        # and where a client has had no new test since, both are the SAME
+        # result - carrying different dates because the two sources date
+        # results differently. 280 of the 671 still-unsuppressed episodes are
+        # in that position. Drawn as two points they read as "stable at 20.8
+        # million for three months", which is a test that never happened.
+        #
+        # Only adjacent repeats collapse. A genuine 500 -> 20,000 -> 500 keeps
+        # all three points; de-duplicating on value alone would flatten the
+        # fall and change what the trajectory says.
+        pts.sort(key=lambda p: p["date"])
+        uniq: list[dict] = []
+        for p in pts:
+            if uniq and uniq[-1]["value"] == p["value"]:
+                uniq[-1]["repeated_on"] = p["date"]
+                continue
+            uniq.append(p)
+
+        latest = uniq[-1] if uniq else None
+        rows.append({
+            "sn": r.get("sn"), "state": r.get("state"), "lga": r.get("lga"),
+            "facility": r.get("facility"), "sex": r.get("sex"),
+            "age": None if pd.isna(r.get("age")) else int(r.get("age")),
+            "regimen_line": r.get("regimen_line"),
+            "eac_stage": ("Completed EAC" if r.get("eac_completed")
+                          else "Commenced, not completed" if r.get("eac1")
+                          else "No EAC on record"),
+            "switched": bool(r.get("switched")),
+            "months_unsuppressed": (None if pd.isna(r.get("months_unsuppressed"))
+                                    else float(r.get("months_unsuppressed"))),
+            "points": uniq,
+            "n_results": len(uniq),
+            "latest_vl": latest["value"] if latest else None,
+            "latest_date": latest["date"] if latest else None,
+            "pattern": _vl_pattern(uniq),
+        })
+
+    # Highest current viral load first: that is the order a review works down.
+    rows.sort(key=lambda x: (x["latest_vl"] is None, -(x["latest_vl"] or 0)))
+    return {"ok": True, "n": len(rows), "shown": min(limit, len(rows)),
+            "rows": rows[:limit]}
+
+
+def awaiting_results(df: pd.DataFrame, as_of, limit: int = 300) -> dict:
+    """
+    Post-EAC samples collected but not yet reported by the laboratory.
+
+    A queue, not a failure. These clients have been bled; nothing more is asked
+    of them or of the counselling team until the result lands. The action is
+    with the laboratory, which is why this is separated from every other state
+    on the DTC page - chasing the client would be the wrong response.
+
+    Waiting time runs from the sample collection date to the snapshot's as-of
+    date, never to today: an as-of anchored to the clock makes the same file
+    report a longer wait every day it is left open.
+    """
+    if df.empty or "awaiting_result" not in df.columns:
+        return {"ok": False, "n": 0, "rows": [], "by_facility": []}
+
+    d = df[df["awaiting_result"].fillna(False).astype(bool)].copy()
+    if d.empty:
+        return {"ok": True, "n": 0, "rows": [], "by_facility": []}
+
+    asof = pd.Timestamp(as_of)
+    samp = pd.to_datetime(_col(d, "fu_samp"), errors="coerce")
+    d["days"] = (asof - samp).dt.days
+    d["samp"] = samp
+
+    # A negative wait means the sample is dated after the snapshot - a data
+    # entry error rather than a laboratory delay. Counted separately so the
+    # median is not dragged by it.
+    future = int((d["days"] < 0).sum())
+    ok = d[d["days"] >= 0]
+    days = ok["days"].dropna()
+
+    by_fac = (ok.groupby("facility")
+              .agg(n=("days", "size"), median_days=("days", "median"),
+                   longest=("days", "max"))
+              .sort_values("n", ascending=False).head(15).reset_index())
+
+    rows = (ok.sort_values("days", ascending=False).head(limit))
+    out_rows = [{
+        "sn": r.get("sn"), "state": r.get("state"), "facility": r.get("facility"),
+        "sex": r.get("sex"),
+        "age": None if pd.isna(r.get("age")) else int(r.get("age")),
+        "idx_vl": None if pd.isna(r.get("idx_vl")) else float(r.get("idx_vl")),
+        "sample_date": r["samp"].strftime("%Y-%m-%d") if pd.notna(r["samp"]) else None,
+        "days": int(r["days"]),
+        "eac_stage": ("Completed EAC" if r.get("eac_completed")
+                      else "Commenced, not completed" if r.get("eac1")
+                      else "No EAC on record"),
+    } for _, r in rows.iterrows()]
+
+    return {
+        "ok": True,
+        "n": int(len(d)),
+        "as_of": asof.strftime("%Y-%m-%d"),
+        "median_days": None if days.empty else int(days.median()),
+        "p90_days": None if days.empty else int(days.quantile(0.9)),
+        "over_30": int((days >= 30).sum()),
+        "over_60": int((days >= 60).sum()),
+        "future_dated": future,
+        "by_facility": [{"facility": r["facility"], "n": int(r["n"]),
+                         "median_days": int(r["median_days"]),
+                         "longest": int(r["longest"])}
+                        for _, r in by_fac.iterrows()],
+        "shown": len(out_rows),
+        "rows": out_rows,
+    }

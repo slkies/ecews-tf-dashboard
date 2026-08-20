@@ -584,6 +584,22 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .empty{padding:26px;text-align:center;color:var(--ink-3);font-size:13px}
 @media(max-width:760px){.frow{grid-template-columns:1fr;gap:3px}
   .fval{text-align:left}.fval em{display:inline;margin-left:6px}}
+
+/* VL trajectory: one block per result, oldest first. Fixed width so the
+   columns line up down the table and an eye can scan the shape, not read
+   every number. */
+.trk{display:flex;gap:3px;align-items:center}
+.trk i{width:26px;height:15px;border-radius:2px;display:inline-block;flex-shrink:0}
+.trk i.hi{background:var(--brick)}
+.trk i.lo{background:var(--green)}
+.trk i.imp{background:repeating-linear-gradient(45deg,var(--brick),var(--brick) 3px,
+  var(--brick-l) 3px,var(--brick-l) 6px)}
+.trk .arrow{color:var(--ink-3);font-size:10px;flex-shrink:0}
+.pat{font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap}
+.pat.rise{background:var(--brick-l);color:var(--brick)}
+.pat.flat{background:var(--honey-l);color:var(--honey)}
+.pat.one{background:var(--bg-2);color:var(--ink-3)}
+.pat.reb{background:var(--slate-l);color:var(--slate)}
 </style>
 </head>
 <body>
@@ -842,6 +858,39 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
            the same place. A <strong>1-log fall is a tenfold reduction</strong>, the conventional
            threshold for calling a response credible.</p></div>
       <div id="dtcLog"></div></div>
+
+      <div class="panel">
+        <div class="panel-h"><div class="eyebrow">Laboratory queue</div>
+          <h2>Post-EAC sample collected, result not yet returned</h2>
+          <p>A repeat sample has been drawn and the laboratory has not reported it. These
+             clients are <strong>not</strong> a counselling or tracing problem &mdash; they have done
+             their part, and nothing more is asked of them until the result lands. They are
+             counted separately for that reason: chasing the client would be the wrong
+             response. Waiting time runs to the snapshot&rsquo;s as-of date, not to today, so the
+             same file always reports the same wait.</p></div>
+        <div class="stats" id="awTiles"></div>
+        <div class="grid g2" style="margin-top:14px">
+          <div><div class="disagg-h">Facilities with the most samples outstanding</div>
+            <div class="tbl-wrap"><table id="awFac"></table></div></div>
+          <div><div class="disagg-h">Longest outstanding</div>
+            <div class="tbl-wrap"><table id="awRows"></table></div></div>
+        </div>
+        <div id="awFoot" class="foot"></div></div>
+
+
+      <div class="panel">
+        <div class="panel-h"><div class="eyebrow">Client review</div>
+          <h2>Viral load trajectory &mdash; clients to review</h2>
+          <p>Every episode still &ge;&nbsp;1,000 on the follow-up VL, <strong>whether or not EAC was
+             completed</strong>. Each block is one viral load result, oldest first &mdash; green below
+             1,000, red at or above it. Results sit where they actually fall rather than on a fixed
+             quarterly grid, because the gaps between them are not regular.
+             <strong>Where the index and follow-up VL carry the same value they count as one
+             result</strong>: the follow-up is the client&rsquo;s current VL, so with no repeat test it
+             simply restates the index one, and drawing it twice would show a flat trajectory that
+             never happened.</p></div>
+        <div id="trajNote" class="foot" style="margin-bottom:12px"></div>
+        <div class="tbl-wrap"><table id="trajTbl"></table></div></div>
 
     <div class="panel">
       <div class="panel-h"><div class="eyebrow">Repeat unsuppression</div>
@@ -1363,6 +1412,10 @@ async function refresh(){
     $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
+    // Client-level DTC panels. Fetched separately rather than in the batch
+    // above: they return per-client rows and are audited as such, so they
+    // must not ride along with every refresh of an aggregate page.
+    loadAwaiting(); loadTrajectory();
     advanced(risk,mort,dd); dqView(dq); notices(dq);
     if(CMP_LOADED) cmpRun();   // comparison respects the filters too
   }catch(e){
@@ -2612,6 +2665,91 @@ async function loadUploads(){
       try{ await api('/uploads/'+b.dataset.del,{method:'DELETE'}); loadUploads(); }
       catch(e){ alert(e.message); }});
   }catch(e){}
+}
+// ── awaiting a laboratory result ─────────────────────────────────────
+async function loadAwaiting(){
+  const t=$('#awTiles'); if(!t) return;
+  try{
+    const r=await api('/dtc/awaiting'+qs({limit:200}));
+    if(!r.ok||!r.n){
+      t.innerHTML='<div class="empty">No samples outstanding for this filter. '
+        +'If every tile here is empty, the snapshot predates the sample/result split '
+        +'&mdash; re-upload to populate it.</div>';
+      ['#awFac','#awRows'].forEach(x=>$(x)&&($(x).innerHTML='')); $('#awFoot').textContent='';
+      return; }
+    // A long wait is not a laboratory turnaround any more. 60+ days almost
+    // always means the sample was lost, never sent, or never entered - which
+    // is why it gets its own tile rather than sitting inside a mean.
+    t.innerHTML=[
+      ['Samples outstanding', r.n.toLocaleString(), 'post-EAC, no result yet',''],
+      ['Median wait', r.median_days+'d', 'to '+r.as_of, ''],
+      ['Waiting 30+ days', r.over_30.toLocaleString(), 'past normal turnaround',
+        r.over_30?'warn':''],
+      ['Waiting 60+ days', r.over_60.toLocaleString(), 'likely lost, not delayed',
+        r.over_60?'bad':''],
+    ].map(([k,v,n,cls])=>'<div class="stat '+cls+'"><div class="k">'+k+'</div>'
+      +'<div class="v">'+v+'</div><div class="n">'+n+'</div></div>').join('');
+
+    $('#awFac').innerHTML='<thead><tr><th>Facility</th><th class="r">Outstanding</th>'
+      +'<th class="r">Median</th><th class="r">Longest</th></tr></thead><tbody>'
+      +r.by_facility.map(f=>'<tr><td>'+esc(f.facility||'—')+'</td>'
+        +'<td class="r">'+f.n+'</td><td class="r">'+f.median_days+'d</td>'
+        +'<td class="r"'+(f.longest>=60?' style="color:var(--brick);font-weight:600"':'')
+        +'>'+f.longest+'d</td></tr>').join('')+'</tbody>';
+
+    $('#awRows').innerHTML='<thead><tr><th class="r">Waiting</th><th>Sampled</th>'
+      +'<th>Facility</th><th class="r">Index VL</th></tr></thead><tbody>'
+      +r.rows.slice(0,15).map(x=>'<tr>'
+        +'<td class="r"'+(x.days>=60?' style="color:var(--brick);font-weight:600"':'')
+        +'>'+x.days+'d</td>'
+        +'<td class="num" style="font-size:11px">'+esc(x.sample_date||'')+'</td>'
+        +'<td style="font-size:12px">'+esc(x.facility||'—')+'</td>'
+        +'<td class="r">'+(x.idx_vl==null?'—':vlShort(x.idx_vl))+'</td></tr>').join('')
+      +'</tbody>';
+
+    $('#awFoot').innerHTML='Showing '+r.shown+' of '+r.n.toLocaleString()
+      +' outstanding samples, longest first.'
+      +(r.future_dated?' <b>'+r.future_dated+'</b> sample(s) are dated after the snapshot '
+        +'and are excluded from the wait times &mdash; that is a data-entry error, not a delay.':'');
+  }catch(e){ t.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+// ── VL trajectory ────────────────────────────────────────────────────
+const PAT_CLASS={'Sharp rise':'rise','Rebound after suppression':'reb',
+  'Persistently high':'flat','Erratic':'rise','Single result':'one','Mixed':'flat'};
+function vlShort(v){
+  if(v==null) return '—';
+  if(v>=1e6) return (v/1e6).toFixed(1).replace(/\.0$/,'')+'M';
+  if(v>=1e3) return Math.round(v/1e3)+'k';
+  return String(Math.round(v));
+}
+async function loadTrajectory(){
+  const tbl=$('#trajTbl'), note=$('#trajNote');
+  if(!tbl) return;
+  try{
+    const r=await api('/dtc/trajectory'+qs({limit:300}));
+    if(!r.ok||!r.rows.length){
+      tbl.innerHTML=''; note.textContent='No clients match this filter.'; return; }
+    const one=r.rows.filter(x=>x.n_results===1).length;
+    note.innerHTML='<b>'+r.n.toLocaleString()+'</b> episodes still unsuppressed &middot; showing the '
+      +r.shown.toLocaleString()+' with the highest current viral load &middot; <b>'+one.toLocaleString()
+      +'</b> have only one result on record, so their trajectory cannot yet be read.';
+    tbl.innerHTML='<thead><tr><th>Client</th><th>Facility</th><th>EAC</th>'
+      +'<th>Trajectory</th><th class="r">Latest VL</th><th>Pattern</th></tr></thead><tbody>'
+      +r.rows.map(x=>{
+        const blocks=x.points.map(p=>'<i class="'+(p.implausible?'imp':(p.suppressed?'lo':'hi'))
+          +'" title="'+esc(p.label+' — '+p.date+' — '+p.value.toLocaleString()
+          +(p.implausible?' (implausibly high)':'')+(p.repeated_on?' — same value again '+p.repeated_on:''))
+          +'"></i>').join('<span class="arrow">›</span>');
+        return '<tr><td class="num" style="font-size:11px">'+esc(String(x.sn||'').slice(0,10))+'…</td>'
+          +'<td style="font-size:12px">'+esc(x.facility||'—')+'</td>'
+          +'<td style="font-size:11px">'+esc(x.eac_stage)+'</td>'
+          +'<td><div class="trk">'+blocks+'</div></td>'
+          +'<td class="r"><b>'+vlShort(x.latest_vl)+'</b><br>'
+            +'<em style="font-size:10px;color:var(--ink-3)">'+esc(x.latest_date||'')+'</em></td>'
+          +'<td><span class="pat '+(PAT_CLASS[x.pattern]||'one')+'">'+esc(x.pattern)+'</span></td></tr>';
+      }).join('')+'</tbody>';
+  }catch(e){ note.textContent=e.message; }
 }
 async function loadUsers(){
   try{
