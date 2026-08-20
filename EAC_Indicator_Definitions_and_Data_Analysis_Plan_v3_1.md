@@ -25,7 +25,7 @@ v2.1 was written before the pipeline was built. Building it surfaced defects tha
 | **0.6** | **Duplicate index rows are classified, not dropped.** | The rule (§2.6) separates an erroneous duplicate row from a genuine new failure. |
 | **0.7** | **Column matching is case-insensitive; schema drift is tolerated.** | The quarterly index sheet ships `CurrentViralLoad`; the treatment line list ships `currentViralLoad`. Case-sensitive matching yields an all-null column and a cohort of **zero**, silently. |
 | **0.8** | **Parquet is the wire format.** | 5.7× smaller, **96× faster** to parse, and it carries dtypes — which is what structurally protects `S/N`. |
-| **0.10** | **A current VL counts as a follow-up only if its VALUE differs from the index.** A later sample date alone is not enough. | The index VL comes from the unsuppressed register and the current VL from the treatment line list. Where no repeat test has been done, the treatment list still reports the index result as the client's current VL — and the two sources date it differently, so a sample-date test passes and the same result is counted twice. On the 15 Aug snapshot **247 of 2,089 follow-up VLs were the index result restated**. See §2.8. |
+| **0.10** | **A sample and a result are separate facts.** The sample collection date decides whether a post-EAC sample exists; the result columns decide whether a result exists. | While a sample is at the laboratory the treatment line list carries the new sample date but still the INDEX result and received-date — those columns are only rewritten when the result lands. Reading a later sample date as a RESULT counted the index twice (**247 of 2,089**); reading it as nothing would hide **241** clients waiting on a laboratory. See §2.8. |
 | **0.9** | **Architecture is a server-side web app.** Analysts do not upload workbooks. | An admin uploads once per cycle; everyone else reads. See §8. |
 
 ---
@@ -207,45 +207,62 @@ Consequences if used naively:
 
 **Action for the HI team**: re-export May and June with unsuppressed follow-up VLs included, or retire those lists.
 
-### 2.8 A later sample date does not prove a new test. The VALUE must differ.
+### 2.8 A sample and a result are separate facts
 
-An episode's follow-up VL is the client's next viral load after the index result
-reached the facility. It can come from the client's next failure episode in the
-register, or from the current VL on the treatment line list.
+An episode's follow-up VL comes either from the client's next failure episode in
+the register, or from the current VL on the treatment line list. The second
+source needs care, because **three** states are possible and the pipeline
+originally saw only two.
 
-The second source needed a guard it did not have. Where a client has had **no
-repeat test since**, the treatment line list still reports the index result as
-their current VL. The two sources date that result differently — the register on
-when it was received at the facility, the treatment list on last sample
-collection — so a test of "was it sampled after the index was received?" passes,
-and the same result is counted a second time as a follow-up.
+Working through what the programme actually does — index VL from the register,
+EAC delivered, each new treatment line list compared against that index:
 
-Measured on the 15 August 2026 snapshot, rebuilding the same file three ways:
+| Sample collection date | Result value / received date | State |
+|---|---|---|
+| unchanged | — | **1.** No post-EAC sample drawn |
+| **changed** | unchanged | **2.** Sample collected, laboratory has not reported |
+| **changed** | **changed** | **3.** Result returned, can be acted on |
 
-| Rule | post_result | re-suppressed | still unsuppressed | follow-up = index |
-|---|---:|---:|---:|---:|
-| Sample date only *(previous)* | 2,089 | 1,455 | 634 | **247** |
-| **Value must differ** *(adopted)* | 1,843 | 1,455 | 388 | **1** |
-| Value + sample date + result date | 1,774 | 1,391 | 383 | 1 |
+State 2 is a turnaround-time state, not a service-delivery failure. The client
+has done their part; the line list still shows the index result because those
+columns are only rewritten when the new result lands. A later line list carries
+it.
 
-**The value is the test.** It removes 246 of the 247 duplicates on its own.
-Adding the two date conditions removes 5 more and costs **64 genuine
-re-suppressions** — clients who did have a repeat test with a different result,
-but whose sample or report date matched the index or was missing. The same
-inconsistency that makes the dates unreliable evidence *for* a new test makes
-them unreliable evidence against one; the value is not ambiguous.
+**The rule.** The sample collection date decides whether a sample exists. The
+result columns decide whether a result exists — a result has come back when
+**either** the value **or** the received-date has moved off the index. Either is
+sufficient, because a repeat test that happens to return the identical value
+still arrives with a new received-date.
 
-Consequences of the previous rule, now corrected:
+Measured on the 15 August 2026 snapshot:
 
-- **post-EAC VL coverage was overstated** — 315 episodes counted a follow-up
-  that had not happened
-- **the switch backlog was overstated** — switch-eligible falls from 599 to 366,
-  because 238 of those clients had no repeat VL on which to base a switch
-- **a decision looked evidenced when nothing had been repeated**
+| | before | after |
+|---|---:|---:|
+| post-EAC sample collected | 2,089 | **2,089** |
+| follow-up result available | 2,089 | 1,848 |
+| **awaiting result** | 0 | **241** |
+| re-suppressed | 1,455 | **1,455** |
+| still unsuppressed | 634 | 393 |
+| switch eligible | 599 | 370 |
+| follow-up value = index value | 247 | 6 |
 
-A client with one viral load is not a client whose viral load is unchanged. The
-first needs a repeat test; the second needs a regimen decision. The dashboard
-now separates them.
+Sample coverage is unchanged and re-suppression is unchanged — no client loses
+credit for a sample drawn, and no genuine result is discarded. What changes is
+that 241 episodes stop being counted as *failed after EAC* when their repeat
+result has not yet come back, and the switch backlog falls from 599 to 370.
+
+The six remaining rows whose follow-up value equals the index are genuine: the
+received-date moved, so the result did come back and happened to return the same
+number.
+
+**Two ways to get this wrong, in opposite directions.** Treating a later sample
+date as a result inflates the switch backlog with clients who have no repeat
+viral load. Treating it as nothing conceals the laboratory queue entirely. An
+earlier attempt at this correction did the latter and additionally lost 64 real
+re-suppressions; it was measured and rejected.
+
+A client with one viral load is not a client whose viral load is unchanged, and
+neither is a client whose sample is still at the lab. The three now separate.
 
 ### 2.8 Wire format: Parquet, not Excel
 

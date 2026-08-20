@@ -444,7 +444,7 @@ COHORT_COLS = [
     "eac_trunc_pre", "eac_trunc_mid",
     "sessions", "cycles", "dtc_review",
     "repeat_failure", "on_second_line", "switch_eligible", "awaiting_switch", "fu_samp",
-    "post_sample", "post_result", "s1_date", "fu_vl", "fu_date",
+    "post_sample", "post_result", "awaiting_result", "s1_date", "fu_vl", "fu_date",
     "resuppressed", "undetectable", "llv", "still_unsuppressed", "switched",
     "time_to_eac", "eac_lead_time", "time_to_resupp", "months_unsuppressed",
     "treatment_plan", "episode", "enrol_quarter", "fy",

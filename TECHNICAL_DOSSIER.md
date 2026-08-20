@@ -331,9 +331,11 @@ evaluated once per sheet, so the number of findings recorded depends on how many
 sheets the workbook carries. They cover, among others:
 
 - missing or blank client keys
-- a current VL that merely restates the index result, where no repeat test has
-  been done: counted as a follow-up until 19 Aug 2026, 247 of 2,089 on the
-  15 August snapshot. The value must now differ, not just the sample date
+- a post-EAC sample still at the laboratory, whose result columns therefore
+  still carry the INDEX result: counted as a follow-up result until 19 Aug 2026,
+  247 of 2,089 on the 15 August snapshot. The sample date now establishes the
+  sample; the result columns establish the result; 241 episodes are reported as
+  awaiting a result rather than as failed
 - success-censored follow-up VL columns (an export defect that would otherwise
   fabricate a 100% re-suppression rate)
 - Excel date corruption in EAC cycle numbers

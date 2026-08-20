@@ -150,6 +150,11 @@ ALTER TABLE cohort ADD COLUMN IF NOT EXISTS lga_res_norm TEXT;
 -- 7.1 billion c/mL, 13 rows above 10 million), but a clinical result is not
 -- something to quietly rewrite - the display caps its scale and the data
 -- quality page can flag them.
+-- Post-EAC sample collected but the laboratory has not reported. Distinct
+-- from having no sample: the client has done their part and the follow-up
+-- is with the lab, not with counselling or defaulter tracing.
+ALTER TABLE cohort ADD COLUMN IF NOT EXISTS awaiting_result BOOLEAN;
+
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_vl        NUMERIC;
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_vl_date   DATE;
 ALTER TABLE cohort ADD COLUMN IF NOT EXISTS first_high_vl   NUMERIC;
