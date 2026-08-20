@@ -51,7 +51,7 @@ docker run --rm -v ${PWD}:/work ecews_tf_monitor-api \
 | **Deep dive** | ✅ Rebuilt as **descriptive infographic** | Who/What/When/Where — donuts + bars + monthly trend + **residence LGA choropleth** (geoBoundaries, greyed context states); flags + facility league footer |
 | Time metrics | ✅ Redesigned | **Box-and-whisker** per indicator (own scale, guideline target lines), re-suppression KM, **era-split cumulative-incidence** curve of time-to-first-unsuppression. Time-to-switch = **not computable** |
 | Treatment plans | ✅ | §6 decision engine, one plan per episode |
-| **DTC review** | ✅ Built | Switch gap (awaiting vs switched, by state/regimen/months/CD4), repeat-unsuppression univariate ORs, intervention worklist. No switch date → shows *who*, not *why* |
+| **DTC review** | ✅ Built | Switch gap (awaiting vs switched, by state/regimen/months/CD4), repeat-unsuppression univariate ORs, intervention worklist. No switch date → shows *who*, not *why*. **New (19 Aug 2026):** *post-EAC sample collected, result not yet returned* — the laboratory queue, 273 outstanding, median 15 days, 30 beyond 60; and *viral load trajectory* — every episode still ≥1,000 on the follow-up VL whether or not EAC completed (398 clients, 2–4 dated results each), classified as rebound after suppression / persistently high / erratic / sharp rise |
 | **Advanced analytics** | ✅ | **AOR forest plot + univariate/adjusted table** (hand-rolled logistic, χ²/trend/Mann–Whitney), **binary CD4** rate card (integer + VISITEC LFA merged), risk-scoring model (AUC 0.716) + calibration, mortality |
 | Data quality | ✅ | ~22 checks per upload |
 | Guidelines | ✅ | 2024 National Guidelines narrative + mapping to dashboard measures |
@@ -217,6 +217,31 @@ render error to a single visible message in one card — a lost identifier can n
 blank the page. (This replaced the recurring "X is not defined" full-page crash.)
 
 ---
+
+## 5b. Open questions with the HI team
+
+1. **`First_High_VL_Value` does not mean what its name says.** It has a hard floor
+   at **50, not 1,000** — the lowest values present are 50.0, 50.1, 50.2 — so it is
+   the first *detectable* viral load, not the first unsuppressed one. 62.5% of it is
+   low-level viraemia, median 292, and that proportion is stable across every sheet
+   that carries the column (62.5 / 62.5 / 63.9 / 62.5%), which makes it a definition
+   rather than a defect.
+
+   The trajectory colouring is unaffected — green below 1,000, red at or above,
+   matching the suppression threshold used everywhere else and in PEPFAR reporting.
+   What is affected is the **label**: the tooltip reads "First high VL", which a
+   clinician will take to mean ≥1,000. **Left unchanged pending HI's definition**
+   (19 Aug 2026) rather than renamed on our own inference.
+
+   Also flagged: **68 rows have `First_High_VL` lower than `First_Ever_VL`**, which
+   should not be possible under any reading of the two columns.
+
+2. **Drug history, IIT history, appointment compliance and visit dates** are to come
+   from a separate file that Es will supply. Deliberately not taken from the current
+   line lists: `dateofFirstTldPickup` looked like a switch marker and is not — the
+   whole first-line cohort was transitioned to TLD as programme policy, so it would
+   have flagged a switch for almost everyone. Branch to be opened when the dataset
+   arrives.
 
 ## 6. What's next (agreed direction)
 
