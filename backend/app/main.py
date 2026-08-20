@@ -718,12 +718,20 @@ class NewUser(BaseModel):
     role: str = "viewer"
     password: str
     scope_state: str | None = None
+    scope_facility: str | None = None
 
 
 class AccessPatch(BaseModel):
     """Change what an existing account may see. Omit a field to leave it alone."""
     role: str | None = None
     scope_state: str | None = None
+    scope_facility: str | None = None
+
+
+def _scope(v: str | None) -> str | None:
+    """'All' is how the dashboard says no restriction; NULL is how the database
+    says it. Blank means the same, since an empty select posts an empty string."""
+    return None if not v or v == "All" else v
 
 
 class NewPassword(BaseModel):
@@ -753,7 +761,8 @@ def _check_password(pw: str) -> None:
 def list_users(u: Annotated[dict, Depends(admin)]):
     with pool.connection() as c:
         return c.execute(
-            "SELECT id,username,email,full_name,role,scope_state,is_active,created_at "
+            "SELECT id,username,email,full_name,role,scope_state,scope_facility,"
+            "is_active,created_at "
             "FROM users ORDER BY role, created_at").fetchall()
 
 
@@ -773,10 +782,10 @@ def create_user(body: NewUser, u: Annotated[dict, Depends(admin)], request: Requ
             raise HTTPException(409, "A user with that email already exists.")
         c.execute(
             "INSERT INTO users (username,email,password_hash,full_name,role,"
-            "scope_state) VALUES (%s,%s,%s,%s,%s,%s)",
+            "scope_state,scope_facility) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (username, email, hash_password(body.password),
              body.full_name or username, role,
-             (body.scope_state or None) if (body.scope_state or "") != "All" else None))
+             _scope(body.scope_state), _scope(body.scope_facility)))
     _audit("user.create", user_id=u["id"], email=u["email"], request=request,
            detail=f"created {username} <{email}> role={role} "
                   f"scope={body.scope_state or 'all states'}")
@@ -818,8 +827,9 @@ def set_access(uid: int, body: AccessPatch, request: Request,
         raise HTTPException(400, "Role must be admin, analyst or viewer.")
 
     with pool.connection() as c:
-        cur = c.execute("SELECT username, email, role, scope_state FROM users "
-                        "WHERE id=%s", (uid,)).fetchone()
+        cur = c.execute("SELECT username, email, role, scope_state, "
+                        "scope_facility FROM users WHERE id=%s",
+                        (uid,)).fetchone()
         if not cur:
             raise HTTPException(404, "User not found.")
 
@@ -837,25 +847,36 @@ def set_access(uid: int, body: AccessPatch, request: Request,
                          "first, or this dashboard has no administrator.")
 
         role = body.role or cur["role"]
-        # "All" is how the dashboard says "every state", and NULL is how the
-        # database says it. None means the caller did not send the field.
-        if body.scope_state is None:
-            scope = cur["scope_state"]
-        else:
-            scope = None if body.scope_state == "All" else body.scope_state
-        c.execute("UPDATE users SET role=%s, scope_state=%s WHERE id=%s",
-                  (role, scope, uid))
+        # None means the caller did not send the field, so leave it alone.
+        state = (cur["scope_state"] if body.scope_state is None
+                 else _scope(body.scope_state))
+        fac = (cur["scope_facility"] if body.scope_facility is None
+               else _scope(body.scope_facility))
+        # A facility scope inside the wrong state would silently show nothing:
+        # _load() ANDs the two, so state=Osun with facility=<a Delta site>
+        # matches no rows and reads as an empty dashboard rather than an error.
+        if fac and state and not c.execute(
+                "SELECT 1 FROM cohort c JOIN uploads up ON up.id=c.upload_id "
+                "WHERE up.is_current AND c.facility=%s AND c.state=%s LIMIT 1",
+                (fac, state)).fetchone():
+            raise HTTPException(
+                400, f"{fac} is not in {state} in the current snapshot. Set the "
+                     "state to All, or pick a facility in that state.")
+        c.execute("UPDATE users SET role=%s, scope_state=%s, scope_facility=%s "
+                  "WHERE id=%s", (role, state, fac, uid))
 
     changed = []
     if role != cur["role"]:
         changed.append(f"role {cur['role']} -> {role}")
-    if scope != cur["scope_state"]:
-        changed.append(f"scope {cur['scope_state'] or 'all states'} -> "
-                       f"{scope or 'all states'}")
+    if state != cur["scope_state"]:
+        changed.append(f"state {cur['scope_state'] or 'all'} -> {state or 'all'}")
+    if fac != cur["scope_facility"]:
+        changed.append(f"facility {cur['scope_facility'] or 'all'} -> "
+                       f"{fac or 'all'}")
     _audit("user.access", user_id=u["id"], email=u["email"], request=request,
            detail=f"{cur['username'] or cur['email']}: "
                   f"{'; '.join(changed) if changed else 'no change'}")
-    return {"ok": True, "role": role, "scope_state": scope}
+    return {"ok": True, "role": role, "scope_state": state, "scope_facility": fac}
 
 
 @app.post("/api/users/{uid}/password")

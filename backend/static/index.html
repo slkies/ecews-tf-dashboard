@@ -1155,12 +1155,13 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
         <select id="nuRole"><option value="viewer">Viewer</option>
           <option value="analyst">Analyst</option><option value="admin">Admin</option></select>
         <select id="nuState"><option>All</option></select>
+          <select id="nuFac"><option>All</option></select>
         <input id="nuPw" type="text" placeholder="Password (min 10)">
         <button class="btn btn-solid" id="nuAdd">Add user</button>
         <span id="nuMsg"></span>
       </div>
       <div class="tw" style="margin-top:14px"><table><thead><tr><th>Name</th><th>Username</th><th>Email</th>
-        <th>Role</th><th>Scope</th><th>Status</th><th></th></tr></thead>
+        <th>Role</th><th>State</th><th>Facility</th><th>Status</th><th></th></tr></thead>
         <tbody id="userB"></tbody></table></div></div>
 
     <div class="panel"><div class="panel-h" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
@@ -2620,6 +2621,8 @@ async function loadUsers(){
     // only ever be set to a state that actually exists in the data.
     const stOpt=$('#fState'), stList=stOpt?[...stOpt.options].map(o=>o.value):[];
     const states=stList.length?stList:['All'];
+    const fcOpt=$('#fFac'), fcList=fcOpt?[...fcOpt.options].map(o=>o.value):[];
+    const facs=fcList.length?fcList:['All'];
     // Your own row shows tags, not controls: the server refuses a self-change,
     // and offering a dropdown that always errors is worse than not offering it.
     $('#userB').innerHTML=us.map(u=>'<tr>'+
@@ -2639,6 +2642,12 @@ async function loadUsers(){
           +states.map(s=>'<option value="'+esc(s)+'"'
             +((u.scope_state||'All')===s?' selected':'')+'>'+esc(s)+'</option>').join('')
           +'</select>')+'</td>'+
+      '<td>'+(u.id===ME.id
+        ?esc(u.scope_facility||'All facilities')
+        :'<select class="asel" data-f="fac" data-uid="'+u.id+'">'
+          +facs.map(s=>'<option value="'+esc(s)+'"'
+            +((u.scope_facility||'All')===s?' selected':'')+'>'+esc(s)+'</option>').join('')
+          +'</select>')+'</td>'+
       '<td>'+(u.is_active?'<span class="tag t-g">active</span>':'<span class="tag t-n">disabled</span>')+'</td>'+
       '<td class="r" style="white-space:nowrap">'
         +'<button class="btn sm" data-pw="'+u.id+'" data-em="'+esc(u.username||u.email)+'">Reset password</button> '
@@ -2654,9 +2663,11 @@ async function loadUsers(){
       const row=s.closest('tr');
       const role=row.querySelector('select[data-f=role]').value;
       const scope=row.querySelector('select[data-f=scope]').value;
+      const fac=row.querySelector('select[data-f=fac]').value;
       try{
         await api('/users/'+s.dataset.uid+'/access',
-          {method:'POST',body:JSON.stringify({role:role,scope_state:scope})});
+          {method:'POST',body:JSON.stringify(
+            {role:role,scope_state:scope,scope_facility:fac})});
         loadUsers();
       }catch(e){ alert(e.message); loadUsers(); }
     });
@@ -2671,6 +2682,8 @@ async function loadUsers(){
     // populate the scope-state dropdown from the loaded filters
     const st=$('#fState'); if(st) $('#nuState').innerHTML=
       [...st.options].map(o=>'<option value="'+esc(o.value)+'">'+esc(o.value)+'</option>').join('');
+    const fc=$('#fFac'); if(fc) $('#nuFac').innerHTML=
+      [...fc.options].map(o=>'<option value="'+esc(o.value)+'">'+esc(o.value)+'</option>').join('');
   }catch(e){}
 }
 // Friendly page names: the API path is what gets logged, but "Overview" is what
@@ -2759,11 +2772,13 @@ async function addUser(){
   const msg=$('#nuMsg');
   const body={full_name:$('#nuName').value.trim(),username:$('#nuUser').value.trim(),
     email:$('#nuEmail').value.trim(),
-    role:$('#nuRole').value,scope_state:$('#nuState').value,password:$('#nuPw').value};
+    role:$('#nuRole').value,scope_state:$('#nuState').value,
+    scope_facility:$('#nuFac').value,password:$('#nuPw').value};
   msg.textContent='Adding…';
   try{
     await api('/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     msg.textContent='Added.'; $('#nuName').value='';$('#nuUser').value='';$('#nuEmail').value='';$('#nuPw').value='';
+      $('#nuFac').value='All';
     loadUsers();
   }catch(e){ msg.textContent=e.message; }
 }
