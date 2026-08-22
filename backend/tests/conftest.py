@@ -143,6 +143,10 @@ def cohort(client):
     test.
     """
     from app.main import pool
+    # art_status is 'Active' on every seeded row. The CSV export carries only
+    # active clients - a worklist of people who have died or transferred out
+    # wastes the team's time - so a NULL status here silently emptied every
+    # export assertion below.
     rows = [("Delta", "Warri", "Clinic A"), ("Delta", "Warri", "Clinic A"),
             ("Delta", "Sapele", "Clinic B"), ("Osun", "Ife", "Clinic C"),
             ("Osun", "Ife", "Clinic C")]
@@ -154,10 +158,10 @@ def cohort(client):
         for i, (st, lga, fac) in enumerate(rows):
             c.execute(
                 "INSERT INTO cohort (upload_id,sn,episode,state,lga,facility,"
-                "sex,age,age_band,idx_vl,idx_date,fy_quarter,enrol_quarter,fy,"
-                "eac1,post_result,resuppressed) VALUES "
-                "(%s,%s,%s,%s,%s,%s,'Female',30,'25-34',5000,'2026-01-15',"
-                "'FY26Q2','FY26Q2','FY26',TRUE,FALSE,FALSE)",
+                "sex,age,age_band,art_status,idx_vl,idx_date,fy_quarter,"
+                "enrol_quarter,fy,eac1,post_result,resuppressed) VALUES "
+                "(%s,%s,%s,%s,%s,%s,'Female',30,'25-34','Active',5000,"
+                "'2026-01-15','FY26Q2','FY26Q2','FY26',TRUE,FALSE,FALSE)",
                 (uid, f"0.10000000000{i}", f"0.10000000000{i}|2026-01-15",
                  st, lga, fac))
     return uid

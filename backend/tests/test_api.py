@@ -195,6 +195,34 @@ def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
     assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
 
 
+def test_export_excludes_clients_who_cannot_be_actioned(client, admin_h, cohort):
+    """An export is a worklist, so it carries only clients with an ART status
+    of Active. The on-screen table still shows everyone, because its counts
+    have to reconcile with the cascade - which is an epidemiological account
+    including the people who died."""
+    from app.main import pool
+    with pool.connection() as c:
+        for i, status in enumerate(("LTFU", "Death", "Transferred out",
+                                    "Discontinued Care", "Could not verify client")):
+            c.execute(
+                "INSERT INTO cohort (upload_id,sn,episode,state,lga,facility,"
+                "sex,age,age_band,art_status,idx_vl,idx_date,fy_quarter,"
+                "enrol_quarter,fy,eac1,post_result,resuppressed) VALUES "
+                "(%s,%s,%s,'Delta','Warri','Clinic A','Female',30,'25-34',%s,"
+                "5000,'2026-01-15','FY26Q2','FY26Q2','FY26',TRUE,FALSE,FALSE)",
+                (cohort, f"0.90000000000{i}", f"0.90000000000{i}|2026-01-15", status))
+
+    seen = client.get("/api/clients", headers=admin_h).json()
+    assert len(seen) == 10, "the table shows everyone, terminal outcomes included"
+
+    csv = client.get("/api/export", headers=admin_h).text
+    lines = csv.strip().splitlines()
+    assert len(lines) == 6, "header + the 5 active clients only"
+    for gone in ("LTFU", "Death", "Transferred out", "Discontinued Care",
+                 "Could not verify client"):
+        assert gone not in csv, f"{gone} must not reach a worklist"
+
+
 def test_scope_narrows_the_filter_lists(client, admin_h, cohort):
     h = _scoped_viewer(client, admin_h, "Delta")
     assert client.get("/api/filters", headers=h).json()["states"] == ["Delta"]
