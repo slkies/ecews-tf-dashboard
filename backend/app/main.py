@@ -297,6 +297,10 @@ class Filters(BaseModel):
     quarter: str | None = None
     fy: str | None = None
     plan: str | None = None
+    # YYYY-MM, on the same clock as the quarters: the month the index result
+    # reached the facility. A quarter was the finest slice available, which is
+    # a long time to wait to see whether something changed.
+    month: str | None = None
 
 
 def filters(
@@ -305,9 +309,11 @@ def filters(
     facility: str | None = Query(None), sex: str | None = Query(None),
     age_band: str | None = Query(None), quarter: str | None = Query(None),
     fy: str | None = Query(None), plan: str | None = Query(None),
+    month: str | None = Query(None),
 ) -> Filters:
     return Filters(state=state, lga=lga, lga_res=lga_res, facility=facility,
-                   sex=sex, age_band=age_band, quarter=quarter, fy=fy, plan=plan)
+                   sex=sex, age_band=age_band, quarter=quarter, fy=fy,
+                   plan=plan, month=month)
 
 
 F = Annotated[Filters, Depends(filters)]
@@ -345,6 +351,14 @@ def _load(u: dict, f: Filters, upload_id: int | None = None) -> pd.DataFrame:
         if val and val != "All":
             clauses.append(f"{col} = %s")
             args.append(val)
+
+    # Month of the index result reaching the facility - the same clock the
+    # quarters and the monthly trends use, so a month selected here lines up
+    # with the point you clicked on a chart. Compared as text on the stored
+    # date so no function wraps the column and the upload_id index still works.
+    if f.month and f.month != "All":
+        clauses.append("to_char(recv_date, 'YYYY-MM') = %s")
+        args.append(f.month)
 
     with pool.connection() as c:
         uid = upload_id if upload_id is not None else _current_upload(c)
@@ -1272,6 +1286,46 @@ def overview(u: U, f: F):
                             for a, b in zip(st_grp["resupp"], st_grp["post"])]
     by_state = _json_safe(st_grp.sort_values("n", ascending=False))
 
+    # ── EAC uptake by month ───────────────────────────────────────────
+    # The state bars answer "where"; they cannot answer "is it moving". A
+    # programme at 92% that was 95% in January is a different conversation
+    # from one that was 88%, and the bars read identically in both cases.
+    # Dated on the index result reaching the facility, the same clock as the
+    # quarters and the month filter, so a dip here can be clicked into.
+    up_m = df.dropna(subset=["recv_date"]).copy()
+    up_m["recv_date"] = pd.to_datetime(up_m["recv_date"], errors="coerce")
+    up_m["_m"] = up_m["recv_date"].dt.to_period("M").dt.start_time
+    mg = (up_m.groupby("_m")
+          .agg(n=("sn", "size"), eac1=("eac1", "sum")).reset_index()
+          .sort_values("_m"))
+    # A rate on a handful of episodes swings on one client and reads as a
+    # collapse. Below 20 the count is still shown, the rate is not.
+    MIN_M = 20
+    # MATURATION. Commencing EAC takes time after the index result - median 25
+    # days on this snapshot, p90 168 - so a recent month has not finished
+    # happening. Uptake by month tracks month AGE almost exactly: 91% at 136
+    # days old, 70% at 75, 44% at 14. Drawn plainly that is a collapse from 95%
+    # to 37% and would be read as one. It is arithmetic.
+    #
+    # A month is provisional until p90 of the observed time-to-EAC has elapsed
+    # since its last episode. Taken from the data rather than fixed, so it
+    # follows the programme instead of a number someone typed once.
+    tte = pd.to_numeric(df.get("time_to_eac"), errors="coerce")
+    tte = tte[tte.notna() & (tte >= 0)]
+    mature_days = int(tte.quantile(0.9)) if len(tte) else 90
+    asof = pd.Timestamp(up["as_of"])
+    last_seen = up_m.groupby("_m")["recv_date"].max().reindex(mg["_m"])
+    eac_monthly = {
+        "months": [d.strftime("%Y-%m-%d") for d in mg["_m"]],
+        "n": [int(x) for x in mg["n"]],
+        "pct": [rate(int(a), int(b)) if int(b) >= MIN_M else None
+                for a, b in zip(mg["eac1"], mg["n"])],
+        "mature": [bool(pd.notna(d) and (asof - d).days >= mature_days)
+                   for d in last_seen],
+        "min_n": MIN_M,
+        "mature_days": mature_days,
+    }
+
     # ── facility league ───────────────────────────────────────────────
     MIN_VOL = 20   # completion rates on <20 episodes are noise, not signal
     fac = (df.groupby("facility")
@@ -1333,6 +1387,7 @@ def overview(u: U, f: F):
         "demo": demo,
         "disagg": disagg,
         "by_state": by_state,
+        "eac_monthly": eac_monthly,
         "resupp_trend": resupp_trend,
         "sources": up["sources"],
         "filename": up["filename"],
@@ -1369,6 +1424,10 @@ def get_filters(u: U):
                "facilities": distinct("facility"),
                "age_bands": distinct("age_band", drop_unknown=True),
                "quarters": distinct("enrol_quarter"), "fys": distinct("fy"),
+               "months": [r["m"] for r in c.execute(
+                   "SELECT DISTINCT to_char(recv_date,'YYYY-MM') AS m FROM cohort "
+                   "WHERE upload_id=%s AND recv_date IS NOT NULL "
+                   "ORDER BY m DESC", (uid,)).fetchall()],
                "plans": distinct("treatment_plan"),
                # lets the UI cascade LGA/facility options off the chosen state
                "lga_state": by_state("lga"),

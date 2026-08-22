@@ -199,11 +199,14 @@ th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle
    appears once it is stuck, so it separates from the content passing beneath
    without drawing a line across the page when it is at rest.
 
-   Not sticky on a short screen: below 640px tall it would eat a third of the
-   viewport, which costs more than it explains. */
+   Not sticky on a very short screen, where it would eat too much of the view.
+   The threshold is 520px, not 640: a maximised browser on a 1366x768 laptop
+   reports around 570-600px of viewport once its own chrome is taken off, and
+   at 640 the bar quietly stopped sticking for exactly the people most likely
+   to be scrolling a long page. The bar is roughly 70px - 13% at 520. */
 .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
-@media (min-height:640px){
+@media (min-height:520px){
   .filters{position:sticky;top:0;z-index:30;
     /* The card background is already opaque; the shadow is what stops content
        appearing to sit ON the bar as it scrolls beneath. No JS toggle - a
@@ -707,6 +710,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
   <div class="filters" id="filters">
     <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
     <div class="f"><label>Enrolment quarter</label><select id="fQtr"><option>All</option></select></div>
+    <div class="f"><label title="Month the index result reached the facility">Month</label><select id="fMonth"><option>All</option></select></div>
     <div class="f"><label>State</label><select id="fState"><option>All</option></select></div>
     <div class="f"><label title="LGA of the treating facility">LGA (service)</label><select id="fLga"><option>All</option></select></div>
     <div class="f"><label title="Where the client lives — the unit for transmission and outreach targeting">LGA (residence)</label><select id="fLgaRes"><option>All</option></select></div>
@@ -1337,6 +1341,7 @@ function qs(extra){
   add('fy','#fFy'); add('quarter','#fQtr'); add('state','#fState'); add('lga','#fLga');
   add('lga_res','#fLgaRes');
   add('facility','#fFac'); add('sex','#fSex'); add('age_band','#fAge'); add('plan','#fPlan');
+  add('month','#fMonth');
   if(extra) Object.keys(extra).forEach(k=>p.set(k,extra[k]));
   const s=p.toString(); return s?'?'+s:'';
 }
@@ -1376,6 +1381,13 @@ async function boot(){
         +(vals||[]).map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
       if([].slice.call(s.options).some(o=>o.value===cur)) s.value=cur;};
     fill('#fFy',f.fys); fill('#fState',f.states);
+    // Months come back newest first as YYYY-MM. Shown as 'Aug 2026' but the
+    // VALUE stays YYYY-MM, which is what the API filters on - the option text
+    // is for reading, never for matching.
+    (function(){const el=$('#fMonth'); if(!el) return;
+      el.innerHTML='<option value="All">All</option>'
+        +(f.months||[]).map(m=>'<option value="'+esc(m)+'">'+fmtMonYY(m+'-01')+'</option>').join('');
+    })();
     fill('#fAge',f.age_bands); fill('#fPlan',f.plans);
     // enrolment quarters belong to a fiscal year (FY26Q1...), so only offer the
     // quarters inside the selected FY - FY25Q4 must not show under FY26.
@@ -1622,7 +1634,57 @@ function overview(o){
             +'<span class="st"><i style="width:'+Math.min(p,100).toFixed(1)+'%;background:'+C.other+'"></i></span>'
             +'<span class="sv">'+pctOrNA(s.eac1_pct)+'<em>'+fmt(s.n)+'</em></span></div>';
         }).join('')+'</div>'
-      : '<div class="empty">No state breakdown for this filter.</div>');
+      : '<div class="empty">No state breakdown for this filter.</div>')
+    +(function(){
+       // The bars say WHERE uptake sits; they cannot say whether it is moving.
+       // 92% that was 95% in January is a different conversation from 92% that
+       // was 88%, and the bars are identical in both.
+       const m=o.eac_monthly;
+       if(!m||!m.months||!m.months.length) return '';
+       return '<div class="disagg-h" style="margin-top:16px">EAC uptake by month</div>'
+         +'<div class="chart-box" style="height:132px"><canvas id="cEacMo"></canvas></div>'
+         +'<div class="foot" style="margin-top:6px">Dated by index result received at '
+         +'facility, the same clock as the quarters and the Month filter. '
+         +'<b>Dashed, hollow points are provisional</b> &mdash; commencing EAC takes time '
+         +'after the index result (median 25 days, 90th percentile '+(m.mature_days||90)
+         +'), so a recent month has not finished happening and its rate will rise. '
+         +'Months with fewer than '+m.min_n+' episodes show no rate at all: a percentage '
+         +'on a handful of clients swings on one of them.</div>';
+     })();
+
+  (function(){
+    const m=o.eac_monthly;
+    if(!m||!m.months||!m.months.length||!document.getElementById('cEacMo')) return;
+    // Not zero-based. Uptake lives between about 85 and 100, and a 0-100 axis
+    // flattens the whole series into one straight line at the top - which is
+    // exactly the chart that hides a five-point fall.
+    const vals=m.pct.filter(v=>v!=null);
+    const lo=Math.max(0,Math.floor((Math.min.apply(null,vals)-4)/5)*5);
+    // A month is provisional until enough time has passed for its clients to
+    // have started EAC. Those points are dashed and hollow, so the eye reads
+    // them as unfinished rather than as a fall - the same device the monthly
+    // arrivals trend already uses for its partial last month.
+    const MG=cssVar('--ink-3'), mat=m.mature||m.months.map(()=>true);
+    const prov=i=>!mat[i];
+    chart('cEacMo',{type:'line',
+      data:{labels:m.months.map(fmtMonYY),
+        datasets:[{data:m.pct,borderColor:'#DC2626',backgroundColor:'rgba(220,38,38,.10)',
+          fill:true,tension:.3,borderWidth:2,spanGaps:false,
+          pointRadius:3.5,
+          pointBackgroundColor:c=>prov(c.dataIndex)?'#fff':'#DC2626',
+          pointBorderColor:c=>prov(c.dataIndex)?MG:'#DC2626',
+          pointBorderWidth:c=>prov(c.dataIndex)?2:1,
+          segment:{borderColor:c=>prov(c.p1DataIndex)?MG:'#DC2626',
+                   borderDash:c=>prov(c.p1DataIndex)?[6,4]:undefined}}]},
+      options:{plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:i=>i.parsed.y==null?'too few episodes to rate'
+          :i.parsed.y+'% commenced EAC ('+fmt(m.n[i.dataIndex])+' episodes)'
+            +(prov(i.dataIndex)?' — still maturing, will rise':'')}}},
+        scales:{x:Object.assign({},gx,{grid:{display:false}}),
+          y:Object.assign({},gy,{min:lo,max:100,grid:{display:false},
+            border:{display:false},
+            ticks:{callback:v=>v+'%',font:{size:10}}})}}});
+  })();
 
   chart('cMF',{type:'doughnut',data:{labels:mfLabels,
     datasets:[{data:mfData,backgroundColor:mfCols,borderWidth:0}]},
