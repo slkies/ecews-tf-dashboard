@@ -824,7 +824,13 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="panel">
       <div class="panel-h"><div class="eyebrow">When</div>
         <h2>Timing &mdash; when they entered and how long they wait</h2>
-        <p>Dated by result received at facility. Time to EAC is measured from the index
+        <p><strong>Entered</strong> = an unsuppressed result reached the facility.
+           <strong>Exited</strong> = the follow-up result came back. The gap between the two
+           lines is the backlog: a month where arrivals sit above exits is one where the
+           queue grew. The box below is the wait between those two events &mdash; median,
+           middle 50% in the bar, Tukey whiskers; clients still waiting have no end date
+           and are excluded from it rather than counted as zero.
+           Time to EAC is measured from the index
            result; months unsuppressed runs from the index VL to the line-list date.
            The final month on the trend is <strong>partial</strong> (dashed) &mdash; the line list
            was drawn mid-month, so it is not a real drop. <strong>Note:</strong> the long
@@ -2021,26 +2027,57 @@ function dpRender(p){
     const cv=$('#careView'); if(cv) cv.onclick=()=>loadClients('exited_no_vl');
   } else { $('#dpCare').innerHTML=''; }
 
+  // The wait, as a horizontal box, using the Time-metrics component. A
+  // duration whose maximum is 1,415 days needs a plot that survives outliers:
+  // the median is read first and the spread second, where a mean would simply
+  // be dragged by the tail.
+  const wt=wn.wait;
+  const waitBox=!wt?'':(function(){
+    const ax=(Math.max(wt.whi,wt.median)*1.08)||1, X=n=>(n/ax*100).toFixed(1);
+    return '<div class="box-row" style="margin-top:4px">'
+      +'<div class="box-lbl">Index result → follow-up result'
+      +'<em>days · n='+fmt(wt.n)
+      +(wt.pending?' · '+fmt(wt.pending)+' still waiting':'')+'</em></div>'
+      +'<div class="box-plot">'
+      +'<div class="bx-whisk" style="left:'+X(wt.wlo)+'%;width:'+(X(wt.whi)-X(wt.wlo)).toFixed(1)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+X(wt.wlo)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+X(wt.whi)+'%"></div>'
+      +'<div class="bx-box" style="left:'+X(wt.q1)+'%;width:'
+        +Math.max(0.6,X(wt.q3)-X(wt.q1)).toFixed(1)+'%;background:#2a6f97"></div>'
+      +'<div class="bx-med" style="left:'+X(wt.median)+'%"></div>'
+      +'</div><div class="box-val">'+fmt(Math.round(wt.median))+'<em>median days</em></div></div>';
+  })();
   const ttfv=wn.ttfv_months, ttfu=wn.ttfu_years;
-  $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'
+  $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'+waitBox
     +grid([card('Enrolment quarter',wn.quarter,WHEN),
       card('Months unsuppressed',wn.months_unsupp,WHEN),
       card('ART start → first VL'+(ttfv?' · median '+ttfv.median+' mo':''),
         wn.time_to_first_vl,WHEN),
       card('ART start → first unsuppressed VL'+(ttfu?' · median '+ttfu.median+' yr':''),
         wn.yrs_to_unsupp,WHEN)]);
-  const mo=wn.monthly||{months:[],n:[]};
+  const mo=wn.monthly||{months:[],n:[],exits:[]};
   // the line list is drawn mid-month, so the final month is partial - dash and
   // grey it exactly as the Overview trend does rather than let it read as a crash.
   const mLast=(mo.months||[]).length-1, MGREY=cssVar('--ink-3');
   chart('dpTrend',{type:'line',data:{labels:(mo.months||[]).map(fmtMonYY),
-    datasets:[{label:'New unsuppressed results',data:mo.n,borderColor:WHEN,
+    datasets:[{label:'Entered — unsuppressed result',data:mo.n,borderColor:WHEN,
       backgroundColor:'rgba(42,111,151,.12)',fill:true,tension:.3,pointRadius:2.5,
       pointBackgroundColor:WHEN,borderWidth:2.5,
       segment:{borderColor:c=>c.p1DataIndex===mLast?MGREY:WHEN,
+               borderDash:c=>c.p1DataIndex===mLast?[6,4]:undefined}},
+      // Exits: the follow-up result coming back. Plotted on the same axis so
+      // the gap between the two lines IS the backlog - a month where arrivals
+      // sit above exits is one where the queue grew.
+      {label:'Exited — follow-up result returned',data:mo.exits||[],
+      borderColor:'var(--green)',backgroundColor:'transparent',fill:false,
+      tension:.3,pointRadius:2.5,pointBackgroundColor:'var(--green)',borderWidth:2,
+      segment:{borderColor:c=>c.p1DataIndex===mLast?MGREY:cssVar('--green'),
                borderDash:c=>c.p1DataIndex===mLast?[6,4]:undefined}}]},
-    options:{plugins:{legend:{display:false},
-      tooltip:{callbacks:{label:i=>fmt(i.parsed.y)+' episodes entered the cohort'
+    options:{plugins:{legend:{display:true,position:'bottom',
+        labels:{boxWidth:10,boxHeight:10,font:{size:10},usePointStyle:true,
+                pointStyle:'line'}},
+      tooltip:{callbacks:{label:i=>fmt(i.parsed.y)+' episodes '
+        +(i.datasetIndex===0?'entered':'exited')
         +(i.dataIndex===mLast?' (partial month)':'')}}},
       scales:{x:Object.assign({},gx,{grid:{display:false}}),
         y:Object.assign({},gy,{grid:{display:false},border:{display:false},beginAtZero:true,

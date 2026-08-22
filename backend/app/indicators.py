@@ -1057,8 +1057,37 @@ def profile(df: pd.DataFrame) -> dict:
     if len(mg):
         mg = mg.reindex(pd.date_range(mg.index.min(), mg.index.max(), freq="MS"),
                         fill_value=0)
+    # ...and monthly EXITS, dated by when the follow-up result reached the
+    # facility. An episode enters the cohort on an unsuppressed result and
+    # leaves it when the repeat result comes back, so plotting only arrivals
+    # answers half the question the panel asks. Reindexed onto the same month
+    # axis as arrivals, so the two series are comparable month for month.
+    xser = df.dropna(subset=["fu_date"]).copy()
+    xser["fu_date"] = pd.to_datetime(xser["fu_date"], errors="coerce")
+    xg = xser.groupby(xser["fu_date"].dt.to_period("M").dt.start_time).size()
     monthly = {"months": [d.strftime("%Y-%m-%d") for d in mg.index],
-               "n": [int(x) for x in mg.values]}
+               "n": [int(x) for x in mg.values],
+               "exits": [int(xg.get(d, 0)) for d in mg.index]}
+
+    # The wait itself: index result received -> follow-up result received.
+    # Only episodes that have actually exited; the ones still waiting have no
+    # end date, and including them as zero would halve the median.
+    _w = (pd.to_datetime(_col(df, "fu_date"), errors="coerce")
+          - pd.to_datetime(_col(df, "recv_date"), errors="coerce")).dt.days
+    _w = _w[_w.notna() & (_w >= 0)]
+    if len(_w):
+        _q1, _q3 = float(_w.quantile(.25)), float(_w.quantile(.75))
+        _iqr = _q3 - _q1
+        wait = {"n": int(_w.size), "median": round(float(_w.median()), 1),
+                "q1": round(_q1, 1), "q3": round(_q3, 1),
+                "mean": round(float(_w.mean()), 1),
+                "min": round(float(_w.min()), 1), "max": round(float(_w.max()), 1),
+                "wlo": round(max(float(_w.min()), _q1 - 1.5 * _iqr), 1),
+                "whi": round(min(float(_w.max()), _q3 + 1.5 * _iqr), 1),
+                "pending": int(df["awaiting_result"].fillna(False).sum())
+                           if "awaiting_result" in df else 0}
+    else:
+        wait = None
 
     return {
         "n": n, "clients": int(df["sn"].nunique()),
@@ -1105,6 +1134,7 @@ def profile(df: pd.DataFrame) -> dict:
         },
         "when": {
             "monthly": monthly,
+            "wait": wait,
             "quarter": _dist(_col(df, "enrol_quarter"), qs),
             # ART start -> first-ever VL (the 6-month guideline clock) and
             # ART start -> first UNSUPPRESSED VL (how long treatment held).
