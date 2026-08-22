@@ -68,6 +68,8 @@ EAC_PII_COLUMNS = ["DOB"]
 KEY = "S/N"
 VAULT_NEW = "Datim_PEPID"      # current ordering, matches the line list
 VAULT_OLD = "PEPID_Datim"      # retained for historical continuity
+VAULT_PEP = "PEPID"            # the bare PEPID, so a facility can map S/N
+                               # to their own list without splitting a key
 LEGACY = "S/N_legacy"          # the pre-migration key - see migrate_keys()
 
 
@@ -152,6 +154,32 @@ def new_sn() -> str:
     return secrets.token_hex(16)
 
 
+def split_key(pep_datim: str | None, datim_pep: str | None) -> str | None:
+    """Recover the bare PEPID from the two concatenated orderings.
+
+    The vault stores PEPID+DATIM and DATIM+PEPID with no separator, so neither
+    can be split on its own - there is nothing to split ON. Together they can:
+    a cut of PEPID_Datim whose halves, swapped, rebuild Datim_PEPID is the
+    boundary. A periodic string could satisfy more than one cut; real DATIM
+    codes and PEPIDs are not periodic, and the earliest is taken so the result
+    is at least deterministic.
+
+        XXX00000000AAA0aaAAaAA  +  AAA0aaAAaAAXXX00000000
+        cut after 11 -> 'XXX00000000' + 'AAA0aaAAaAA', swapped -> matches
+
+    Returns None where the two disagree, which is a vault that needs looking
+    at rather than a guess worth making.
+    """
+    a = (pep_datim or "").strip()
+    b = (datim_pep or "").strip()
+    if not a or not b or len(a) != len(b):
+        return None
+    for i in range(1, len(a)):
+        if a[i:] + a[:i] == b:
+            return a[:i]
+    return None
+
+
 # ── vault ─────────────────────────────────────────────────────────────
 class Vault:
     """The identity mapping. Read, extended, written back with a backup."""
@@ -185,6 +213,27 @@ class Vault:
                 "guess which mapping is right.")
         self.lookup = dict(zip(self.df["_k"], self.df[KEY]))
         self.added: list[dict] = []
+        # The bare PEPID, so a facility can join S/N straight onto their own
+        # list. Both stored orderings are concatenations with no separator, so
+        # neither can be split alone - but together they determine the cut.
+        # Backfilled once; afterwards the column is simply carried.
+        self.backfilled = 0
+        if VAULT_PEP not in self.df.columns:
+            self.df[VAULT_PEP] = None
+        blank = self.df[VAULT_PEP].isna() |             self.df[VAULT_PEP].astype("string").str.strip().eq("")
+        if blank.any() and VAULT_OLD in self.df.columns:
+            filled = [split_key(a, b) for a, b in
+                      zip(self.df.loc[blank, VAULT_OLD],
+                          self.df.loc[blank, VAULT_NEW])]
+            self.df.loc[blank, VAULT_PEP] = filled
+            self.backfilled = sum(1 for v in filled if v)
+            unresolved = sum(1 for v in filled if not v)
+            log.info("vault: %s PEPID(s) recovered from the stored key pair",
+                     f"{self.backfilled:,}")
+            if unresolved:
+                log.warning("vault: %s row(s) where the two key orderings do "
+                            "not agree, so the PEPID cannot be recovered - "
+                            "left blank rather than guessed", f"{unresolved:,}")
         log.info("vault: %s existing mappings", f"{len(self.lookup):,}")
 
     def resolve(self, datim: pd.Series, pep: pd.Series) -> pd.Series:
@@ -202,10 +251,15 @@ class Vault:
         # who a key belongs to; leaving the legacy column blank on new rows
         # would make it progressively less usable for anyone reading it.
         rev = dict(zip(k[missing], norm_key(build_key(pep, datim))[missing]))
+        # The bare PEPID is already to hand here - no need to split it back
+        # out of the key later.
+        pep_of = dict(zip(k[missing],
+                          pep.astype("string").str.strip()[missing]))
         for key in k[missing].dropna().unique():
             sn = new_sn()
             self.lookup[key] = sn
-            self.added.append({VAULT_NEW: key, VAULT_OLD: rev.get(key), KEY: sn})
+            self.added.append({VAULT_NEW: key, VAULT_OLD: rev.get(key),
+                               VAULT_PEP: pep_of.get(key), KEY: sn})
         if len(self.added):
             out = k.map(self.lookup)
             log.info("vault: %s new client(s) assigned a key", f"{len(self.added):,}")
@@ -268,7 +322,10 @@ class Vault:
         return n
 
     def save(self, backup_dir: Path) -> None:
-        if not self.added:
+        # Backfilling the PEPID is a change worth persisting even on a run that
+        # adds no clients - otherwise it would be recomputed every week and
+        # never actually reach the file the team opens.
+        if not self.added and not self.backfilled:
             log.info("vault: unchanged, nothing to write")
             return
         backup_dir.mkdir(parents=True, exist_ok=True)
