@@ -192,8 +192,25 @@ th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle
 /* One row. The selects share the space equally and shrink together instead of
    each claiming a fixed 132px and wrapping - the facility list in particular
    was forcing a very wide control. */
+/* Sticks to the top of the scroll container. A dashboard is read by scrolling
+   down a long page, and by the time you reach a facility table you can no
+   longer see which state you filtered to - so a number gets misread as the
+   programme total. The bar carries an opaque background and a shadow that only
+   appears once it is stuck, so it separates from the content passing beneath
+   without drawing a line across the page when it is at rest.
+
+   Not sticky on a short screen: below 640px tall it would eat a third of the
+   viewport, which costs more than it explains. */
 .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
+@media (min-height:640px){
+  .filters{position:sticky;top:0;z-index:30;
+    /* The card background is already opaque; the shadow is what stops content
+       appearing to sit ON the bar as it scrolls beneath. No JS toggle - a
+       class switched on scroll is one more thing to break, and the shadow is
+       unobtrusive enough to carry at rest. */
+    box-shadow:0 6px 16px -10px rgba(0,0,0,.30)}
+}
 /* 96px basis: the eight controls sit on ONE row wherever there is room and
    share the surplus equally. Below roughly 1100px they wrap rather than
    squeezing on - at 960 a nowrap row rendered 60px selects, too narrow to read

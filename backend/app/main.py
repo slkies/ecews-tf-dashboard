@@ -597,7 +597,8 @@ def _json_safe(df: pd.DataFrame) -> list[dict]:
     return df.astype(object).where(pd.notna(df), None).to_dict("records")
 
 
-def _clients(u: dict, f: Filters, flag: str | None, limit: int) -> pd.DataFrame:
+def _clients(u: dict, f: Filters, flag: str | None, limit: int,
+             active_only: bool = False) -> pd.DataFrame:
     df = _load(u, f)
     if df.empty:
         return df
@@ -605,6 +606,14 @@ def _clients(u: dict, f: Filters, flag: str | None, limit: int) -> pd.DataFrame:
         if flag not in FLAGS:
             raise HTTPException(400, f"Unknown flag. Try: {', '.join(FLAGS)}")
         df = df[FLAGS[flag](df)]
+    if active_only and "art_status" in df.columns:
+        # Only clients a team can actually act on. Half the treatment list is
+        # not: 18% LTFU, 10% transferred out, 10% discontinued care, 5% died,
+        # plus "could not verify client" and "duplicate record". A worklist
+        # containing them spends the team's time on people they cannot reach,
+        # and every wasted call makes the next list less likely to be worked.
+        df = df[df["art_status"].astype("string").str.strip()
+                .str.casefold().eq("active")]
     return df[CLIENT_COLS].head(limit)
 
 
@@ -634,13 +643,22 @@ def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
                detail=f"role={u['role']}")
         raise HTTPException(403, "Exporting the line list requires an analyst "
                                  "or administrator account.")
-    df = _clients(u, f, flag, 100_000)
+    # An export is a worklist. Clients who have died, transferred out, been
+    # lost to follow-up or discontinued care cannot be actioned, so they are
+    # excluded here rather than left for the team to discover one call at a
+    # time. The on-screen tables are NOT filtered this way on purpose: their
+    # counts have to reconcile with the cascade, which is an epidemiological
+    # account of everyone, not a list of who to ring.
+    everyone = _clients(u, f, flag, 100_000)
+    df = _clients(u, f, flag, 100_000, active_only=True)
+    dropped = len(everyone) - len(df)
     _audit("export.csv", user_id=u["id"], email=u["email"], request=request,
-           detail=_access_note(f, flag, len(df)))
+           detail=f"{_access_note(f, flag, len(df))}; "
+                  f"{dropped} non-active excluded")
     buf = io.StringIO()
     df.to_csv(buf, index=False)
     buf.seek(0)
-    name = f"ecews_tf_{flag or 'cohort'}_{dt.date.today()}.csv"
+    name = f"ecews_tf_{flag or 'cohort'}_active_{dt.date.today()}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{name}"'})
