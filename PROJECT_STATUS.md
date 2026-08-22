@@ -218,6 +218,31 @@ blank the page. (This replaced the recurring "X is not defined" full-page crash.
 
 ---
 
+## 5a. Pending development (built, withdrawn, to return to)
+
+**Entry/exit flow and the wait box on the Deep dive timing panel.** Built on
+19–22 Aug and withdrawn the same week. Both depend on `fu_date`, which was NULL
+for every episode until the fix in the same batch, so on any snapshot ingested
+before it the exits line reads flat zero and the box does not draw at all —
+which is what Es saw, and it looks like a defect rather than a stale snapshot.
+
+The data layer stays: `fu_date` is now derived from whichever source supplied
+the follow-up value, and the overview payload still carries `monthly.exits` and
+`when.wait`. Nothing renders them. When we return, a snapshot ingested after
+`5191344` populates both, and the figures were: median wait **200 days**, IQR
+155–281, n=1,877, with 273 still waiting.
+
+The box plot is the right form for the wait — a duration whose maximum is 1,415
+days needs a median and a spread, not a mean. That was built and never seen,
+for the same reason.
+
+**EAC uptake by month.** Also withdrawn. The month filter it was built
+alongside is kept. The maturation finding it surfaced is worth keeping even
+though the chart is gone: uptake by month tracks month AGE almost exactly (91%
+at 136 days old, 70% at 75, 44% at 14), because commencing EAC takes a median
+25 days and p90 168. Any future version of this chart has to mark recent months
+provisional or it will report a collapse from 95% to 37% that is arithmetic.
+
 ## 5b. Open questions with the HI team
 
 1. **`First_High_VL_Value` does not mean what its name says.** It has a hard floor

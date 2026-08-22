@@ -828,13 +828,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     <div class="panel">
       <div class="panel-h"><div class="eyebrow">When</div>
         <h2>Timing &mdash; when they entered and how long they wait</h2>
-        <p><strong>Entered</strong> = an unsuppressed result reached the facility.
-           <strong>Exited</strong> = the follow-up result came back. The gap between the two
-           lines is the backlog: a month where arrivals sit above exits is one where the
-           queue grew. The box below is the wait between those two events &mdash; median,
-           middle 50% in the bar, Tukey whiskers; clients still waiting have no end date
-           and are excluded from it rather than counted as zero.
-           Time to EAC is measured from the index
+        <p>Dated by result received at facility. Time to EAC is measured from the index
            result; months unsuppressed runs from the index VL to the line-list date.
            The final month on the trend is <strong>partial</strong> (dashed) &mdash; the line list
            was drawn mid-month, so it is not a real drop. <strong>Note:</strong> the long
@@ -1634,57 +1628,7 @@ function overview(o){
             +'<span class="st"><i style="width:'+Math.min(p,100).toFixed(1)+'%;background:'+C.other+'"></i></span>'
             +'<span class="sv">'+pctOrNA(s.eac1_pct)+'<em>'+fmt(s.n)+'</em></span></div>';
         }).join('')+'</div>'
-      : '<div class="empty">No state breakdown for this filter.</div>')
-    +(function(){
-       // The bars say WHERE uptake sits; they cannot say whether it is moving.
-       // 92% that was 95% in January is a different conversation from 92% that
-       // was 88%, and the bars are identical in both.
-       const m=o.eac_monthly;
-       if(!m||!m.months||!m.months.length) return '';
-       return '<div class="disagg-h" style="margin-top:16px">EAC uptake by month</div>'
-         +'<div class="chart-box" style="height:132px"><canvas id="cEacMo"></canvas></div>'
-         +'<div class="foot" style="margin-top:6px">Dated by index result received at '
-         +'facility, the same clock as the quarters and the Month filter. '
-         +'<b>Dashed, hollow points are provisional</b> &mdash; commencing EAC takes time '
-         +'after the index result (median 25 days, 90th percentile '+(m.mature_days||90)
-         +'), so a recent month has not finished happening and its rate will rise. '
-         +'Months with fewer than '+m.min_n+' episodes show no rate at all: a percentage '
-         +'on a handful of clients swings on one of them.</div>';
-     })();
-
-  (function(){
-    const m=o.eac_monthly;
-    if(!m||!m.months||!m.months.length||!document.getElementById('cEacMo')) return;
-    // Not zero-based. Uptake lives between about 85 and 100, and a 0-100 axis
-    // flattens the whole series into one straight line at the top - which is
-    // exactly the chart that hides a five-point fall.
-    const vals=m.pct.filter(v=>v!=null);
-    const lo=Math.max(0,Math.floor((Math.min.apply(null,vals)-4)/5)*5);
-    // A month is provisional until enough time has passed for its clients to
-    // have started EAC. Those points are dashed and hollow, so the eye reads
-    // them as unfinished rather than as a fall - the same device the monthly
-    // arrivals trend already uses for its partial last month.
-    const MG=cssVar('--ink-3'), mat=m.mature||m.months.map(()=>true);
-    const prov=i=>!mat[i];
-    chart('cEacMo',{type:'line',
-      data:{labels:m.months.map(fmtMonYY),
-        datasets:[{data:m.pct,borderColor:'#DC2626',backgroundColor:'rgba(220,38,38,.10)',
-          fill:true,tension:.3,borderWidth:2,spanGaps:false,
-          pointRadius:3.5,
-          pointBackgroundColor:c=>prov(c.dataIndex)?'#fff':'#DC2626',
-          pointBorderColor:c=>prov(c.dataIndex)?MG:'#DC2626',
-          pointBorderWidth:c=>prov(c.dataIndex)?2:1,
-          segment:{borderColor:c=>prov(c.p1DataIndex)?MG:'#DC2626',
-                   borderDash:c=>prov(c.p1DataIndex)?[6,4]:undefined}}]},
-      options:{plugins:{legend:{display:false},
-        tooltip:{callbacks:{label:i=>i.parsed.y==null?'too few episodes to rate'
-          :i.parsed.y+'% commenced EAC ('+fmt(m.n[i.dataIndex])+' episodes)'
-            +(prov(i.dataIndex)?' — still maturing, will rise':'')}}},
-        scales:{x:Object.assign({},gx,{grid:{display:false}}),
-          y:Object.assign({},gy,{min:lo,max:100,grid:{display:false},
-            border:{display:false},
-            ticks:{callback:v=>v+'%',font:{size:10}}})}}});
-  })();
+      : '<div class="empty">No state breakdown for this filter.</div>');
 
   chart('cMF',{type:'doughnut',data:{labels:mfLabels,
     datasets:[{data:mfData,backgroundColor:mfCols,borderWidth:0}]},
@@ -2089,57 +2033,26 @@ function dpRender(p){
     const cv=$('#careView'); if(cv) cv.onclick=()=>loadClients('exited_no_vl');
   } else { $('#dpCare').innerHTML=''; }
 
-  // The wait, as a horizontal box, using the Time-metrics component. A
-  // duration whose maximum is 1,415 days needs a plot that survives outliers:
-  // the median is read first and the spread second, where a mean would simply
-  // be dragged by the tail.
-  const wait=wn.wait;
-  const waitBox=!wait?'':(function(){
-    const ax=(Math.max(wait.whi,wait.median)*1.08)||1, X=n=>(n/ax*100).toFixed(1);
-    return '<div class="box-row" style="margin-top:4px">'
-      +'<div class="box-lbl">Index result → follow-up result'
-      +'<em>days · n='+fmt(wait.n)
-      +(wait.pending?' · '+fmt(wait.pending)+' still waiting':'')+'</em></div>'
-      +'<div class="box-plot">'
-      +'<div class="bx-whisk" style="left:'+X(wait.wlo)+'%;width:'+(X(wait.whi)-X(wait.wlo)).toFixed(1)+'%"></div>'
-      +'<div class="bx-cap" style="left:'+X(wait.wlo)+'%"></div>'
-      +'<div class="bx-cap" style="left:'+X(wait.whi)+'%"></div>'
-      +'<div class="bx-box" style="left:'+X(wait.q1)+'%;width:'
-        +Math.max(0.6,X(wait.q3)-X(wait.q1)).toFixed(1)+'%;background:#2a6f97"></div>'
-      +'<div class="bx-med" style="left:'+X(wait.median)+'%"></div>'
-      +'</div><div class="box-val">'+fmt(Math.round(wait.median))+'<em>median days</em></div></div>';
-  })();
   const ttfv=wn.ttfv_months, ttfu=wn.ttfu_years;
-  $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'+waitBox
+  $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'
     +grid([card('Enrolment quarter',wn.quarter,WHEN),
       card('Months unsuppressed',wn.months_unsupp,WHEN),
       card('ART start → first VL'+(ttfv?' · median '+ttfv.median+' mo':''),
         wn.time_to_first_vl,WHEN),
       card('ART start → first unsuppressed VL'+(ttfu?' · median '+ttfu.median+' yr':''),
         wn.yrs_to_unsupp,WHEN)]);
-  const mo=wn.monthly||{months:[],n:[],exits:[]};
+  const mo=wn.monthly||{months:[],n:[]};
   // the line list is drawn mid-month, so the final month is partial - dash and
   // grey it exactly as the Overview trend does rather than let it read as a crash.
   const mLast=(mo.months||[]).length-1, MGREY=cssVar('--ink-3');
   chart('dpTrend',{type:'line',data:{labels:(mo.months||[]).map(fmtMonYY),
-    datasets:[{label:'Entered — unsuppressed result',data:mo.n,borderColor:WHEN,
+    datasets:[{label:'New unsuppressed results',data:mo.n,borderColor:WHEN,
       backgroundColor:'rgba(42,111,151,.12)',fill:true,tension:.3,pointRadius:2.5,
       pointBackgroundColor:WHEN,borderWidth:2.5,
       segment:{borderColor:c=>c.p1DataIndex===mLast?MGREY:WHEN,
-               borderDash:c=>c.p1DataIndex===mLast?[6,4]:undefined}},
-      // Exits: the follow-up result coming back. Plotted on the same axis so
-      // the gap between the two lines IS the backlog - a month where arrivals
-      // sit above exits is one where the queue grew.
-      {label:'Exited — follow-up result returned',data:mo.exits||[],
-      borderColor:'var(--green)',backgroundColor:'transparent',fill:false,
-      tension:.3,pointRadius:2.5,pointBackgroundColor:'var(--green)',borderWidth:2,
-      segment:{borderColor:c=>c.p1DataIndex===mLast?MGREY:cssVar('--green'),
                borderDash:c=>c.p1DataIndex===mLast?[6,4]:undefined}}]},
-    options:{plugins:{legend:{display:true,position:'bottom',
-        labels:{boxWidth:10,boxHeight:10,font:{size:10},usePointStyle:true,
-                pointStyle:'line'}},
-      tooltip:{callbacks:{label:i=>fmt(i.parsed.y)+' episodes '
-        +(i.datasetIndex===0?'entered':'exited')
+    options:{plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:i=>fmt(i.parsed.y)+' episodes entered the cohort'
         +(i.dataIndex===mLast?' (partial month)':'')}}},
       scales:{x:Object.assign({},gx,{grid:{display:false}}),
         y:Object.assign({},gy,{grid:{display:false},border:{display:false},beginAtZero:true,
