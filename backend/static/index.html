@@ -2031,21 +2031,21 @@ function dpRender(p){
   // duration whose maximum is 1,415 days needs a plot that survives outliers:
   // the median is read first and the spread second, where a mean would simply
   // be dragged by the tail.
-  const wt=wn.wait;
-  const waitBox=!wt?'':(function(){
-    const ax=(Math.max(wt.whi,wt.median)*1.08)||1, X=n=>(n/ax*100).toFixed(1);
+  const wait=wn.wait;
+  const waitBox=!wait?'':(function(){
+    const ax=(Math.max(wait.whi,wait.median)*1.08)||1, X=n=>(n/ax*100).toFixed(1);
     return '<div class="box-row" style="margin-top:4px">'
       +'<div class="box-lbl">Index result → follow-up result'
-      +'<em>days · n='+fmt(wt.n)
-      +(wt.pending?' · '+fmt(wt.pending)+' still waiting':'')+'</em></div>'
+      +'<em>days · n='+fmt(wait.n)
+      +(wait.pending?' · '+fmt(wait.pending)+' still waiting':'')+'</em></div>'
       +'<div class="box-plot">'
-      +'<div class="bx-whisk" style="left:'+X(wt.wlo)+'%;width:'+(X(wt.whi)-X(wt.wlo)).toFixed(1)+'%"></div>'
-      +'<div class="bx-cap" style="left:'+X(wt.wlo)+'%"></div>'
-      +'<div class="bx-cap" style="left:'+X(wt.whi)+'%"></div>'
-      +'<div class="bx-box" style="left:'+X(wt.q1)+'%;width:'
-        +Math.max(0.6,X(wt.q3)-X(wt.q1)).toFixed(1)+'%;background:#2a6f97"></div>'
-      +'<div class="bx-med" style="left:'+X(wt.median)+'%"></div>'
-      +'</div><div class="box-val">'+fmt(Math.round(wt.median))+'<em>median days</em></div></div>';
+      +'<div class="bx-whisk" style="left:'+X(wait.wlo)+'%;width:'+(X(wait.whi)-X(wait.wlo)).toFixed(1)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+X(wait.wlo)+'%"></div>'
+      +'<div class="bx-cap" style="left:'+X(wait.whi)+'%"></div>'
+      +'<div class="bx-box" style="left:'+X(wait.q1)+'%;width:'
+        +Math.max(0.6,X(wait.q3)-X(wait.q1)).toFixed(1)+'%;background:#2a6f97"></div>'
+      +'<div class="bx-med" style="left:'+X(wait.median)+'%"></div>'
+      +'</div><div class="box-val">'+fmt(Math.round(wait.median))+'<em>median days</em></div></div>';
   })();
   const ttfv=wn.ttfv_months, ttfu=wn.ttfu_years;
   $('#dpWhen').innerHTML='<div class="chart-box"><canvas id="dpTrend"></canvas></div>'+waitBox
