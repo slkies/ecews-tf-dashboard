@@ -588,6 +588,7 @@ def build_cohort(
     df = df.sort_values(["sn", "idx_samp"], kind="mergesort").reset_index(drop=True)
     nxt_vl = df.groupby("sn")["idx_vl"].shift(-1)
     nxt_samp = df.groupby("sn")["idx_samp"].shift(-1)
+    nxt_recv = df.groupby("sn")["recv_date"].shift(-1)
 
     cur_vl, cur_samp = df["current_vl"], df["current_vl_samp"]
     after = df["recv_date"]           # "any later VL" = sampled after the index
@@ -629,8 +630,11 @@ def build_cohort(
     # sufficient, because a repeat test that happens to return the identical
     # value still arrives with a new received-date.
     new_sample = (cur_samp.notna() & (cur_samp > after)).fillna(False).astype(bool)
-    cur_recv = (df["current_recv"] if "current_recv" in df
-                else pd.Series(pd.NaT, index=df.index))
+    # Coerced explicitly. The export carries this as TEXT ('2024-02-08
+    # 00:00:00'), and comparing a string to a Timestamp is always unequal - so
+    # the received-date half of the test would have fired for every row and
+    # declared every result back.
+    cur_recv = pd.to_datetime(df["current_recv"], errors="coerce")         if "current_recv" in df else pd.Series(pd.NaT, index=df.index)
     result_back = (
         (cur_vl.notna() & df["idx_vl"].notna() & (cur_vl != df["idx_vl"]))
         | (cur_recv.notna() & after.notna() & (cur_recv != after))
@@ -649,6 +653,21 @@ def build_cohort(
         np.where(take_nxt, nxt_samp, np.where(take_cur, cur_samp, pd.NaT)))
     df["fu_vl"] = np.where(take_nxt, nxt_vl,
                            np.where(take_cur & result_back, cur_vl, np.nan))
+    # WHEN the follow-up result reached the facility - the client's exit from
+    # the waiting state, and the far end of the wait the Deep dive reports.
+    #
+    # Dated from whichever source supplied the VALUE, which is the only way the
+    # two can be talking about the same test. It used to come from the EAC
+    # sheet's own Followup_VL_Result_Date, which is a different source's date
+    # for a possibly different test - and in practice never arrived at all,
+    # because that column is not on the merge whitelist, so fu_date was NULL
+    # for all 4,228 episodes in the current snapshot. Nothing failed; the
+    # column simply read as "not recorded" everywhere.
+    _nr = pd.to_datetime(nxt_recv, errors="coerce")
+    df["fu_date"] = pd.to_datetime(
+        np.where(take_nxt, _nr.values,
+                 np.where(take_cur & result_back, cur_recv.values,
+                          np.datetime64("NaT"))))
 
     df["post_sample"] = df["fu_samp"].notna()
     df["post_result"] = df["fu_vl"].notna()

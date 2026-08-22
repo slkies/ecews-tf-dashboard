@@ -491,7 +491,10 @@ VL_HISTORY = {
 def cohort_records(df: pd.DataFrame, upload_id: int) -> list[tuple]:
     d = df.copy()
     d["s1_date"] = pd.to_datetime(d.get("Session_1_Date"), errors="coerce")
-    d["fu_date"] = pd.to_datetime(d.get("Followup_VL_Result_Date"), errors="coerce")
+    # fu_date is set in build_cohort, from whichever source supplied fu_vl.
+    # It used to be read here from the EAC sheet, which is a different
+    # source's date for a possibly different test - and which never reached
+    # this frame anyway, so every row was NULL.
     for dest, names in VL_HISTORY.items():
         # First name that exists wins; the sample collection date stands in
         # where an export omits the result date.
