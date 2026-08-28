@@ -51,6 +51,24 @@ jobs:
         working-directory: backend
         run: python -m pytest tests/ -q
 
+  # index.html carries its script inline, so nothing ever parsed it. A duplicate
+  # `const` shipped once and took the whole page down: a SyntaxError anywhere in
+  # a block stops the block, so no handler bound and sign-in silently did
+  # nothing, while the page still rendered because the HTML and CSS were fine.
+  # Brace counting does not catch that. A parser does, in about a second.
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dashboard JavaScript parses
+        run: python backend/scripts/check_js.py
+
   guard:
     runs-on: ubuntu-latest
     steps:
