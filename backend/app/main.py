@@ -615,6 +615,15 @@ FLAGS = {
     "exited_no_vl": lambda d: ind.care_status(d).isin(ind._NEG_OUTCOMES)
                               & ~d["post_result"].fillna(False).astype(bool),
     "long_unsuppressed": lambda d: d["months_unsuppressed"] > 6,
+    # Still in care, unsuppressed for over a year, and never retested. Distinct
+    # from long_unsuppressed, which counts anyone past six months whether or not
+    # a repeat has since come back, and from exited_no_vl, which is about people
+    # who have left. These are reachable clients with nothing done since - 98 on
+    # the 15 August snapshot, 34 of them dating back beyond 2025.
+    "never_retested": lambda d: (
+        d["art_status"].astype("string").str.strip().str.casefold().eq("active")
+        & (d["months_unsuppressed"] > 12)
+        & ~d["post_result"].fillna(False).astype(bool)),
     "dtc_review": lambda d: d["dtc_review"],
     # two separate truncation cohorts - see indicators.build_cohort
     "trunc_pre": lambda d: d["eac_trunc_pre"],

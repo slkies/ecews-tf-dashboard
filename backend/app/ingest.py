@@ -283,6 +283,40 @@ def dq_checks(sheets: dict[str, pd.DataFrame], infos: list[SheetInfo],
         int(c["eac_prior_cycle"].sum()),
         "Session 1 precedes the VL that should have triggered it. Excluded from the "
         "cascade as a prior cycle (spec §2.3 rule 2).")
+    # A result cannot reach the facility before it exists. 27 rows on the
+    # 15 August snapshot, 25 of them by more than a month and one by four
+    # years - so not clock skew or a same-day ordering quirk. Whichever of the
+    # two dates is wrong, the pair cannot both be right, and the received date
+    # is what buckets the fiscal quarters and the month filter.
+    _rv = pd.to_datetime(c.get("recv_date"), errors="coerce")
+    _ix = pd.to_datetime(c.get("idx_date"), errors="coerce")
+    add(None, "Result received before it was resulted", "high",
+        int((_rv < _ix).fillna(False).sum()),
+        "The date the result reached the facility precedes the result date "
+        "itself. One of the two is wrong, and the received date is what the "
+        "fiscal quarters and the month filter are built on.")
+
+    # Not a date problem - a follow-up problem, and the most actionable finding
+    # on this page. An unsuppressed client still in care who has never been
+    # retested is the gap the programme exists to close.
+    _mu = pd.to_numeric(c.get("months_unsuppressed"), errors="coerce")
+    _act = (c.get("art_status", pd.Series(dtype=object))
+            .astype("string").str.strip().str.casefold().eq("active"))
+    _stale = (_act & (_mu > 12)
+              & ~c.get("post_result", pd.Series(False, index=c.index))
+              .fillna(False).astype(bool))
+    add(None, "Active, unsuppressed over a year, never retested", "high",
+        int(_stale.fillna(False).sum()),
+        "Still in care, index VL more than 12 months old, and no repeat result "
+        "has ever come back. Not stale data - a client who has been "
+        "unsuppressed for over a year with nothing done since. See the "
+        "'never retested' worklist on Deep dive.")
+
+    add(None, "No ART status recorded", "medium",
+        int(c.get("art_status", pd.Series(dtype=object)).isna().sum()),
+        "Without a status these clients cannot be triaged, and they are "
+        "excluded from every export, which carries active clients only.")
+
     add(None, "Implausible viral load", "high",
         int((c["idx_vl"] > 10_000_000).sum()),
         "Index VL above 10,000,000 copies/mL, beyond any commercial assay range.")
