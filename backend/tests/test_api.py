@@ -195,6 +195,37 @@ def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
     assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
 
 
+def test_a_filter_accepts_several_values(client, admin_h, cohort):
+    """The question that motivated this was "paediatrics AND adolescents" -
+    two age bands, previously impossible to ask in one go. Repeated query
+    parameters collect into a list; a single value is a list of one, so old
+    links keep working."""
+    one = client.get("/api/clients?state=Delta", headers=admin_h).json()
+    assert len(one) == 3
+
+    both = client.get("/api/clients?state=Delta&state=Osun",
+                      headers=admin_h).json()
+    assert len(both) == 5
+    assert {r["state"] for r in both} == {"Delta", "Osun"}
+
+    # 'All' is the UI's sentinel for no restriction and must not be matched
+    # against as if it were a state.
+    with_all = client.get("/api/clients?state=All", headers=admin_h).json()
+    assert len(with_all) == 5
+
+
+def test_row_scope_still_beats_a_multi_value_filter(client, admin_h, cohort):
+    """Asking for two states must not be a way around a one-state scope."""
+    client.post("/api/users", headers=admin_h,
+                json={"username": "d.only", "email": "d-only@ecews.org",
+                      "password": "Scoped-Pass-2",
+                      "role": "analyst", "scope_state": "Delta"})
+    h = hdr(client, ("d.only", "Scoped-Pass-2"))
+    rows = client.get("/api/clients?state=Delta&state=Osun", headers=h).json()
+    assert {r["state"] for r in rows} == {"Delta"}
+    assert len(rows) == 3
+
+
 def test_export_excludes_clients_who_cannot_be_actioned(client, admin_h, cohort):
     """An export is a worklist, so it carries only clients with an ART status
     of Active. The on-screen table still shows everyone, because its counts

@@ -434,6 +434,38 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
 .otrack{height:8px;border-radius:5px;background:var(--rule-2);overflow:hidden}
 .otrack i{display:block;height:100%;border-radius:5px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
 .otrack.fat{height:18px;border-radius:8px}
+/* ── multi-select filters ───────────────────────────────────────────────
+   Every filter takes several values now. "Paediatrics and adolescents" is two
+   age bands, and asking it one band at a time and adding up by hand is the
+   arithmetic a dashboard exists to remove.
+
+   A native <select multiple> is a list box, not a dropdown: ten of them would
+   turn the filter bar into a wall. So the <select> stays in the DOM as the
+   state - other code reads its .options, and the existing change handler still
+   fires - and this draws a button and a checkbox panel over it. */
+.ms{position:relative;min-width:0}
+.ms>select{display:none}
+.ms-btn{width:100%;text-align:left;font:inherit;font-size:12.5px;
+  padding:7px 22px 7px 9px;border:1px solid var(--rule);border-radius:7px;
+  background:var(--card);color:var(--ink);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.ms-btn:after{content:"";position:absolute;right:8px;top:50%;
+  width:0;height:0;margin-top:-2px;border:4px solid transparent;
+  border-top-color:var(--ink-3)}
+.ms-btn:hover{border-color:var(--green)}
+.ms-btn.on{border-color:var(--green);color:var(--green);font-weight:600}
+.ms-menu{position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:100%;
+  max-width:280px;max-height:260px;overflow-y:auto;background:var(--card);
+  border:1px solid var(--rule);border-radius:8px;box-shadow:0 8px 24px -8px rgba(0,0,0,.35);
+  padding:5px}
+.ms-menu[hidden]{display:none}
+.ms-opt{display:flex;align-items:center;gap:8px;padding:5px 7px;border-radius:5px;
+  font-size:12.5px;cursor:pointer;white-space:nowrap}
+.ms-opt:hover{background:var(--bg-2)}
+.ms-opt input{margin:0;flex-shrink:0;accent-color:var(--green)}
+.ms-all{border-bottom:1px solid var(--rule);margin-bottom:3px;padding-bottom:6px;
+  font-weight:600}
+
 /* time-metrics box-and-whisker */
 .box-row{display:grid;grid-template-columns:236px 1fr 132px;gap:14px;align-items:center;
   padding:13px 0;border-bottom:1px solid var(--line)}
@@ -708,16 +740,16 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
     </div>
 
   <div class="filters" id="filters">
-    <div class="f"><label>Fiscal year</label><select id="fFy"><option>All</option></select></div>
-    <div class="f"><label>Enrolment quarter</label><select id="fQtr"><option>All</option></select></div>
-    <div class="f"><label title="Month the index result reached the facility">Month</label><select id="fMonth"><option>All</option></select></div>
-    <div class="f"><label>State</label><select id="fState"><option>All</option></select></div>
-    <div class="f"><label title="LGA of the treating facility">LGA (service)</label><select id="fLga"><option>All</option></select></div>
-    <div class="f"><label title="Where the client lives — the unit for transmission and outreach targeting">LGA (residence)</label><select id="fLgaRes"><option>All</option></select></div>
-    <div class="f"><label>Facility</label><select id="fFac"><option>All</option></select></div>
-    <div class="f"><label>Sex</label><select id="fSex"><option>All</option><option>Female</option><option>Male</option></select></div>
-    <div class="f"><label>Age band</label><select id="fAge"><option>All</option></select></div>
-    <div class="f"><label>Treatment plan</label><select id="fPlan"><option>All</option></select></div>
+    <div class="f"><label>Fiscal year</label><div class="ms"><select id="fFy" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>Enrolment quarter</label><div class="ms"><select id="fQtr" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label title="Month the index result reached the facility">Month</label><div class="ms"><select id="fMonth" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>State</label><div class="ms"><select id="fState" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label title="LGA of the treating facility">LGA (service)</label><div class="ms"><select id="fLga" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label title="Where the client lives — the unit for transmission and outreach targeting">LGA (residence)</label><div class="ms"><select id="fLgaRes" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>Facility</label><div class="ms"><select id="fFac" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>Sex</label><div class="ms"><select id="fSex" multiple><option>All</option><option>Female</option><option>Male</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>Age band</label><div class="ms"><select id="fAge" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
+    <div class="f"><label>Treatment plan</label><div class="ms"><select id="fPlan" multiple><option>All</option></select><button type="button" class="ms-btn" aria-expanded="false">All</button><div class="ms-menu" hidden></div></div></div>
     <div class="f f-btn"><label>&nbsp;</label><button class="btn" id="btnReset">Reset</button></div>
   </div>
 
@@ -1329,9 +1361,84 @@ async function api(p,o){
   }
   return r.json();
 }
+// ── multi-select filters ─────────────────────────────────────────────
+// The <select multiple> stays in the DOM and remains the state: other code
+// reads its .options, and dispatching 'change' on it keeps the existing
+// refresh handler working. This only draws the button and the checkbox panel.
+function msVals(sel){
+  // Selected values, minus the "All" sentinel. Empty array = no restriction.
+  return [...sel.selectedOptions].map(o=>o.value).filter(v=>v&&v!=='All');
+}
+function msLabel(sel){
+  const v=msVals(sel);
+  if(!v.length) return 'All';
+  if(v.length<=2) return v.join(', ');
+  return v.length+' selected';
+}
+function msSync(sel){
+  const box=sel.closest('.ms'); if(!box) return;
+  const v=msVals(sel), btn=box.querySelector('.ms-btn');
+  btn.textContent=msLabel(sel);
+  btn.title=v.length?v.join(', '):'All';
+  btn.classList.toggle('on',v.length>0);
+  const all=box.querySelector('.ms-all input');
+  if(all) all.checked=v.length===0;
+}
+function msBuild(sel){
+  const box=sel.closest('.ms'); if(!box) return;
+  const menu=box.querySelector('.ms-menu');
+  const opts=[...sel.options].filter(o=>o.value&&o.value!=='All');
+  menu.innerHTML='<label class="ms-opt ms-all"><input type="checkbox">All</label>'
+    +opts.map(o=>'<label class="ms-opt"><input type="checkbox" value="'+esc(o.value)+'"'
+      +(o.selected?' checked':'')+'>'+esc(o.textContent)+'</label>').join('');
+  menu.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{
+    if(!cb.value){                       // the All row clears the rest
+      [...sel.options].forEach(o=>o.selected=false);
+      menu.querySelectorAll('input').forEach(x=>{ if(x.value) x.checked=false; });
+    }else{
+      const o=[...sel.options].find(x=>x.value===cb.value);
+      if(o) o.selected=cb.checked;
+    }
+    msSync(sel);
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  msSync(sel);
+}
+function msInit(){
+  $$('#filters .ms').forEach(box=>{
+    const sel=box.querySelector('select'), btn=box.querySelector('.ms-btn'),
+          menu=box.querySelector('.ms-menu');
+    msBuild(sel);
+    btn.onclick=e=>{
+      e.stopPropagation();
+      const open=!menu.hidden;
+      // one panel at a time, or two overlapping lists fight for the same space
+      $$('#filters .ms-menu').forEach(m=>{m.hidden=true;});
+      $$('#filters .ms-btn').forEach(b=>b.setAttribute('aria-expanded','false'));
+      menu.hidden=open;
+      btn.setAttribute('aria-expanded',String(!open));
+    };
+    menu.onclick=e=>e.stopPropagation();
+  });
+}
+// Click anywhere else, or press Escape, and the open panel closes.
+document.addEventListener('click',()=>{
+  $$('#filters .ms-menu').forEach(m=>m.hidden=true);
+  $$('#filters .ms-btn').forEach(b=>b.setAttribute('aria-expanded','false'));
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    $$('#filters .ms-menu').forEach(m=>m.hidden=true);
+    $$('#filters .ms-btn').forEach(b=>b.setAttribute('aria-expanded','false'));
+  }
+});
+
 function qs(extra){
   const p=new URLSearchParams();
-  const add=(k,el)=>{const n=$(el); if(n&&n.value&&n.value!=='All')p.set(k,n.value);};
+  // One parameter PER selected value - ?age_band=0-9&age_band=10-19. FastAPI
+  // collects repeats into a list, and a single selection is just a list of one,
+  // so every existing link and bookmark still resolves.
+  const add=(k,el)=>{const n=$(el); if(n) msVals(n).forEach(v=>p.append(k,v));};
   add('fy','#fFy'); add('quarter','#fQtr'); add('state','#fState'); add('lga','#fLga');
   add('lga_res','#fLgaRes');
   add('facility','#fFac'); add('sex','#fSex'); add('age_band','#fAge'); add('plan','#fPlan');
@@ -1365,7 +1472,10 @@ async function boot(){
 
   try{
     const f=await api('/filters');
-    const fill=(sel,vals)=>{const s=$(sel); if(!s)return; const cur=s.value;
+    const fill=(sel,vals)=>{const s=$(sel); if(!s)return;
+      // Preserve the SELECTION, not one value: repopulating the state list
+      // must not silently drop two of the three already chosen.
+      const cur=msVals(s);
       // The value attribute is NOT decoration. Without it an option's value is
       // its text, and the HTML parser collapses runs of whitespace when reading
       // that back - so "os State Hospital -  Asubiaro" (two spaces, as the EMR
@@ -1373,26 +1483,35 @@ async function boot(){
       // reported no data for a facility carrying 199 episodes.
       s.innerHTML='<option value="All">All</option>'
         +(vals||[]).map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join('');
-      if([].slice.call(s.options).some(o=>o.value===cur)) s.value=cur;};
+      [].slice.call(s.options).forEach(o=>{o.selected=cur.indexOf(o.value)>=0;});
+      msBuild(s);};
     fill('#fFy',f.fys); fill('#fState',f.states);
     // Months come back newest first as YYYY-MM. Shown as 'Aug 2026' but the
     // VALUE stays YYYY-MM, which is what the API filters on - the option text
     // is for reading, never for matching.
     (function(){const el=$('#fMonth'); if(!el) return;
+      const curM=msVals(el);
       el.innerHTML='<option value="All">All</option>'
         +(f.months||[]).map(m=>'<option value="'+esc(m)+'">'+fmtMonYY(m+'-01')+'</option>').join('');
+        [].slice.call(el.options).forEach(o=>{o.selected=curM.indexOf(o.value)>=0;});
+        msBuild(el);
     })();
     fill('#fAge',f.age_bands); fill('#fPlan',f.plans);
     // enrolment quarters belong to a fiscal year (FY26Q1...), so only offer the
     // quarters inside the selected FY - FY25Q4 must not show under FY26.
-    const qtrs=()=>{const fy=$('#fFy').value;
-      fill('#fQtr',fy==='All'?f.quarters
-        :(f.quarters||[]).filter(q=>String(q).startsWith(fy)));};
+    // Quarters belong to a fiscal year. With several chosen, offer the
+    // quarters of ALL of them rather than none.
+    const qtrs=()=>{const fys=msVals($('#fFy'));
+
+        fill('#fQtr',!fys.length?f.quarters
+          :(f.quarters||[]).filter(q=>fys.some(y=>String(q).startsWith(y))));};
     qtrs(); window.__qtrFill=qtrs;   // Reset needs it to restore the full list
-    $('#fFy').onchange=()=>{ $('#fQtr').selectedIndex=0; qtrs(); refresh(); };
+    const clear=el=>{[].slice.call(el.options).forEach(o=>o.selected=false);};
+    $('#fFy').onchange=()=>{ clear($('#fQtr')); qtrs(); refresh(); };
     // LGA + facility cascade off the selected state
-    const geo=()=>{const st=$('#fState').value;
-      const pick=(all,map)=>st==='All'?all:(all||[]).filter(v=>map[v]===st);
+    const geo=()=>{const sts=msVals($('#fState'));
+      const pick=(all,map)=>!sts.length?all
+        :(all||[]).filter(v=>sts.indexOf(map[v])>=0);
       fill('#fLga',pick(f.lgas,f.lga_state||{}));
       // Residence is deliberately NOT cascaded off the service state - a
       // client treated in Delta may live in Edo, and narrowing by the
@@ -1400,7 +1519,7 @@ async function boot(){
       fill('#fLgaRes',f.lga_res);
       fill('#fFac',pick(f.facilities,f.facility_state||{}));};
     geo(); window.__geoFill=geo;   // Reset needs it to restore the full lists
-    $('#fState').onchange=()=>{ $('#fLga').selectedIndex=0; $('#fFac').selectedIndex=0;
+    $('#fState').onchange=()=>{ clear($('#fLga')); clear($('#fFac'));
       geo(); refresh(); };
     $('#filters').style.display='flex';
   }catch(e){
@@ -3087,8 +3206,10 @@ $('#btnPw').onclick=async()=>{
     alert('Password changed. Use the new one next time you sign in.');
   }catch(e){ alert(e.message); }
 };
-$('#btnReset').onclick=()=>{$$('#filters select').forEach(s=>s.selectedIndex=0);
+$('#btnReset').onclick=()=>{$$('#filters select').forEach(s=>{
+    [].slice.call(s.options).forEach(o=>o.selected=false); msBuild(s); });
   if(window.__geoFill)window.__geoFill(); if(window.__qtrFill)window.__qtrFill(); refresh();};
+msInit();
 $$('#filters select').forEach(s=>s.onchange=refresh);
 $('#btnExport').onclick=()=>download(null);
 // feedback modal

@@ -288,28 +288,40 @@ def me(u: Annotated[dict, Depends(auth)]):
 
 # ── filters as a dependency ───────────────────────────────────────────
 class Filters(BaseModel):
-    state: str | None = None
-    lga: str | None = None
-    lga_res: str | None = None      # residence LGA, canonical
-    facility: str | None = None
-    sex: str | None = None
-    age_band: str | None = None
-    quarter: str | None = None
-    fy: str | None = None
-    plan: str | None = None
+    """Every filter is a LIST, because a question is rarely about one value.
+
+    "Paediatrics and adolescents" is two age bands, and until these accepted
+    lists there was no way to ask it - you looked at 0-9, then at 10-19, and
+    added them up by hand, which is exactly the arithmetic a dashboard exists
+    to remove.
+
+    A single value still works: FastAPI collects repeated query parameters, so
+    ?age_band=0-9 arrives as a one-element list and every existing link,
+    bookmark and saved worklist keeps working unchanged.
+    """
+    state: list[str] | None = None
+    lga: list[str] | None = None
+    lga_res: list[str] | None = None      # residence LGA, canonical
+    facility: list[str] | None = None
+    sex: list[str] | None = None
+    age_band: list[str] | None = None
+    quarter: list[str] | None = None
+    fy: list[str] | None = None
+    plan: list[str] | None = None
     # YYYY-MM, on the same clock as the quarters: the month the index result
     # reached the facility. A quarter was the finest slice available, which is
     # a long time to wait to see whether something changed.
-    month: str | None = None
+    month: list[str] | None = None
 
 
 def filters(
-    state: str | None = Query(None), lga: str | None = Query(None),
-    lga_res: str | None = Query(None),
-    facility: str | None = Query(None), sex: str | None = Query(None),
-    age_band: str | None = Query(None), quarter: str | None = Query(None),
-    fy: str | None = Query(None), plan: str | None = Query(None),
-    month: str | None = Query(None),
+    state: list[str] | None = Query(None), lga: list[str] | None = Query(None),
+    lga_res: list[str] | None = Query(None),
+    facility: list[str] | None = Query(None), sex: list[str] | None = Query(None),
+    age_band: list[str] | None = Query(None),
+    quarter: list[str] | None = Query(None),
+    fy: list[str] | None = Query(None), plan: list[str] | None = Query(None),
+    month: list[str] | None = Query(None),
 ) -> Filters:
     return Filters(state=state, lga=lga, lga_res=lga_res, facility=facility,
                    sex=sex, age_band=age_band, quarter=quarter, fy=fy,
@@ -338,27 +350,36 @@ def _load(u: dict, f: Filters, upload_id: int | None = None) -> pd.DataFrame:
     """
     clauses, args = ["upload_id = %s"], []
 
-    # Scope wins over a requested filter: a Delta viewer cannot ask for Osun.
-    state = u["scope_state"] or (f.state if f.state and f.state != "All" else None)
-    facility = u["scope_facility"] or (
-        f.facility if f.facility and f.facility != "All" else None)
+    def chosen(vals: list[str] | None) -> list[str] | None:
+        """Selected values, minus the 'All' sentinel. None = no restriction."""
+        picked = [v for v in (vals or []) if v and v != "All"]
+        return picked or None
 
-    for col, val in (("state", state), ("facility", facility), ("lga", f.lga),
-                     ("lga_res_norm", f.lga_res),
-                     ("sex", f.sex), ("age_band", f.age_band),
-                     ("enrol_quarter", f.quarter), ("fy", f.fy),
-                     ("treatment_plan", f.plan)):
-        if val and val != "All":
-            clauses.append(f"{col} = %s")
-            args.append(val)
+    # Scope wins over a requested filter: a Delta viewer cannot ask for Osun.
+    # A scope is one value, so it collapses whatever was asked for to itself.
+    state = [u["scope_state"]] if u["scope_state"] else chosen(f.state)
+    facility = ([u["scope_facility"]] if u["scope_facility"]
+                else chosen(f.facility))
+
+    for col, vals in (("state", state), ("facility", facility),
+                      ("lga", chosen(f.lga)), ("lga_res_norm", chosen(f.lga_res)),
+                      ("sex", chosen(f.sex)), ("age_band", chosen(f.age_band)),
+                      ("enrol_quarter", chosen(f.quarter)), ("fy", chosen(f.fy)),
+                      ("treatment_plan", chosen(f.plan))):
+        if vals:
+            # = ANY(array) rather than IN (...): one placeholder whatever the
+            # length, so the statement text is identical for one value or ten
+            # and Postgres can reuse the plan.
+            clauses.append(f"{col} = ANY(%s)")
+            args.append(vals)
 
     # Month of the index result reaching the facility - the same clock the
     # quarters and the monthly trends use, so a month selected here lines up
     # with the point you clicked on a chart. Compared as text on the stored
     # date so no function wraps the column and the upload_id index still works.
-    if f.month and f.month != "All":
-        clauses.append("to_char(recv_date, 'YYYY-MM') = %s")
-        args.append(f.month)
+    if (months := chosen(f.month)):
+        clauses.append("to_char(recv_date, 'YYYY-MM') = ANY(%s)")
+        args.append(months)
 
     with pool.connection() as c:
         uid = upload_id if upload_id is not None else _current_upload(c)
@@ -633,7 +654,11 @@ def _clients(u: dict, f: Filters, flag: str | None, limit: int,
 
 def _access_note(f: Filters, flag: str | None, n: int) -> str:
     """Human-readable record of exactly which slice was retrieved."""
-    where = ", ".join(f"{k}={v}" for k, v in f.model_dump().items()
+    def shown(v) -> str:
+        # Lists read badly in an audit row as Python reprs; join them.
+        return "|".join(str(x) for x in v) if isinstance(v, list) else str(v)
+
+    where = ", ".join(f"{k}={shown(v)}" for k, v in f.model_dump().items()
                       if v and v != "All") or "no filters"
     return f"{n} client rows; {where}; flag={flag or 'none'}"
 
