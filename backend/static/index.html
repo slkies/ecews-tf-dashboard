@@ -1504,7 +1504,15 @@ async function boot(){
     (function(){const el=$('#fMonth'); if(!el) return;
       const curM=msVals(el);
       el.innerHTML='<option value="All">All</option>'
-        +(f.months||[]).map(m=>'<option value="'+esc(m)+'">'+fmtMonYY(m+'-01')+'</option>').join('');
+        +(f.months||[]).map(function(x){
+           // {m:'2026-08', n:312}. The count is part of the label because the
+           // list is uneven - recent months carry hundreds, the oldest carry
+           // one - and picking a month blind then reading two clients as a
+           // collapse is the mistake this prevents.
+           const m=x.m||x, n=x.n;
+           return '<option value="'+esc(m)+'">'+fmtMonYY(m+'-01')
+             +(n==null?'':' ('+fmt(n)+')')+'</option>';
+         }).join('');
         [].slice.call(el.options).forEach(o=>{o.selected=curM.indexOf(o.value)>=0;});
         msBuild(el);
     })();

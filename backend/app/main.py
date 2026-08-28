@@ -1449,10 +1449,18 @@ def get_filters(u: U):
                "facilities": distinct("facility"),
                "age_bands": distinct("age_band", drop_unknown=True),
                "quarters": distinct("enrol_quarter"), "fys": distinct("fy"),
-               "months": [r["m"] for r in c.execute(
-                   "SELECT DISTINCT to_char(recv_date,'YYYY-MM') AS m FROM cohort "
-                   "WHERE upload_id=%s AND recv_date IS NOT NULL "
-                   "ORDER BY m DESC", (uid,)).fetchall()],
+               # With the count, because the months are wildly uneven: the
+               # register is cumulative, so it carries a long thin tail of
+               # genuinely old episodes. On the current snapshot, 20 months
+               # from 2025 on hold ~206 episodes each, while 29 earlier months
+               # hold 3.4 each - 59% of the list for 2.4% of the data. Those
+               # rows are real and must stay selectable; showing the count is
+               # what stops someone picking a month and reading two clients as
+               # a collapse.
+               "months": [{"m": r["m"], "n": int(r["n"])} for r in c.execute(
+                   "SELECT to_char(recv_date,'YYYY-MM') AS m, count(*) AS n "
+                   "FROM cohort WHERE upload_id=%s AND recv_date IS NOT NULL "
+                   "GROUP BY 1 ORDER BY 1 DESC", (uid,)).fetchall()],
                "plans": distinct("treatment_plan"),
                # lets the UI cascade LGA/facility options off the chosen state
                "lga_state": by_state("lga"),
