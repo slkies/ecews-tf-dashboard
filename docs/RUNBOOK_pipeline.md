@@ -262,6 +262,47 @@ a new one.
 
 ---
 
+## Protecting the data at rest
+
+**Decision, 29 Aug 2026: encrypt the folder or the disk, not the vault file.**
+
+`SN_Key.xlsx` was password-protected on 29 August and the pipeline stopped: it
+could not read it, and — the part that mattered more — once taught to read it,
+writing the vault back would have produced a **plaintext file under the same
+name**. `msoffcrypto` removes protection; it cannot apply it. Nothing on screen
+would have said the encryption was gone.
+
+The pipeline now refuses that write and hands you an unencrypted
+`SN_Key.UPDATED-*.xlsx` to re-protect by hand. That is safe but weekly manual
+work, and a manual step in a weekly job is a step that eventually gets skipped.
+
+**A file an automated job must rewrite every week is the wrong unit to
+encrypt.** The folder is the right boundary, and it protects the exports, the
+register and the outputs at the same time — all of which carry the same data
+the vault does.
+
+Two ways, both on Windows 11 Pro:
+
+**BitLocker on the drive — preferred.** Whole-disk, transparent to every
+script, and the recovery key can be escrowed with ECEWS IT or a Microsoft
+account. Needs IT to permit it. Protects everything, including the raw exports.
+
+**EFS on the folder — the fallback.** Right-click the folder → Properties →
+Advanced → *Encrypt contents to secure data*. Per-user, transparent to scripts,
+no password to remember or type.
+
+> **If you use EFS, back up the certificate the same day.** EFS keys are tied
+> to the Windows user profile. Lose the profile without an exported key and the
+> folder is unrecoverable — and the vault is the one file in this system that
+> cannot be rebuilt from anything else. Run `certmgr.msc` → Personal →
+> Certificates → the one issued for *Encrypting File System* → right-click →
+> All Tasks → Export → include the private key → store the `.pfx` somewhere
+> that is not that folder.
+
+`vault_password` remains supported in `secure.ini`. Nothing needs it once the
+vault is a plain workbook again, but it costs nothing to keep and means a
+future encrypted vault reads rather than crashes.
+
 ## If something goes wrong
 
 Every run writes a log to `logs\deid-YYYY-MM-DD.log`. Send me that file.
