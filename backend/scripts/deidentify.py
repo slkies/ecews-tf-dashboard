@@ -65,6 +65,11 @@ SENSITIVE_COLUMNS = ["causeOfDeath", "vaCauseOfDeath", "facilityTransferredTo"]
 # The EAC export is already keyed on S/N; only the date of birth needs removing.
 EAC_PII_COLUMNS = ["DOB"]
 
+# The OLE2 signature, written as integers rather than an escape sequence so
+# nothing can mangle it in transit. An encrypted .xlsx is an OLE2 container;
+# a plain one is a zip beginning "PK".
+OLE2_MAGIC = bytes((0xD0, 0xCF, 0x11, 0xE0))
+
 KEY = "S/N"
 VAULT_NEW = "Datim_PEPID"      # current ordering, matches the line list
 VAULT_OLD = "PEPID_Datim"      # retained for historical continuity
@@ -106,6 +111,18 @@ def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
             + pep.astype("string").str.strip())
 
 
+def is_encrypted(path: Path) -> bool:
+    """True if this workbook is password-protected.
+
+    An encrypted .xlsx is an OLE2 compound document wrapping an
+    EncryptedPackage stream. pandas misreports that as a legacy .xls and asks
+    for xlrd, so without this check the error names a missing library rather
+    than the actual problem.
+    """
+    with path.open("rb") as fh:
+        return fh.read(8).startswith(OLE2_MAGIC)
+
+
 def read_excel_any(path: Path, password: str | None = None,
                    key: str = "treatment_password", **kw):
     """
@@ -118,9 +135,7 @@ def read_excel_any(path: Path, password: str | None = None,
 
     Decryption happens in memory. The plaintext is never written to disk.
     """
-    with path.open("rb") as fh:
-        encrypted = fh.read(8).startswith(b"\xd0\xcf\x11\xe0")
-    if not encrypted:
+    if not is_encrypted(path):
         return pd.read_excel(path, **kw)
     if not password:
         # Name the setting that actually applies to THIS file. The message
@@ -184,9 +199,14 @@ def split_key(pep_datim: str | None, datim_pep: str | None) -> str | None:
 class Vault:
     """The identity mapping. Read, extended, written back with a backup."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, password: str | None = None):
         self.path = path
-        self.df = pd.read_excel(path, dtype=str)
+        # The vault is the most sensitive file in the system, so of course it
+        # is the one that gets encrypted - and it was the last reader still
+        # calling pd.read_excel directly, which reports an encrypted workbook
+        # as a missing 'xlrd' and tells you nothing useful.
+        self.encrypted = is_encrypted(path)
+        self.df = read_excel_any(path, password, key="vault_password", dtype=str)
         for col in (VAULT_NEW, KEY):
             if col not in self.df.columns:
                 raise SystemExit(
@@ -333,6 +353,38 @@ class Vault:
         shutil.copy2(self.path, backup_dir / f"{self.path.stem}-{stamp}.xlsx")
         merged = pd.concat([self.df.drop(columns=["_k"]),
                             pd.DataFrame(self.added)], ignore_index=True)
+
+        # We can DECRYPT a workbook but not encrypt one: msoffcrypto reads
+        # protection, it does not apply it. Writing back over an encrypted
+        # vault would therefore leave a PLAINTEXT file under the same name,
+        # with nothing on screen to say the protection had gone.
+        #
+        # Stopping here is the right outcome rather than an inconvenience.
+        # This runs BEFORE anything is published, and the keys in `added`
+        # exist only in memory until the vault is written. Publishing a
+        # dataset keyed on clients the vault does not know would mint them
+        # fresh keys next week and sever them from the data going out today -
+        # the one thing rule 1 at the top of this file promises never to do.
+        if self.encrypted:
+            side = self.path.with_name(f"{self.path.stem}.UPDATED-{stamp}.xlsx")
+            merged.to_excel(side, index=False)
+            raise SystemExit(
+                f"{self.path.name} is password-protected, and protection can "
+                f"be removed on write but not re-applied.\n\n"
+                f"The updated vault, including {len(self.added):,} new "
+                f"client(s), has been written UNENCRYPTED as:\n"
+                f"    {side.name}\n\n"
+                f"Encrypt that file with the same password, replace "
+                f"{self.path.name} with it, and run again.\n\n"
+                f"NOTHING WAS PUBLISHED. Those new keys are not in the vault "
+                f"yet, and a dataset keyed on clients the vault does not know "
+                f"would give them different keys next week.\n\n"
+                f"If re-encrypting by hand every week is not workable, the "
+                f"better answer is to leave the vault unencrypted inside the "
+                f"secure folder and encrypt the disk or the folder instead. A "
+                f"file an automated job must rewrite weekly is the wrong unit "
+                f"to protect one file at a time.")
+
         # Write beside the original and swap, so an interrupted write cannot
         # leave a half-written vault where the real one used to be.
         tmp = self.path.with_suffix(".tmp.xlsx")
@@ -607,11 +659,11 @@ def main() -> int:
     log.info("=" * 62)
     log.info("de-identification run%s", "  (DRY RUN)" if a.dry_run else "")
 
-    vault = Vault(Path(P["vault"]))
+    S = cfg["secrets"] if cfg.has_section("secrets") else {}
+
+    vault = Vault(Path(P["vault"]), S.get("vault_password"))
     if a.migrate_keys:
         vault.migrate_keys(Path(P["backups"]), a.dry_run)
-
-    S = cfg["secrets"] if cfg.has_section("secrets") else {}
 
     # The treatment export is named with its date, so a fixed path in the
     # config goes stale the moment a new one arrives - and stale in the worst

@@ -37,6 +37,11 @@ logs   = C:\ECEWS_Secure\logs
 # real credential - one more reason this file stays out of the repository.
 [secrets]
 treatment_password = 
+# The vault too, if you protect it. Note that the pipeline can READ an
+# encrypted vault but cannot write one back encrypted - it will stop and
+# hand you an unencrypted copy to re-protect. If that is not workable
+# weekly, encrypt the folder or the disk rather than this one file.
+# vault_password    = 
 # eac_password      = 
 # register_password = 
 
