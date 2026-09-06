@@ -2015,14 +2015,19 @@ async function loadClients(flag){
   $('#drillT').textContent=FLAG_LABEL[flag]||flag;
   $('#drillS').textContent=fmt(rows.length)+' shown (max 500) \u2014 use Export CSV for the full list';
   $('#drillH').innerHTML='<tr><th>Client</th><th>Facility</th><th>State</th><th>Sex</th>'+
-    '<th class="r">Age</th><th class="r">Index VL</th><th>Index date</th><th class="r">Sessions</th>'+
+    '<th class="r">Age</th><th class="r">Index VL</th><th>Result received</th><th class="r">Sessions</th>'+
     '<th class="r">Post-EAC VL</th><th class="r">Months</th><th>Plan</th></tr>';
   $('#drillB').innerHTML=rows.map(r=>'<tr>'+
     '<td class="num" style="font-size:11px;color:var(--ink-3)">'+String(r.sn).slice(0,9)+'\u2026</td>'+
     '<td>'+esc(r.facility||'\u2014')+'</td><td>'+esc(r.state||'\u2014')+'</td><td>'+esc(r.sex||'\u2014')+'</td>'+
     '<td class="r num">'+(r.age!=null?r.age:'\u2014')+'</td>'+
     '<td class="r num">'+(r.idx_vl!=null?fmt(r.idx_vl):'\u2014')+'</td>'+
-    '<td class="num" style="font-size:11px">'+esc(String(r.idx_date||'\u2014').slice(0,10))+'</td>'+
+    // The date the result reached the facility, not the day blood was drawn.
+    // Every quarter, month filter and trend here is bucketed on this one,
+    // and the two differ by a median of 15 days.
+    '<td class="num" style="font-size:11px" title="Sample collected '
+      +esc(String(r.idx_samp||'—').slice(0,10))+'">'
+      +esc(String(r.recv_date||r.idx_date||'—').slice(0,10))+'</td>'+
     '<td class="r num">'+(r.sessions||0)+'</td>'+
     '<td class="r num" style="'+(r.still_unsuppressed?'color:var(--brick);font-weight:600':'')+'">'+
       (r.fu_vl!=null?fmt(r.fu_vl):'\u2014')+'</td>'+

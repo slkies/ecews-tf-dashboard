@@ -631,9 +631,44 @@ FLAGS = {
     "prior_cycle": lambda d: d["eac_prior_cycle"],
 }
 CLIENT_COLS = ["sn", "state", "lga", "facility", "sex", "age", "art_status",
-               "idx_vl", "idx_date", "sessions", "eac_completed", "fu_vl",
+               "idx_vl", "recv_date", "idx_samp", "idx_date",
+               "sessions", "eac_completed", "fu_vl",
                "still_unsuppressed", "switched", "months_unsuppressed",
                "treatment_plan"]
+
+# Readable headings for the CSV only. The JSON keys stay as they are, because
+# the dashboard reads them.
+#
+# The export previously carried `idx_date` alone, under that name, and a team
+# correcting records reasonably read it as the index date. It is not: in the
+# register `dateofCurrentViralLoad` equals the sample collection date on 95.4%
+# of rows, while the result actually reaches the facility a median 15 days
+# later. So the column people were working from was the day blood was drawn,
+# not the day the facility could act - and every quarter, month filter and
+# trend in the dashboard is bucketed on the latter.
+#
+# All three dates now go out, each saying plainly what it is, with the one the
+# dashboard counts on first.
+EXPORT_HEADERS = {
+    "sn": "S/N",
+    "state": "State",
+    "lga": "LGA",
+    "facility": "Facility",
+    "sex": "Sex",
+    "age": "Age",
+    "art_status": "ART status",
+    "idx_vl": "Index VL (copies/mL)",
+    "recv_date": "Index VL received at facility",
+    "idx_samp": "Index VL sample collected",
+    "idx_date": "Index VL result date",
+    "sessions": "EAC sessions",
+    "eac_completed": "EAC completed",
+    "fu_vl": "Follow-up VL (copies/mL)",
+    "still_unsuppressed": "Still unsuppressed",
+    "switched": "Switched regimen",
+    "months_unsuppressed": "Months unsuppressed",
+    "treatment_plan": "Treatment plan",
+}
 
 
 def _json_safe(df: pd.DataFrame) -> list[dict]:
@@ -704,7 +739,7 @@ def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
            detail=f"{_access_note(f, flag, len(df))}; "
                   f"{dropped} non-active excluded")
     buf = io.StringIO()
-    df.to_csv(buf, index=False)
+    df.rename(columns=EXPORT_HEADERS).to_csv(buf, index=False)
     buf.seek(0)
     name = f"ecews_tf_{flag or 'cohort'}_active_{dt.date.today()}.csv"
     return StreamingResponse(

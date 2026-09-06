@@ -195,6 +195,30 @@ def test_scope_applies_to_the_csv_export_too(client, admin_h, cohort):
     assert len(csv.strip().splitlines()) == 4          # header + 3 Delta rows
 
 
+def test_export_dates_say_which_date_they_are(client, admin_h, cohort):
+    """The export used to carry one date column called idx_date, which a team
+    correcting records read as the index date. It is the day blood was drawn:
+    in the register dateofCurrentViralLoad equals the sample collection date on
+    95.4% of rows, while the result reaches the facility a median 15 days
+    later - and every quarter, month filter and trend is bucketed on the
+    latter. All three now go out, each named for what it is."""
+    csv = client.get("/api/export", headers=admin_h).text
+    header = csv.splitlines()[0]
+
+    assert "Index VL received at facility" in header
+    assert "Index VL sample collected" in header
+    assert "Index VL result date" in header
+
+    # the received date leads, because that is what the dashboard counts on
+    cols = header.split(",")
+    assert (cols.index("Index VL received at facility")
+            < cols.index("Index VL sample collected"))
+
+    # and the raw column names must not leak into a file facility staff read
+    for raw in ("idx_date", "idx_samp", "recv_date", "idx_vl"):
+        assert raw not in header
+
+
 def test_a_filter_accepts_several_values(client, admin_h, cohort):
     """The question that motivated this was "paediatrics AND adolescents" -
     two age bands, previously impossible to ask in one go. Repeated query
