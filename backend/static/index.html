@@ -203,10 +203,17 @@ th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle
    The threshold is 520px, not 640: a maximised browser on a 1366x768 laptop
    reports around 570-600px of viewport once its own chrome is taken off, and
    at 640 the bar quietly stopped sticking for exactly the people most likely
-   to be scrolling a long page. The bar is roughly 70px - 13% at 520. */
+   to be scrolling a long page. The bar is roughly 70px - 13% at 520.
+
+   Desktop-only (min-width:901px, matching the rail's mobile breakpoint): on a
+   phone the filters bar can run seven or eight rows tall once the controls
+   wrap, so pinning it ate half the screen for the whole scroll. Height alone
+   can't catch this - a phone in portrait clears 520px of height easily even
+   though it has none of the width a sticky bar needs. Mobile gets the plain,
+   scrolls-away-with-the-page behaviour instead. */
 .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
   padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
-@media (min-height:520px){
+@media (min-width:901px) and (min-height:520px){
   .filters{position:sticky;top:0;z-index:30;
     /* The card background is already opaque; the shadow is what stops content
        appearing to sit ON the bar as it scrolls beneath. No JS toggle - a
