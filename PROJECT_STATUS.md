@@ -1,6 +1,6 @@
 # ECEWS TF Monitor — Project Status & Handoff
 
-**Last updated:** 18 Jul 2026
+**Last updated:** 9 Sep 2026
 **Owner:** Es (Data Analytics Lead, ECEWS / SPEED Program — PEPFAR/CDC, Nigeria)
 **Purpose:** Online, multi-user web app for HIV ART **treatment-failure (TF)** and
 **EAC** monitoring across Delta, Osun, Ekiti. Admin uploads bi-weekly line lists;
@@ -9,6 +9,11 @@ everyone else reads.
 This document is the single source of truth for picking the project up in Claude
 Code or Cowork **without re-deriving anything**. The companion clinical/analytical
 spec is `EAC_Indicator_Definitions_and_Data_Analysis_Plan_v3_1.md`.
+
+**Why things are the way they are** — the decisions that still bind and every
+incident that shaped them — is `docs/DECISIONS_AND_INCIDENTS.md`. Read its
+**Standing rules** before changing the key, the export filter, or anything that
+prints. This file says where the project stands; that one says why.
 
 ---
 
@@ -201,7 +206,15 @@ ecews/
     │   ├── schema.sql      ← users, uploads (+sources), cohort (+socio-demo/CD4/residence
     │   │                      /post_eac_vl/trunc_pre/mid via ALTER…IF NOT EXISTS), dq_findings
     │   └── security.py     ← JWT + bcrypt (passlib dropped)
-    ├── scripts/to_parquet.py
+    ├── scripts/
+    │   ├── deidentify.py       ← the weekly pipeline: vault, keys, register, parquet
+    │   ├── weekly.ps1          ← the routine in one command; never passes --migrate-keys
+    │   ├── 1 - Rehearse pipeline.bat / 2 - Run pipeline.bat   ← the double-click route
+    │   ├── diagnose_key.py     ← why did the key check drop? shapes only, safe to paste
+    │   ├── inspect_export.py   ← describe a raw export without revealing a patient
+    │   ├── check_js.py         ← node --check on the inline script; CI job "javascript"
+    │   ├── setup_secure.py, resolve_vault_duplicates.py, recover_unkeyed_eac.py
+    │   └── to_parquet.py
     ├── static/index.html            ← whole frontend (login, 10 pages, filters, charts)
     ├── static/nga_lga_3states.geojson      ← 71 LGA polygons (Delta/Osun/Ekiti)
     └── static/nga_context_states.geojson   ← 11 neighbouring states (grey map context)
@@ -244,6 +257,16 @@ at 136 days old, 70% at 75, 44% at 14), because commencing EAC takes a median
 provisional or it will report a collapse from 95% to 37% that is arithmetic.
 
 ## 5b. Open questions with the HI team
+
+0. **5,857 PEPIDs appear under more than one DATIM code** (5 Sep 2026 export).
+   The pipeline reports this every run. It is the reason the facility code stays
+   in the key — keying on PEPID alone would merge two patients into one S/N — so
+   it is not a blocker, but it distorts any denominator counting *people*.
+
+   Leading explanations are transfers not closed out at the sending facility, and
+   genuine duplicate enrolment. **Es has a hypothesis to test (9 Sep 2026);
+   awaiting that before taking it to HI.** Whatever the cause, the key does not
+   change — see `docs/DECISIONS_AND_INCIDENTS.md`, Standing rule 2.
 
 1. **`First_High_VL_Value` does not mean what its name says.** It has a hard floor
    at **50, not 1,000** — the lowest values present are 50.0, 50.1, 50.2 — so it is

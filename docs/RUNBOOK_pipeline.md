@@ -3,9 +3,18 @@
 The whole procedure, written for someone who is not a programmer. Commands go in
 **PowerShell** — Start menu, type `PowerShell`, Enter. Paste a line, press Enter.
 
-Every command below is safe to run twice. The ones that change something take
-`--dry-run` first, which reads everything, tells you what it would do, and
-writes nothing.
+The ones that change something take `--dry-run` first, which reads everything,
+tells you what it would do, and writes nothing. **The weekly run is
+[Part 3](#part-3--every-week-after-this) — or just double-click
+`2 - Run pipeline.bat`.** Part 1 and Part 2 are history, kept for audit.
+
+Every command here is safe to run twice: the script refuses rather than repeating
+something that must not be repeated. That refusal is a guard, not a licence — if
+you see one, read it, and check
+[If something goes wrong](#if-something-goes-wrong) before trying again.
+
+Why the pipeline behaves the way it does, and what went wrong to make it that
+way, is in [`DECISIONS_AND_INCIDENTS.md`](DECISIONS_AND_INCIDENTS.md).
 
 ---
 
@@ -339,6 +348,37 @@ Every run writes a log to `logs\deid-YYYY-MM-DD.log`. Send me that file.
 
 Every one of these stops *before* anything is published. The pipeline is built to
 refuse rather than publish something it is unsure about.
+
+### When the key check drops, run the diagnostic
+
+Do **not** paste the export, or a key, to anyone. Run this instead:
+
+```powershell
+cd "C:\Users\eesar\Downloads\Public_Health_Work\Data\TF_Dashboard Files"
+```
+
+```powershell
+python "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts\diagnose_key.py" --config secure.ini
+```
+
+It answers the only question that matters — *are these really new clients, or is
+the export writing existing ones a different way?* — using counts, lengths and
+character shapes. It prints no identifier and its output is safe to paste into a
+ticket or a chat.
+
+What to look for:
+
+- **`would match ignoring punctuation/spacing`** above zero — the export changed
+  formatting. These are existing clients about to get a second key.
+- **`at codes the vault already knows`** carrying most of the unmatched rows —
+  normal. New people at familiar facilities.
+- **`at DATIM codes the vault has never seen`** — either a new site, or a code
+  that has been rewritten. The `unrecognised code shape` lines tell you which.
+- **`EXPORT'S OWN Datim_PEPID vs datimCode+pepId · disagreeing rows`** above zero
+  — the export's own key column disagrees with its parts. Worth asking about.
+
+This happened on 5 September 2026 and is written up in full in
+[`DECISIONS_AND_INCIDENTS.md`](DECISIONS_AND_INCIDENTS.md#10-four-facilities-rewrote-their-datim-code).
 
 ## What the pipeline removes
 
