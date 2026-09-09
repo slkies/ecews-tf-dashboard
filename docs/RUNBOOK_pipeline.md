@@ -132,6 +132,15 @@ This step is optional. Skipping it costs 307 EAC rows out of ~237,000.
 
 # Part 2 — the key migration (once, ever)
 
+> **This part is history. It has already been done and must never be repeated.**
+> The commands below carry `--migrate-keys`, which issues every client a new
+> key. Running it a second time would issue a *second* new key to all 180,000
+> and orphan everything already published. The script now refuses, but do not
+> rely on that — **for the weekly run, go to [Part 3](#part-3--every-week-after-this),
+> or just double-click `2 - Run pipeline.bat`.**
+>
+> Kept only so the changeover can be audited.
+
 Every existing client is issued a new secure key. The old S/N moves to
 `S/N_legacy` and stays there permanently — it is the only way to re-key the EAC
 sheets, which carry no other identifier.
@@ -222,7 +231,16 @@ already happened — but do not rely on that; just leave the flag off.
    recently modified file matching `*Treatment*`.
 2. When a new EAC list arrives (fortnightly), add it to `eac\` — **add**, do not
    replace.
-3. Rehearse, then run:
+3. Rehearse, then run. **The simplest way is to double-click, in `backend\scripts\`:**
+
+   - **`1 - Rehearse pipeline.bat`** — reads everything, writes nothing.
+   - **`2 - Run pipeline.bat`** — the real thing, once the rehearsal looks right.
+     It already includes late-reported results.
+
+   Neither can pass `--migrate-keys`, so neither can make the mistake that
+   section warns about. Prefer them over typing a command.
+
+If you would rather drive it from a terminal, the same routine is one command:
 
 ```powershell
 cd "C:\Users\eesar\Downloads\Public_Health_Work\EAC\ECEWS_TF_Monitor\backend\scripts"
@@ -311,7 +329,10 @@ Every run writes a log to `logs\deid-YYYY-MM-DD.log`. Send me that file.
 |---|---|
 | `maps N identities to more than one S/N` | Run `resolve_vault_duplicates.py` (Step 3). |
 | `is password-protected` | The password in `secure.ini` is missing or wrong. |
-| `only X% of the treatment list matches the vault` | The key format changed. **Stop and tell me** — do not force it. |
+| `only X% of the treatment list matches the vault` | The key format changed. **Stop and tell me** — do not force it. About 99% is normal; the run refuses below 95%. |
+| `facility code(s) are a code the vault already knows with extra characters appended` | A facility has started writing its DATIM code a different way — exactly what happened on 5 September. These are **not** new clients. **Stop and tell me.** Ask the HI team what changed at those sites. |
+| `N facility code(s) the vault has never seen` | A warning, not a stop. A genuinely new site looks like this. Check the count of rows is plausible for a new facility. |
+| `Keys have already been migrated` | You passed `--migrate-keys`. Leave it off — see [Part 3](#part-3--every-week-after-this). Nothing was written. |
 | `treatment list has no 'currentArtStatus' column` | A column was renamed or dropped. Matching is case-insensitive, so it is genuinely absent. |
 | `dropping N row(s) with no S/N` | Not an error. Blank in the source; Step 4 recovers what it can. |
 | `VALIDATION FAILED - nothing published` | An identifying column survived. Nothing was written; the message names it. |

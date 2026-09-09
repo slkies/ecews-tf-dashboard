@@ -436,6 +436,70 @@ def check_key_collisions(df: pd.DataFrame) -> None:
         log.info("no PEPID appears under two DATIM codes in this export")
 
 
+def code_shape(v: object) -> str:
+    """A value reduced to its character classes, e.g. 'AAA999_A999A_'.
+
+    Enough to see that the export has started writing a facility code a
+    different way, without carrying anything that identifies a person. Safe
+    to log.
+    """
+    return "".join("9" if c.isdigit() else "A" if c.isalpha() else c
+                   for c in str(v))
+
+
+def check_key_format(treat: pd.DataFrame, known: set[str]) -> None:
+    """Stop if a facility code has changed shape rather than gained clients.
+
+    The overall key-check percentage is not a sufficient guard. On 5 September
+    four facilities appended a seven-character suffix to their DATIM code; the
+    export still matched 98% overall, comfortably above any blanket floor, yet
+    2,484 clients who already had a key would have been issued a second one and
+    cut off from their own history. Nothing would have errored.
+
+    What distinguishes that from a genuine intake is the shape of the code. New
+    clients arrive at facilities the vault already knows, written the way they
+    have always been written. A format change shows up as a code the vault has
+    never seen that *contains a code it knows* - the old code plus something
+    new. That is the signal, and it is worth stopping the run for.
+    """
+    if not known or "datimCode" not in treat.columns:
+        return
+    codes = set(treat["datimCode"].astype("string").str.strip()
+                .str.upper().dropna())
+    # The vault key is the code followed by the PEPID, so a code the vault
+    # knows is one that some key begins with. Cut at the widths this export
+    # actually uses rather than assuming a width - that assumption is the very
+    # thing that failed here before.
+    widths = {len(c) for c in codes}
+    seen = {k[:n] for k in known for n in widths}
+    unknown = sorted(codes - seen)
+    if not unknown:
+        log.info("key format: %d facility code(s), all known to the vault",
+                 len(codes))
+        return
+
+    extended = [c for c in unknown
+                if any(c.startswith(s) and c != s for s in codes & seen)]
+    n_rows = int(treat["datimCode"].astype("string").str.strip().str.upper()
+                 .isin(unknown).sum())
+    log.warning("key format: %d facility code(s) the vault has never seen, "
+                "covering %s row(s)", len(unknown), f"{n_rows:,}")
+    for s in sorted({code_shape(c) for c in unknown}):
+        log.warning("  unrecognised code shape: %s", s)
+
+    if extended:
+        raise SystemExit(
+            f"{len(extended)} facility code(s) are a code the vault already "
+            f"knows with extra characters appended, e.g. shape "
+            f"{code_shape(extended[0])}.\n"
+            "That is a change in how the export writes the code, not a new "
+            "site. Continuing would issue a SECOND key to clients who already "
+            "have one and sever them from their published history.\n"
+            "Refusing to continue. Confirm with the HI team what changed at "
+            "those facilities, then either have the export corrected or agree "
+            "how the code should be normalised.")
+
+
 # ── register: newly unsuppressed clients ──────────────────────────────
 def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
                             vl_threshold: int = 1000,
@@ -707,14 +771,21 @@ def main() -> int:
     # So check the built key actually hits the vault before using it.
     hit = norm_key(built).isin(vault.lookup).mean()
     log.info("key check: %.1f%% of the export matches the vault", hit * 100)
-    if hit < 0.5 and len(vault.lookup):
+    # A blanket floor is a coarse instrument - the 5 September format change
+    # sat at 98% - so the shape check below is the one that catches a rewritten
+    # code. This floor only catches the wholesale case. Both print shapes, never
+    # a key: the failure path is still a place identifiers must not appear.
+    if hit < 0.95 and len(vault.lookup):
         raise SystemExit(
-            f"only {hit:.1%} of the treatment list matches the vault. The key "
-            f"format has probably changed.\n"
-            f"  built from the export : {built.dropna().iloc[0]}\n"
-            f"  a key in the vault    : {next(iter(vault.lookup))}\n"
+            f"only {hit:.1%} of the treatment list matches the vault, and "
+            f"about 99% is normal. The key format has probably changed.\n"
+            f"  shape built from the export : "
+            f"{code_shape(built.dropna().iloc[0])}\n"
+            f"  shape of a key in the vault : "
+            f"{code_shape(next(iter(vault.lookup)))}\n"
             "Refusing to continue - carrying on would issue a new key to "
-            "nearly every client and orphan the entire published history.")
+            "clients who already have one and orphan their published history.")
+    check_key_format(treat, vault.lookup)
     if VAULT_NEW in treat.columns:
         mismatch = int((norm_key(treat[VAULT_NEW]) != norm_key(built)).sum())
         if mismatch:
