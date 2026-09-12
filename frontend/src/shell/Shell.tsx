@@ -1,34 +1,50 @@
 import { useEffect, useState } from 'react'
+import FilterBar from '../components/FilterBar'
 import { api } from '../core/api'
+import { useFilters } from '../core/filters'
+import { fmt, fmtDate } from '../core/format'
+import type { Overview as Ov } from '../core/overview'
 import { useSession } from '../core/session'
 import { useTheme } from '../core/theme'
 import type { Summary } from '../core/types'
+import Overview from '../pages/Overview'
 import BuildLine from './BuildLine'
 import { GROUPS, NAV } from './nav'
-
-const fmt = (n: number | null | undefined) =>
-  n == null ? '—' : n.toLocaleString('en-GB')
 
 export default function Shell() {
   const { me, signOut } = useSession()
   const { toggle } = useTheme()
+  const { query, options } = useFilters()
   const [view, setView] = useState('overview')
   const [summary, setSummary] = useState<Summary | null>(null)
+  const [overview, setOverview] = useState<Ov | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
 
   const items = NAV.filter((n) => !n.adminOnly || me?.role === 'admin')
 
+  // Re-fetch whenever the filter query changes. `query` is a string, so an
+  // identical selection reached by a different route does not refetch.
   useEffect(() => {
+    if (!options) return          // wait for the bar, or the first call is unfiltered
     let cancelled = false
-    api<Summary>('/summary')
-      .then((s) => { if (!cancelled) setSummary(s) })
-      .catch(() => {})
+    setLoading(true)
+    Promise.all([
+      api<Summary>(`/summary${query}`),
+      api<Ov>(`/overview${query}`),
+    ])
+      .then(([s, o]) => {
+        if (cancelled) return
+        setSummary(s); setOverview(o); setErr(null)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setErr(e instanceof Error ? e.message : 'Could not load')
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [query, options])
 
-  const asof = summary?.as_of
-    ? new Date(summary.as_of).toLocaleDateString('en-GB',
-        { day: 'numeric', month: 'short', year: 'numeric' })
-    : '—'
+  const asof = fmtDate(summary?.as_of)
 
   return (
     <div className="shell">
@@ -84,7 +100,12 @@ export default function Shell() {
         </header>
 
         <main className="wrap">
-          <Placeholder view={view} />
+          <FilterBar />
+          {err && <div className="notice warn"><h3>Could not load</h3>{err}</div>}
+          {loading && <div className="spin" />}
+          {view === 'overview'
+            ? <Overview data={overview} />
+            : <Placeholder view={view} />}
         </main>
       </div></div>
     </div>

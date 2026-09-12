@@ -1,0 +1,546 @@
+/* Components and page styles, ported from backend/static/index.html
+ * (the stylesheet between the shell rules and the end of <style>).
+ *
+ * Taken wholesale rather than rewritten. While both apps are served the
+ * two must look identical, and a hand-rewritten stylesheet would drift
+ * in a dozen small ways nobody would notice until a screenshot went into
+ * a report. Splitting it into components/pages can happen once the old
+ * app is gone and there is only one copy to keep honest.
+ */
+/* No max-width cap: the rail already frames the page, so the content fills its
+   column right up to the edges the way the prototype does. A cap + margin:auto
+   left symmetric gutters that read as dead space beside the rail. Wide prose
+   still self-limits via .narr p / .doc measures. */
+.railmain>.inner{width:100%;min-width:0;padding:0 32px 60px;flex:1}
+/* One control in one place: on desktop it collapses the rail, on mobile it
+   opens it as a drawer. Same button, same position, so there is nothing new
+   to learn when the window changes size. */
+.burger{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink-2);
+  cursor:pointer;flex-shrink:0;font-size:15px;transition:.15s}
+.burger:hover{border-color:var(--green);color:var(--green)}
+/* Collapse is desktop-only. Below 900px the rail is a fixed drawer, and
+   display:none there would break it, so the rule is scoped deliberately. */
+@media(min-width:901px){
+  /* ONE track, not a zero-width first track: display:none takes the rail out
+     of the grid flow, so with two tracks the content shifted into the empty
+     first one and rendered 64px wide. */
+  .shell.rail-off{grid-template-columns:minmax(0,1fr)}
+  .shell.rail-off .rail{display:none}
+}
+@media(max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .rail{position:fixed;left:0;top:0;bottom:0;width:250px;
+    transform:translateX(-100%);transition:transform .24s cubic-bezier(.3,.8,.3,1)}
+  .rail.on{transform:none}
+  .railmain>.inner{padding:0 16px 70px}
+  .railscrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+    transition:.2s;z-index:55}
+  .railscrim.on{opacity:1;pointer-events:auto}
+}
+
+/* ── status chip + data-notices drawer ────────────────────────── */
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:20px;
+  background:var(--honey-l);color:var(--honey);border:none;cursor:pointer;
+  font:inherit;font-size:12px;font-weight:600;white-space:nowrap}
+.status .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.status:hover{filter:brightness(.97)}
+.status.crit{background:var(--brick-l);color:var(--brick)}
+.ndrawer-scrim{position:fixed;inset:0;background:rgba(18,24,26,.32);opacity:0;pointer-events:none;
+  transition:.2s;z-index:65}
+.ndrawer-scrim.on{opacity:1;pointer-events:auto}
+.ndrawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,100%);background:var(--card);
+  box-shadow:-8px 0 40px rgba(18,24,26,.14);transform:translateX(100%);
+  transition:transform .24s cubic-bezier(.3,.8,.3,1);z-index:66;display:flex;flex-direction:column}
+.ndrawer.on{transform:none}
+.ndrawer>header{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px;border-bottom:1px solid var(--line)}
+.ndrawer h3{font-size:14px;font-weight:600}
+.ndrawer .body{overflow:auto;padding:14px 20px 30px}
+.ndrawer .x{background:none;border:none;font-size:20px;color:var(--ink-3);cursor:pointer;line-height:1}
+
+/* ── sortable table headers ───────────────────────────────────── */
+.tw th,.tbl-wrap th{cursor:pointer;user-select:none}
+.tw th:hover,.tbl-wrap th:hover{color:var(--ink)}
+.tw th.sorted,.tbl-wrap th.sorted{color:var(--green)}
+th .caret{font-size:8px;margin-left:4px;color:var(--green);vertical-align:middle}
+
+/* One row. The selects share the space equally and shrink together instead of
+   each claiming a fixed 132px and wrapping - the facility list in particular
+   was forcing a very wide control. */
+/* Sticks to the top of the scroll container. A dashboard is read by scrolling
+   down a long page, and by the time you reach a facility table you can no
+   longer see which state you filtered to - so a number gets misread as the
+   programme total. The bar carries an opaque background and a shadow that only
+   appears once it is stuck, so it separates from the content passing beneath
+   without drawing a line across the page when it is at rest.
+
+   Not sticky on a very short screen, where it would eat too much of the view.
+   The threshold is 520px, not 640: a maximised browser on a 1366x768 laptop
+   reports around 570-600px of viewport once its own chrome is taken off, and
+   at 640 the bar quietly stopped sticking for exactly the people most likely
+   to be scrolling a long page. The bar is roughly 70px - 13% at 520.
+
+   Desktop-only (min-width:901px, matching the rail's mobile breakpoint): on a
+   phone the filters bar can run seven or eight rows tall once the controls
+   wrap, so pinning it ate half the screen for the whole scroll. Height alone
+   can't catch this - a phone in portrait clears 520px of height easily even
+   though it has none of the width a sticky bar needs. Mobile gets the plain,
+   scrolls-away-with-the-page behaviour instead. */
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px;
+  padding:12px 14px;background:var(--card);border:1px solid var(--rule);border-radius:var(--r)}
+@media (min-width:901px) and (min-height:520px){
+  .filters{position:sticky;top:0;z-index:30;
+    /* The card background is already opaque; the shadow is what stops content
+       appearing to sit ON the bar as it scrolls beneath. No JS toggle - a
+       class switched on scroll is one more thing to break, and the shadow is
+       unobtrusive enough to carry at rest. */
+    box-shadow:0 6px 16px -10px rgba(0,0,0,.30)}
+}
+/* 96px basis: the eight controls sit on ONE row wherever there is room and
+   share the surplus equally. Below roughly 1100px they wrap rather than
+   squeezing on - at 960 a nowrap row rendered 60px selects, too narrow to read
+   the selected value, which is worse than a second row. */
+.f{display:flex;flex-direction:column;gap:4px;flex:1 1 96px;min-width:96px}
+.f-btn{flex:0 0 auto}
+.f label{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f select{min-width:0;width:100%;cursor:pointer;padding:7px 8px}
+.chip{font-size:11px;color:var(--ink-3);align-self:center;margin-left:auto;
+  flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:900px){.f{flex:1 1 130px}}
+
+.panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
+  padding:22px;box-shadow:var(--sh);margin-bottom:16px}
+.panel-h{margin-bottom:16px}
+.panel-h h2{font-size:13px;font-weight:600}
+.panel-h p{font-size:12px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.eyebrow{font-size:10px;font-weight:600;color:var(--green);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:7px}
+/* minmax(0,1fr), not 1fr: a grid child's min-width defaults to its content,
+   so a wide table silently pushes the row past the container and the card
+   edges stop lining up with the full-width panels above/below. */
+.grid{display:grid;gap:16px}.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.grid>.panel{min-width:0}
+
+/* auto-FIT: empty tracks collapse and the cards stretch, so every KPI row
+   reaches the right-hand edge. auto-fill was tried and rejected - it holds the
+   track size steady, which left a four-card row stopping short of the edge
+   with visible dead space beside it. The seven-card row is unaffected: it
+   already fills exactly seven tracks, so the cards stay ~220px either way. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px;
+  margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);
+  padding:14px 15px;box-shadow:var(--sh)}
+.stat .k{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-size:27px;font-weight:600;margin-top:5px;letter-spacing:-.035em;line-height:1.12}
+.stat .n{font-size:11px;color:var(--ink-3);margin-top:2px}
+.stat.good .v{color:var(--green)}.stat.warn .v{color:var(--honey)}.stat.bad .v{color:var(--brick)}
+
+.step{display:grid;grid-template-columns:210px 1fr 170px;gap:15px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--rule-2);cursor:pointer}
+.step:last-child{border-bottom:none}
+.step:hover{background:var(--paper)}
+.step.sub{padding-left:24px;opacity:.8}
+.step .lbl{font-size:12px;font-weight:500;display:flex;align-items:center;gap:8px}
+.step .tier{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-3);width:20px}
+.track{position:relative;height:26px;border-radius:5px;overflow:hidden;
+  background:repeating-linear-gradient(-45deg,transparent,transparent 5px,var(--rule-2) 5px,var(--rule-2) 6px)}
+.fill{position:absolute;inset:0 auto 0 0;border-radius:5px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.fill.g{background:var(--green)}.fill.h{background:var(--honey)}
+.fill.b{background:var(--brick)}.fill.s{background:var(--slate)}
+/* cascade bars: thicker, with a female/male stacked split */
+.step .track{height:36px;border-radius:9px}
+.bar{position:absolute;inset:0;display:flex}
+.bar .seg{height:100%;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.casc-leg{display:flex;gap:18px;flex-wrap:wrap;margin:2px 0 16px;font-size:12px;color:var(--ink-2)}
+.casc-leg span{display:flex;align-items:center;gap:6px}
+.casc-leg i{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+.step .fig{text-align:right;font-size:13px;font-weight:600;display:flex;
+  justify-content:flex-end;align-items:baseline;gap:7px}
+.step .pct{font-size:11px;color:var(--ink-3);font-weight:500;min-width:46px}
+.loss{font-size:11px;color:var(--brick);font-weight:500}
+
+.tw{overflow:auto;max-height:470px;border:1px solid var(--rule);border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{position:sticky;top:0;background:var(--card);text-align:left;padding:10px 12px;
+  font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;border-bottom:1px solid var(--rule);white-space:nowrap;z-index:1}
+td{padding:9px 12px;border-bottom:1px solid var(--rule-2);white-space:nowrap}
+tbody tr:hover td{background:var(--paper)}
+td.r,th.r{text-align:right}
+.bar-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.mini{width:52px;height:5px;background:var(--rule-2);border-radius:3px;overflow:hidden}
+.mini i{display:block;height:100%;border-radius:3px}
+
+.notice{border:1px solid;border-radius:var(--r);padding:15px 17px;margin-bottom:14px;
+  font-size:13px;line-height:1.6}
+.notice h3{font-size:12px;font-weight:600;margin-bottom:5px}
+.notice.stop{background:var(--brick-l);border-color:var(--brick);color:var(--brick)}
+.notice.warn{background:var(--honey-l);border-color:var(--honey);color:var(--honey)}
+.notice.ok{background:var(--green-l);border-color:var(--green);color:var(--green)}
+.notice.info{background:var(--slate-l);border-color:var(--slate);color:var(--slate)}
+.notice code{font-family:'IBM Plex Mono',monospace;font-size:11px;
+  background:rgba(128,128,128,.14);padding:1px 5px;border-radius:4px}
+.notice ul{margin:5px 0 0 16px}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px}
+.t-g{background:var(--green-l);color:var(--green)}
+.t-h{background:var(--honey-l);color:var(--honey)}
+.t-b{background:var(--brick-l);color:var(--brick)}
+.t-n{background:var(--rule-2);color:var(--ink-2)}
+
+/* A plan row now leads with WHY it applies, then the action. Aligned to the
+   top rather than centred, because the reason wraps to several lines. */
+.plan{display:flex;align-items:flex-start;gap:14px;padding:16px 0;
+  border-bottom:1px solid var(--rule-2);cursor:pointer}
+.plan:last-child{border-bottom:none}
+.plan:hover{background:var(--paper)}
+.plan .code{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;
+  font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.plan .txt{flex:1;min-width:0;font-size:13px}
+.plan .why{font-size:12.5px;color:var(--ink-3);line-height:1.6;max-width:88ch}
+.plan .act{font-size:13.5px;font-weight:600;color:var(--ink);margin-top:5px}
+.plan .plan-bar{height:14px;border-radius:7px;margin-top:9px}
+.plan .cnt{font-size:17px;font-weight:600}
+
+/* doc fills the card; prose keeps a readable measure while the grids and
+   tables (.thr/.abcde/.tw/.pull) span the full width - no dead gutter. */
+.doc{max-width:none;font-size:15px;line-height:1.75;color:var(--ink-2)}
+.narrative{font-size:15px;line-height:1.72;color:var(--ink-2)}
+/* Runs the full width of its card. A capped measure was tried and rejected in
+   review: it left visible dead space to the right of the card, which reads
+   worse than the long line it was avoiding. */
+.narrative p{margin:0 0 12px;max-width:none}
+.narrative p:last-child{margin-bottom:0}
+.narrative strong{color:var(--ink);font-weight:600}
+/* Overview narrative: the prototype sets it on a faint surface with a brand
+   eyebrow and a larger heading, so it reads as narrative rather than a data card. */
+#ovNarr{background:var(--surface)}
+#ovNarr .panel-h h2{font-size:17px;letter-spacing:-.02em}
+.disagg-h{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.doc h2{font-size:17px;font-weight:600;color:var(--ink);margin:30px 0 10px;letter-spacing:-.01em}
+.doc h2:first-of-type{margin-top:0}
+.doc h3{font-size:13px;font-weight:600;color:var(--ink);margin:22px 0 7px}
+.doc p{margin-bottom:13px}
+.doc strong{color:var(--ink);font-weight:600}
+.doc ul,.doc ol{margin:0 0 14px 20px}
+.doc li{margin-bottom:6px}
+.abcde{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:var(--r);overflow:hidden;margin:16px 0}
+.abcde div{background:var(--card);padding:12px 15px;display:flex;gap:13px;align-items:baseline}
+.abcde b{color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:15px;width:16px;flex-shrink:0}
+.thr{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;margin:16px 0}
+.thr div{background:var(--card);padding:15px}
+.thr .v{font-size:19px;font-weight:600;font-family:'IBM Plex Mono',monospace}
+.thr .l{font-size:11px;color:var(--ink-3);margin-top:3px}
+.pull{border-left:3px solid var(--green);padding:3px 0 3px 15px;margin:16px 0;
+  color:var(--ink);font-weight:500}
+
+.drop{border:1.5px dashed var(--rule);border-radius:12px;padding:42px;text-align:center;background:var(--paper)}
+.drop.over{border-color:var(--green);background:var(--green-l)}
+/* max-width guards every chart: a canvas retains the pixel width of its last
+   render, which otherwise widens any auto-sized parent when the viewport shrinks. */
+canvas{max-height:270px;max-width:100%}
+.view{display:none}.view.on{display:block}
+.spin{width:24px;height:24px;border:2.5px solid var(--rule);border-top-color:var(--green);
+  border-radius:50%;animation:sp .7s linear infinite;margin:36px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);
+  font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* mobile: tighten chrome and stack the two-up rows so nothing overflows */
+@media(max-width:640px){
+  .wrap{padding:0 12px 60px}
+  .panel{padding:16px 15px}
+  .top{padding:16px 0 14px}
+  .top h1{font-size:14px;line-height:1.25}
+  .stat{padding:13px 14px}.stat .v{font-size:22px}
+  .filters{padding:12px 13px}.f select{min-width:118px}
+  .box-row{grid-template-columns:1fr;gap:5px}
+  .box-row .box-val{text-align:left}.box-row .box-plot{height:26px}
+  .dp-grid{grid-template-columns:1fr}
+  .oc-state{grid-template-columns:74px 1fr 78px;gap:9px}
+  /* Let tables WRAP and fit the screen rather than force a sideways scroll.
+     The global td{white-space:nowrap} otherwise pushes them to ~600px. */
+  td,th{white-space:normal}
+  .tbl-wrap table,.tw table,.src-tbl{min-width:0;font-size:12px}
+  .tbl-wrap td,.tbl-wrap th,.tw td,.tw th{padding:7px 6px}
+  .forest-ax,.frow2{grid-template-columns:96px 1fr 84px;gap:8px}
+  .narr-side,.cohort-list .row{font-size:12.5px}
+  .modal{padding:18px 16px}
+}
+/* nothing may push the document sideways */
+.wrap,.panel,.grid>*{min-width:0;max-width:100%}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:880px){.g2,.thr{grid-template-columns:1fr}
+  .step{grid-template-columns:1fr;gap:5px}.step .fig{justify-content:flex-start}}
+
+/* Overview page */
+.foot{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+.foot b{color:var(--ink);font-weight:600}
+.frow{display:grid;grid-template-columns:150px 1fr 96px;gap:10px;align-items:center;
+  padding:7px 0;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:none}
+.flab{font-size:12.5px}
+.ftrack{height:18px;border-radius:5px;background:var(--line);overflow:hidden}
+.ftrack i{display:block;height:100%;background:var(--green);border-radius:5px}
+/* narrative two-column: prose + cohort-at-a-glance side panel */
+.narr-grid{display:grid;grid-template-columns:1fr 288px;gap:30px;align-items:start}
+.narr-side{display:flex;flex-direction:column;border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden}
+.narr-side .eb{font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.07em;padding:12px 15px 10px;background:var(--bg-2);border-bottom:1px solid var(--line)}
+.narr-side .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:11px 15px;border-bottom:1px solid var(--line)}
+.narr-side .row:last-child{border-bottom:none}
+.narr-side .row .l{font-size:12px;color:var(--ink-2)}
+.narr-side .row .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.narr-side .row .v em{font-style:normal;font-size:11px;color:var(--ink-3);font-weight:400;margin-left:5px}
+.cohort-list{display:flex;flex-direction:column}
+.cohort-list .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:10px 0;border-bottom:1px solid var(--line)}
+.cohort-list .row:last-child{border-bottom:none}
+.cohort-list .l{font-size:12.5px;color:var(--ink-2)}
+.cohort-list .v{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cohort-list .v em{font-style:normal;font-size:11px;color:var(--ink-3);font-weight:400;margin-left:5px}
+@media(max-width:880px){.narr-grid{grid-template-columns:1fr;gap:20px}}
+/* EAC & outcome summary — modern meter rows */
+.ofun{display:flex;flex-direction:column;gap:15px}
+.ofun+.disagg-h{margin-top:18px}
+.ofrow .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:7px}
+.ofrow .lbl{font-size:12.5px;color:var(--ink);font-weight:500}
+.ofrow .val{font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ofrow .val em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:6px}
+.otrack{height:8px;border-radius:5px;background:var(--rule-2);overflow:hidden}
+.otrack i{display:block;height:100%;border-radius:5px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.otrack.fat{height:18px;border-radius:8px}
+/* ── multi-select filters ───────────────────────────────────────────────
+   Every filter takes several values now. "Paediatrics and adolescents" is two
+   age bands, and asking it one band at a time and adding up by hand is the
+   arithmetic a dashboard exists to remove.
+
+   A native <select multiple> is a list box, not a dropdown: ten of them would
+   turn the filter bar into a wall. So the <select> stays in the DOM as the
+   state - other code reads its .options, and the existing change handler still
+   fires - and this draws a button and a checkbox panel over it. */
+.ms{position:relative;min-width:0}
+.ms>select{display:none}
+.ms-btn{width:100%;text-align:left;font:inherit;font-size:12.5px;
+  padding:7px 22px 7px 9px;border:1px solid var(--rule);border-radius:7px;
+  background:var(--card);color:var(--ink);cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.ms-btn:after{content:"";position:absolute;right:8px;top:50%;
+  width:0;height:0;margin-top:-2px;border:4px solid transparent;
+  border-top-color:var(--ink-3)}
+.ms-btn:hover{border-color:var(--green)}
+.ms-btn.on{border-color:var(--green);color:var(--green);font-weight:600}
+.ms-menu{position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:100%;
+  max-width:280px;max-height:260px;overflow-y:auto;background:var(--card);
+  border:1px solid var(--rule);border-radius:8px;box-shadow:0 8px 24px -8px rgba(0,0,0,.35);
+  padding:5px}
+.ms-menu[hidden]{display:none}
+/* Two classes deep on purpose. The filter bar styles its field captions with
+   `.f label{font-size:10px;text-transform:uppercase;overflow:hidden;
+   text-overflow:ellipsis}` - and these options are <label>s inside a .f, so
+   that rule reached in and won on specificity, dressing every option as a
+   clipped 10px caption. Scoped so the bar cannot reach inside the menu. */
+.ms-menu .ms-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border-radius:5px;cursor:pointer;font-size:12.5px;font-weight:400;
+  color:var(--ink);text-transform:none;letter-spacing:normal;
+  overflow:visible;text-overflow:clip;white-space:nowrap;line-height:1.4}
+.ms-menu .ms-opt:hover{background:var(--bg-2)}
+.ms-menu .ms-opt input{margin:0;flex-shrink:0;accent-color:var(--green);
+  width:14px;height:14px}
+.ms-menu .ms-opt span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ms-menu .ms-all{border-bottom:1px solid var(--rule);margin-bottom:3px;
+  padding-bottom:7px;font-weight:600}
+
+/* time-metrics box-and-whisker */
+.box-row{display:grid;grid-template-columns:236px 1fr 132px;gap:14px;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--line)}
+.box-row:last-child{border-bottom:none}
+.box-lbl{font-size:12.5px;color:var(--ink)}
+.box-lbl em{display:block;font-style:normal;color:var(--ink-3);font-size:11px;margin-top:1px}
+.box-plot{position:relative;height:30px}
+.bx-whisk{position:absolute;top:50%;height:1.5px;background:var(--ink-3);transform:translateY(-50%)}
+.bx-cap{position:absolute;top:26%;bottom:26%;width:1.5px;background:var(--ink-3)}
+.bx-box{position:absolute;top:5px;bottom:5px;border-radius:4px}
+.bx-med{position:absolute;top:3px;bottom:3px;width:2.5px;background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.bx-tgt{position:absolute;top:-1px;bottom:-1px;width:0;border-left:2px dashed #DC2626}
+.bx-tgt span{position:absolute;top:-14px;left:2px;font-size:9px;color:#DC2626;white-space:nowrap}
+.box-val{text-align:right;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.box-val b{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.box-val em{display:block;font-style:normal;color:var(--ink-3);font-size:11px}
+@media(max-width:640px){.box-row{grid-template-columns:120px 1fr 96px;gap:10px}}
+/* let the weekly chart grow to fill its panel (no dead space beneath it) */
+.panel.col{display:flex;flex-direction:column}
+.panel.col .chart-fill{position:relative;flex:1 1 auto;min-height:236px}
+.panel.col .chart-fill canvas{position:absolute;inset:0;max-height:none!important}
+/* EAC & outcome summary: two donuts + per-state bars */
+/* minmax(0,1fr), not 1fr: a canvas keeps an intrinsic width from its last
+   render, so an auto-min track sizes to THAT instead of the space available and
+   the row blows past the viewport. */
+.oc-donuts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:6px}
+.oc-d{min-width:0;border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;background:var(--bg-2)}
+.oc-t{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:8px;text-align:center}
+.oc-donut{position:relative;height:158px}
+.oc-center{position:absolute;inset:0 0 0 0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:none}
+.oc-center .big{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.oc-center .sub{font-size:10px;color:var(--ink-3);margin-top:1px}
+.oc-leg{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 14px;margin-top:10px;
+  font-size:11.5px;color:var(--ink-2)}
+.oc-leg span{display:flex;align-items:center;gap:6px}
+.oc-leg i{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+.oc-leg b{font-weight:600;color:var(--ink)}
+.oc-state{display:grid;grid-template-columns:96px 1fr 96px;gap:12px;align-items:center;padding:6px 0}
+.oc-state .sn{font-size:12.5px;color:var(--ink)}
+.oc-state .st{height:8px;border-radius:5px;background:var(--rule-2);overflow:hidden}
+.oc-state .st i{display:block;height:100%;border-radius:5px}
+.oc-state .sv{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.oc-state .sv em{font-style:normal;color:var(--ink-3);font-weight:400;font-size:11px;margin-left:5px}
+@media(max-width:760px){.oc-donuts{grid-template-columns:minmax(0,1fr)}}
+/* methodology & data sources panel */
+.src-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start}
+.src-meth{margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.src-meth li{margin-bottom:6px}
+.src-meth b{color:var(--ink);font-weight:600}
+.src-note{font-size:12px;color:var(--ink-3);margin-top:10px}
+.src-note b{color:var(--ink-2);font-weight:600}
+.src-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+.src-tbl th{text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--ink-3);border-bottom:1px solid var(--line);font-weight:600}
+.src-tbl td{padding:8px 9px;border-bottom:1px solid var(--line)}
+.src-tbl tr:last-child td{border-bottom:none}
+.src-tbl th.r,.src-tbl td.r{text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:760px){.src-grid{grid-template-columns:1fr;gap:18px}}
+/* deep-dive: descriptive who/what/when/where infographic */
+.dp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:16px}
+.dp-card{border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;background:var(--bg-2)}
+.dp-card h4{font-size:10.5px;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+  letter-spacing:.07em;margin-bottom:11px}
+.dp-row{display:grid;grid-template-columns:104px 1fr 74px;gap:9px;align-items:center;padding:3.5px 0}
+.dp-row .l{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-row .t{height:7px;border-radius:4px;background:var(--rule-2);overflow:hidden}
+.dp-row .t i{display:block;height:100%;border-radius:4px;transition:width .5s cubic-bezier(.2,.7,.3,1)}
+.dp-row .v{text-align:right;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink);
+  font-weight:600;white-space:nowrap}
+.dp-row .v em{font-style:normal;color:var(--ink-3);font-size:10.5px;font-weight:400;margin-left:4px}
+.dp-donut{position:relative;height:146px;margin-top:2px}
+.dp-donut canvas{max-height:146px}
+.dp-card .oc-leg{margin-top:8px;font-size:11px;gap:5px 12px}
+.dp-card .oc-center .big{font-size:20px}
+.chart-box{position:relative;height:210px;margin-bottom:18px}
+.chart-box canvas{max-height:210px}
+/* residence choropleth (vanilla SVG, boundaries bundled locally) */
+.map-box{margin-bottom:18px}
+.map-box svg{display:block;width:100%;max-height:620px;margin:0 auto}
+.map-lga{stroke:var(--card);stroke-width:.4;transition:opacity .15s}
+.map-lga:hover{opacity:.72}
+.map-ctx{fill:var(--rule-2);stroke:var(--rule);stroke-width:.5;opacity:.5}
+.map-focus{fill:none;stroke:var(--ink);stroke-width:1.4;opacity:.8;pointer-events:none}
+.map-lbl{fill:var(--ink);font-size:17px;font-weight:600;text-anchor:middle;
+  paint-order:stroke;stroke:var(--card);stroke-width:3.5px;pointer-events:none}
+.map-ctxlbl{fill:var(--ink-3);font-size:11px;text-anchor:middle;
+  paint-order:stroke;stroke:var(--card);stroke-width:2.5px;pointer-events:none}
+.map-leg{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ink-2);
+  margin-top:8px;flex-wrap:wrap}
+.map-leg .grad{width:140px;height:8px;border-radius:4px;
+  background:linear-gradient(90deg,#a9d6e5,#012a4a)}
+.map-leg i{width:11px;height:11px;border-radius:3px;background:var(--rule-2);display:inline-block}
+.map-leg i.ctx{background:var(--rule-2);border:1px solid var(--rule);opacity:.7}
+.map-note{font-size:11px;color:var(--ink-3);margin-top:6px;line-height:1.5}
+/* feedback modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(20,18,15,.45);z-index:50;
+  align-items:center;justify-content:center;padding:20px}
+.modal-bg.on{display:flex}
+.modal{background:var(--card);border:1px solid var(--rule);border-radius:14px;
+  padding:22px;width:100%;max-width:440px;box-shadow:var(--sh)}
+.modal h3{font-size:15px;font-weight:600}
+.modal p{font-size:12.5px;color:var(--ink-3);margin:4px 0 14px}
+.modal textarea{width:100%;font:inherit;font-size:13px;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink);resize:vertical}
+.modal-foot{display:flex;align-items:center;gap:10px;margin-top:14px}
+.modal-foot #fbMsg{font-size:12px;color:var(--ink-3);margin-right:auto}
+.fab{position:fixed;right:22px;bottom:22px;z-index:40;font:inherit;font-size:13px;
+  font-weight:600;padding:11px 17px;border-radius:24px;border:none;cursor:pointer;
+  background:var(--green);color:#fff;box-shadow:0 3px 12px rgba(33,30,26,.22);
+  display:flex;align-items:center;gap:7px;transition:.15s}
+.fab:hover{background:var(--green-d);box-shadow:0 5px 18px rgba(33,30,26,.28)}
+@media(max-width:600px){.fab{right:14px;bottom:14px;padding:10px 14px}}
+/* admin user management */
+.user-form{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.user-form input,.user-form select{width:auto;min-width:130px}
+.user-form #nuName{min-width:150px}
+.user-form #nuMsg{font-size:12px;color:var(--ink-3)}
+@media(max-width:520px){.dp-row{grid-template-columns:84px 1fr 66px}}
+/* deep-dive: forest plot + significance callouts */
+.forest-ax,.frow2{display:grid;grid-template-columns:210px 1fr 150px;gap:12px;align-items:center}
+.forest-ax{font-size:10px;color:var(--ink-3);padding-bottom:8px;
+  border-bottom:1px solid var(--line);margin-bottom:2px}
+.forest-ax .ticks{position:relative;height:12px}
+.forest-ax .ticks span{position:absolute;transform:translateX(-50%)}
+.frow2{padding:7px 0;border-bottom:1px solid var(--line)}
+.frow2:last-child{border-bottom:none}
+.frow2 .flbl{font-size:12.5px;color:var(--ink)}
+.frow2 .flbl em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:5px}
+.fplot{position:relative;height:20px}
+.fplot .one{position:absolute;top:-7px;bottom:-7px;width:1px;background:var(--rule-2)}
+.fplot .ci{position:absolute;top:50%;height:3px;transform:translateY(-50%);border-radius:2px}
+.fplot .dot{position:absolute;top:50%;width:11px;height:11px;border-radius:50%;
+  transform:translate(-50%,-50%);border:2px solid var(--card)}
+.fnum{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fnum em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:5px}
+.dd-cell{display:flex;flex-direction:column;gap:11px}
+.dd-item{display:flex;gap:12px;align-items:baseline}
+.dd-item .b{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;
+  min-width:74px;letter-spacing:-.02em}
+.dd-item .t{font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.dd-item .t b{color:var(--ink);font-weight:600}
+.dd-empty{font-size:12.5px;color:var(--ink-3)}
+.sig{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px}
+.sig.pos{background:var(--green-l);color:var(--green)}
+.sig.neg{background:var(--brick-l);color:#DC2626}
+.sig.ns{background:var(--rule-2);color:var(--ink-3)}
+#ddTable .grp td{background:var(--bg-2);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+#ddTable td .ref{font-size:10px;color:var(--ink-3);font-weight:400}
+@media(max-width:760px){.forest-ax,.frow2{grid-template-columns:120px 1fr 96px}}
+.fval{text-align:right;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.fval em{display:block;font-style:normal;font-weight:400;font-size:11px;color:var(--ink-3)}
+.tbl-wrap{overflow-x:auto;margin-top:8px}
+.tbl-wrap table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:420px}
+.tbl-wrap th{text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--ink-3);border-bottom:1px solid var(--line);font-weight:600}
+.tbl-wrap td{padding:8px 9px;border-bottom:1px solid var(--line)}
+.tbl-wrap tr:last-child td{border-bottom:none}
+.tbl-wrap th.r,.tbl-wrap td.r{text-align:right;font-variant-numeric:tabular-nums}
+.tbl-wrap td em{font-style:normal;color:var(--ink-3);font-size:11px;margin-left:4px}
+.prov{font-size:12.5px;color:var(--ink-2);padding:10px 12px;background:var(--bg-2);
+  border-radius:8px;margin-bottom:10px}
+.tag.bad{background:rgba(176,58,40,.12);color:var(--brick);padding:1px 7px;
+  border-radius:10px;font-size:11px;font-weight:600}
+.empty{padding:26px;text-align:center;color:var(--ink-3);font-size:13px}
+@media(max-width:760px){.frow{grid-template-columns:1fr;gap:3px}
+  .fval{text-align:left}.fval em{display:inline;margin-left:6px}}
+
+/* VL trajectory: one block per result, oldest first. Fixed width so the
+   columns line up down the table and an eye can scan the shape, not read
+   every number. */
+.trk{display:flex;gap:3px;align-items:center}
+.trk i{width:26px;height:15px;border-radius:2px;display:inline-block;flex-shrink:0}
+.trk i.hi{background:var(--brick)}
+.trk i.lo{background:var(--green)}
+.trk i.imp{background:repeating-linear-gradient(45deg,var(--brick),var(--brick) 3px,
+  var(--brick-l) 3px,var(--brick-l) 6px)}
+.trk .arrow{color:var(--ink-3);font-size:10px;flex-shrink:0}
+.pat{font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;white-space:nowrap}
+.pat.rise{background:var(--brick-l);color:var(--brick)}
+.pat.flat{background:var(--honey-l);color:var(--honey)}
+.pat.one{background:var(--bg-2);color:var(--ink-3)}
+.pat.reb{background:var(--slate-l);color:var(--slate)}

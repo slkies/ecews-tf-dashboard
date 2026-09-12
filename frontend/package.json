@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "tsc -b --noEmit"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "chart.js": "4.4.1",
