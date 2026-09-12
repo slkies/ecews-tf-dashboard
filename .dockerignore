@@ -1,0 +1,21 @@
+# The build context is the repo root, so everything below would otherwise be
+# shipped to the daemon on every build.
+.git
+.github
+node_modules
+frontend/node_modules
+frontend/dist
+backend/static_app
+backend/__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+.vitest
+docs
+design
+*.md
+!backend/app/VERSION
+.env
+*.log

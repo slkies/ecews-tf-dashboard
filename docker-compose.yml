@@ -13,7 +13,10 @@ services:
 
   api:
     build:
-      context: ./backend
+      # The repo root, not ./backend: the Dockerfile builds the React app from
+      # frontend/ in a first stage, and that is outside backend/.
+      context: .
+      dockerfile: backend/Dockerfile
       # Stamped by scripts/deploy.ps1. Unset (a bare `docker compose up
       # --build`) leaves the commit "unknown" - the version and the index hash
       # still work, so this degrades rather than breaks.

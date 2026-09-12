@@ -1,0 +1,21 @@
+/* IBM Plex, self-hosted (SIL OFL 1.1). The font files are the ones the
+ * existing app already serves at /vendor/fonts/, referenced by absolute path
+ * rather than copied into this build: one set of files, one cache entry, and
+ * no chance of the two apps rendering in different weights.
+ *
+ * Self-hosting is not a preference. The dashboard must make no external
+ * request at runtime - an institutional firewall or an offline site must not
+ * change how it renders - and that property is stated in the technical
+ * dossier. No Google Fonts, no CDN.
+ *
+ * Plex Sans is one variable file covering 400-700, declared with a weight
+ * RANGE rather than stored four times.
+ */
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;
+  font-display:swap;src:url('/vendor/fonts/ibm-plex-mono-400.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;
+  font-display:swap;src:url('/vendor/fonts/ibm-plex-mono-500.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;
+  font-display:swap;src:url('/vendor/fonts/ibm-plex-mono-600.woff2') format('woff2')}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 700;
+  font-display:swap;src:url('/vendor/fonts/ibm-plex-sans-var.woff2') format('woff2')}

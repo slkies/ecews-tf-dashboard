@@ -28,3 +28,9 @@ __pycache__/
 # ...but brand assets are part of the app and must ship with it
 !backend/static/brand/
 !backend/static/brand/*.png
+
+# Frontend (React migration). node_modules is restored by `npm ci` from the
+# committed lockfile; static_app is a build artifact produced by Vite or by the
+# Dockerfile's first stage, never edited by hand.
+frontend/node_modules/
+backend/static_app/

@@ -1,0 +1,44 @@
+/* Design tokens, copied VERBATIM from backend/static/index.html.
+ *
+ * Both apps are served at once during the migration - the existing dashboard
+ * at / and this one at /app - and two palettes drifting apart would make them
+ * look like two products. When the swap happens this file becomes the only
+ * copy; until then, a colour change belongs in both or neither.
+ *
+ * The reasoning in the comments below is the original author's and is kept
+ * because it records decisions (why not pure black, why the green is re-picked
+ * for dark) that would otherwise be re-litigated.
+ */
+:root{
+  /* v4: neutral white canvas; surfaces + shadow do the separating that heavy
+     warm borders used to. Brand green is unchanged. */
+  --bg:#FFFFFF; --surface:#F7F8F7; --rail:230px;
+  --paper:#F4F6F5;           /* subtle tint kept for row hovers + dropzone */
+  --card:#FFFFFF; --ink:#12181A; --ink-2:#5A6560; --ink-3:#8E9A94;
+  --rule:#E4E8E5; --rule-2:#EFF2F0; --line:#E4E8E5; --bg-2:#EFF2F0;
+  --green:#08684E; --green-d:#05402F; --green-l:#E8F3EF;
+  --honey:#B0770E; --honey-l:#FDF3E0;
+  --brick:#B03A28; --brick-l:#FBECE9;
+  --slate:#3E6C86; --slate-l:#EAF1F5; --violet:#6B5B95; --teal:#12A0B8; --r:12px;
+  --sh:0 1px 2px rgba(18,24,26,.04),0 4px 16px rgba(18,24,26,.045);
+}
+/* Dark theme: neutral near-black, not the old warm brown. #0D0F10 rather than
+   pure #000 - dense prose and tables shimmer (halation) against true black,
+   and off-white text on it is harsher than it needs to be.
+   Accents keep their HUE and are lifted in lightness: the brand green at
+   #08684E scores ~2:1 on a dark ground and is effectively unreadable, so each
+   status colour is re-picked for this background rather than reused. */
+[data-theme=dark]{
+  --bg:#0D0F10; --surface:#151819;
+  --paper:#151819; --card:#141718; --ink:#EEF1F1; --ink-2:#AEB6B6; --ink-3:#7F8888;
+  --rule:#272B2C; --rule-2:#1E2223; --line:#272B2C; --bg-2:#1B1F20;
+  --green:#2BD39C; --green-d:#16B382; --green-l:#0E2A22;
+  --honey:#E7B23C; --honey-l:#2C2310;
+  --brick:#F2705A; --brick-l:#301A16;
+  --slate:#7FB3CC; --slate-l:#152329; --violet:#B49BE8; --teal:#4FD3E6;
+  --sh:0 1px 2px rgba(0,0,0,.5),0 4px 16px rgba(0,0,0,.35);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:15px}   /* was 14 - one step up for readability */
+body{background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;line-height:1.5;transition:background .2s,color .2s}

@@ -561,7 +561,12 @@ def test_diagnostics_reports_derived_column_fill(client, admin_h):
     by = {c["column"]: c for c in d["columns"]}
     assert by["lga_res_norm"]["status"] in ("ok", "partial", "empty")
     assert by["treatment_plan"]["pct"] == 100.0      # every episode gets a plan
-    assert "app_version" in d
+    # Diagnostics carries the build alongside the data, so a screenshot of this
+    # page says which version produced it. `app_version` was the old key: it
+    # read an environment variable that was set nowhere and always answered
+    # "not set".
+    assert d["version"] and d["label"].startswith("v")
+    assert "app_version" not in d
 
 
 def test_diagnostics_is_admin_only(client, viewer_h):

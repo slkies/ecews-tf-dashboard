@@ -69,6 +69,30 @@ jobs:
       - name: Dashboard JavaScript parses
         run: python backend/scripts/check_js.py
 
+  # The React rewrite. It is not serving programme work yet, but it is in the
+  # image and on /app, so it fails the build like anything else that ships.
+  # TypeScript is checked separately from the build so a type error reports as
+  # a type error rather than as a failed bundle.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-fund --no-audit
+      - name: Types check
+        run: npx tsc -b --noEmit
+      - name: Unit tests
+        run: npm test
+      - name: Production build succeeds
+        run: npm run build
+
   guard:
     runs-on: ubuntu-latest
     steps:

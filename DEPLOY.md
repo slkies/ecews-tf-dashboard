@@ -4,6 +4,14 @@ The app is one Docker web service (FastAPI serving the SPA + API) plus a Postgre
 database. HTTPS is required — the login sends passwords, so never expose it over
 plain HTTP.
 
+> **Build context changed (12 Sep 2026).** The Dockerfile now builds the React
+> app in a first stage, so `docker-compose` builds from the **repo root** with
+> `dockerfile: backend/Dockerfile`. The hosted options below still use
+> `backend/` as their root directory and therefore produce no React build —
+> `main.py` mounts `/app` only if it exists, so the live dashboard at `/` is
+> unaffected. When the React app replaces it, those root directories change to
+> the repo root.
+
 ## Versions, and knowing which build is live
 
 The sidebar footer carries the build under the line-list date — `v1.2 · a1b2c3d`
@@ -19,6 +27,32 @@ page matches your working tree.
 An amber version with a `+` means the image was built from a working tree with
 uncommitted changes. Fine while developing; it should never be what a state
 team is looking at.
+
+### What the live site shows, and where each part comes from
+
+| Shown | Comes from | On a hosted deploy |
+|---|---|---|
+| `v1.2` | `backend/app/VERSION`, committed | Whatever that file says **at the commit the host built**. Push the release commit and the tag, and the site shows it. |
+| `· a1b2c3d` | `GIT_COMMIT` build arg, else the platform's own variable | Render and Railway publish the commit themselves (`RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`) and the app reads them, so this works with no configuration. |
+| the `+` | whether the build had uncommitted changes | **Never appears.** A host builds from a clean clone, so there is nothing to be dirty. |
+
+So a live site deployed from `main` at tag `v1.2` shows **`v1.2 · a1b2c3d`**, with
+no `+`. Locally you will usually see the `+`, because you are usually mid-edit —
+that is the difference you are looking at, not a fault.
+
+**Fly.io is the exception:** `fly deploy` publishes no commit variable, so set
+one yourself or the line reads `v1.2` with no commit:
+
+```bash
+fly deploy --build-arg GIT_COMMIT=$(git rev-parse --short=7 HEAD)
+```
+
+**Releasing to a live site is two pushes**, and a tag that never leaves your
+machine is not a release anyone else can check out:
+
+```bash
+git push && git push --tags
+```
 
 ### Cutting a release
 

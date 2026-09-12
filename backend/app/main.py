@@ -1625,5 +1625,19 @@ def version():
 
 
 _static = Path(__file__).parent.parent / "static"
+
+# The React rewrite, served alongside the app it will eventually replace. The
+# live dashboard is in weekly use by state teams and does not come down for a
+# migration, so the two run side by side: the existing single-file app at /,
+# the React build at /app, sharing this API, these fonts and this brand
+# directory. When the React app reaches parity the mounts swap.
+#
+# Mounted BEFORE "/" because mount order is match order - a StaticFiles at "/"
+# would swallow /app and serve it the old index.html.
+_static_app = Path(__file__).parent.parent / "static_app"
+if _static_app.exists():
+    app.mount("/app", StaticFiles(directory=_static_app, html=True),
+              name="static_app")
+
 if _static.exists():
     app.mount("/", StaticFiles(directory=_static, html=True), name="static")

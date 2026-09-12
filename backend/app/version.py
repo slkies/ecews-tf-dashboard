@@ -27,6 +27,20 @@ _HERE = Path(__file__).parent
 _VERSION_FILE = _HERE / "VERSION"
 _UNKNOWN = "unknown"
 
+# The commit, as each hosting platform publishes it. DEPLOY.md lists Render,
+# Railway and Fly; the rest cost nothing to support and mean the build line
+# works wherever this ends up. Fly has no equivalent - `fly deploy` passes
+# nothing - so a Fly deployment needs GIT_COMMIT set as a secret, which
+# DEPLOY.md says.
+_HOST_COMMIT_VARS = (
+    "RENDER_GIT_COMMIT",        # Render
+    "RAILWAY_GIT_COMMIT_SHA",   # Railway
+    "SOURCE_COMMIT",            # Docker Hub automated builds
+    "HEROKU_SLUG_COMMIT",       # Heroku
+    "VERCEL_GIT_COMMIT_SHA",    # Vercel
+    "GITHUB_SHA",               # GitHub Actions, so CI matches production
+)
+
 
 def _read_version_file() -> str:
     try:
@@ -61,22 +75,35 @@ def build_info() -> dict[str, object]:
     """
     version = _read_version_file()
 
-    # Baked at image build (docker-compose passes these as build args). Present
-    # in a real deployment; absent when running from a checkout.
+    # Where the commit comes from, in order:
+    #
+    #   1. GIT_COMMIT   - our own build arg, set by scripts/deploy.ps1.
+    #   2. The host's    - Render, Railway and the rest build straight from the
+    #      own variable    repository and never see our build arg, so without
+    #                      this a hosted deploy reports "unknown" and the build
+    #                      line loses the only value that actually identifies
+    #                      it. Each platform publishes the commit under its own
+    #                      name, at runtime as well as at build.
+    #   3. git itself   - development, running from a checkout.
     commit = os.getenv("GIT_COMMIT") or ""
-    dirty_env = os.getenv("GIT_DIRTY")
-
+    if not commit:
+        for var in _HOST_COMMIT_VARS:
+            if (v := os.getenv(var)):
+                commit = v
+                break
     if not commit:
         commit = _git("rev-parse", "--short=7", "HEAD") or _UNKNOWN
+    # Hosts publish the full 40-character sha; ours is already short.
+    commit = commit.strip()[:7] or _UNKNOWN
 
+    dirty_env = os.getenv("GIT_DIRTY")
     if dirty_env is not None:
         dirty = dirty_env.strip().lower() in ("1", "true", "yes")
     else:
-        status = _git("status", "--porcelain")
-        # None means git could not be consulted - unknown, not clean. Saying
-        # "clean" on no evidence is the one answer that could mislead someone
-        # into trusting a build they should not.
-        dirty = bool(status) if status is not None else False
+        # No env var and no git means this is neither our image nor a checkout
+        # - a tarball, or a host that builds from a clean clone. Clean is the
+        # accurate answer there: there is no working tree to be dirty.
+        dirty = bool(_git("status", "--porcelain"))
 
     return {
         "version": version,
