@@ -12,7 +12,14 @@ services:
       retries: 10
 
   api:
-    build: ./backend
+    build:
+      context: ./backend
+      # Stamped by scripts/deploy.ps1. Unset (a bare `docker compose up
+      # --build`) leaves the commit "unknown" - the version and the index hash
+      # still work, so this degrades rather than breaks.
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_DIRTY: ${GIT_DIRTY:-false}
     environment:
       DATABASE_URL: postgresql://ecews:${DB_PASSWORD:-ecews}@db:5432/ecews
       # Local compose only. APP_ENV=development is what permits an unset

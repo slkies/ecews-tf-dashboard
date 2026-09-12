@@ -16,6 +16,7 @@ Implements `EAC_Indicator_Definitions_and_Data_Analysis_Plan v2.1` (§3–§7).
 | Where does the project stand, and what is pending? | [`PROJECT_STATUS.md`](PROJECT_STATUS.md) |
 | **Why is it built this way, and what went wrong before?** | [`docs/DECISIONS_AND_INCIDENTS.md`](docs/DECISIONS_AND_INCIDENTS.md) |
 | How do I run the weekly de-identification pipeline? | [`docs/RUNBOOK_pipeline.md`](docs/RUNBOOK_pipeline.md) |
+| How do I deploy it, and cut a version? | [`DEPLOY.md`](DEPLOY.md) |
 | How is it architected and secured? | [`TECHNICAL_DOSSIER.md`](TECHNICAL_DOSSIER.md) |
 | What do the indicators mean, clinically? | [`EAC_Indicator_Definitions_and_Data_Analysis_Plan_v3_1.md`](EAC_Indicator_Definitions_and_Data_Analysis_Plan_v3_1.md) |
 

@@ -130,6 +130,13 @@ nav.rail-nav button .pill{margin-left:auto;font-size:10px;font-weight:600;paddin
   border-radius:20px;background:var(--brick-l);color:var(--brick)}
 .rail-foot{margin-top:auto;padding:12px 10px 4px;border-top:1px solid var(--line);
   font-size:11px;color:var(--ink-3);line-height:1.5}
+/* The build line sits under the provenance, quieter than it: needed when
+   something is wrong, ignorable the rest of the time. */
+.rail-ver{margin-top:6px;font-size:10px;opacity:.65;letter-spacing:.02em;
+  font-variant-numeric:tabular-nums}
+/* --honey is the project's caution colour and is re-picked for the dark
+   ground, so this stays legible in both themes. */
+.rail-ver.dirty{opacity:.9;color:var(--honey)}
 .railmain{min-width:0;display:flex;flex-direction:column}
 /* No max-width cap: the rail already frames the page, so the content fills its
    column right up to the edges the way the prototype does. A cap + margin:auto
@@ -1356,6 +1363,25 @@ Chart.defaults.plugins.legend.labels.usePointStyle=true;
 Chart.defaults.plugins.legend.labels.boxWidth=10;
 Chart.defaults.maintainAspectRatio=false;
 
+// Which build is on screen. Asked for by name when something looks wrong, so
+// it has to be readable off the page rather than curled from the API. The
+// endpoint is unauthenticated and discloses nothing beyond a hash, so this is
+// safe to render before sign-in as well as after.
+let VER=null;
+async function showVersion(){
+  const el=$('#railVer'); if(!el) return;
+  try{
+    if(!VER){const r=await fetch('/api/version'); if(!r.ok) return; VER=await r.json();}
+  }catch(e){return;}                      // offline or blocked - just say nothing
+  const c=VER.commit&&VER.commit!=='unknown'?' &middot; '+esc(VER.commit):'';
+  el.innerHTML=esc(VER.label||('v'+(VER.version||'?')))+c;
+  // A build made from a tree with uncommitted changes is not a release, and
+  // the only honest thing to do is say so where someone will see it.
+  el.title=VER.dirty?'Built from a modified working tree - not a tagged release'
+                    :'Release '+(VER.label||'');
+  if(VER.dirty) el.classList.add('dirty');
+}
+
 async function api(p,o){
   o=o||{};
   // A body without this header is sent as text/plain, which FastAPI rejects
@@ -1583,8 +1609,12 @@ async function refresh(){
     const cnt=fmt(sum.n)+' episodes \u00b7 '+fmt(sum.clients)+' clients';
     $('#foot').textContent=cnt;
     // Provenance lives in the rail footer only - it used to repeat in the
-    // filter bar, which said the same thing twice on the same screen.
-    $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt;
+    // filter bar, which said the same thing twice on the same screen. The
+    // build line is appended by version(), which resolves independently of
+    // the data refresh, so it must not be clobbered here.
+    $('#railFoot').innerHTML='Line list &middot; '+asof+'<br>'+cnt
+      +'<div class="rail-ver" id="railVer"></div>';
+    showVersion();
     banners(sum); overview(ov); overviewTime(times); cascade(casc);
     deep(prof,dd,byFac); dtcView(dtc); timeView(times,km,ucurve); plansView(plans);
     // Client-level DTC panels. Fetched separately rather than in the batch

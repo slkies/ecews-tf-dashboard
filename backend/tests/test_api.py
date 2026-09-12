@@ -644,3 +644,24 @@ def test_deleting_a_snapshot_cascades_its_cohort_rows(client, admin_h, cohort):
 def test_the_current_snapshot_cannot_be_deleted(client, admin_h, cohort):
     r = client.delete(f"/api/uploads/{cohort}", headers=admin_h)
     assert r.status_code == 400
+
+
+# ── build identification ──────────────────────────────────────────────
+def test_version_is_public_and_says_which_build_this_is(client):
+    """Unauthenticated by design: it is what someone reads out when the page
+    looks wrong, and it discloses only a version, a commit and a file hash."""
+    r = client.get("/api/version")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["version"].count(".") == 1, "VERSION must be MAJOR.MINOR"
+    major, minor = j["version"].split(".")
+    assert major.isdigit() and minor.isdigit()
+    assert j["label"].startswith(f"v{j['version']}")
+    assert isinstance(j["dirty"], bool)
+    assert j["index_sha"] and len(j["index_sha"]) == 12
+
+
+def test_version_never_reports_app_version_again(client):
+    """The old key read an env var that was never set anywhere, so it answered
+    'not set' in every environment this project has ever run in."""
+    assert "app_version" not in client.get("/api/version").json()

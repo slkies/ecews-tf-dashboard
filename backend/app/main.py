@@ -34,6 +34,7 @@ from pydantic import BaseModel
 
 from . import indicators as ind
 from .ingest import COHORT_COLS, cohort_records, ingest_workbook
+from .version import build_info
 from .security import create_token, decode_token, hash_password, verify_password
 
 log = logging.getLogger("ecews")
@@ -1575,7 +1576,7 @@ def diagnostics(u: Annotated[dict, Depends(admin)]):
                                    ("empty" if n == 0 else "partial")})
     return {
         "ok": True,
-        "app_version": os.getenv("APP_VERSION", "not set"),
+        **build_info(),
         "snapshot": {"id": up["id"], "filename": up["filename"],
                      "as_of": up["as_of"], "uploaded_at": up["uploaded_at"],
                      "rows": total},
@@ -1607,8 +1608,7 @@ def version():
     import hashlib
     idx = _static / "index.html"
     if not idx.exists():
-        return {"app_version": os.getenv("APP_VERSION", "not set"),
-                "index_sha": None, "index_modified": None}
+        return {**build_info(), "index_sha": None, "index_modified": None}
     # Hash with line endings normalised. Git stores LF and checks out CRLF on
     # Windows, so the same commit yields two different hashes depending on
     # where it was checked out - which would make this tool accuse a correct
@@ -1616,7 +1616,7 @@ def version():
     # `git show <ref>:backend/static/index.html | sha256sum` anywhere.
     raw = idx.read_bytes()
     return {
-        "app_version": os.getenv("APP_VERSION", "not set"),
+        **build_info(),
         "index_sha": hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()[:12],
         "index_bytes": len(raw),
         "index_modified": dt.datetime.fromtimestamp(

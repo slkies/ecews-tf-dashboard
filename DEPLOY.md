@@ -4,6 +4,41 @@ The app is one Docker web service (FastAPI serving the SPA + API) plus a Postgre
 database. HTTPS is required — the login sends passwords, so never expose it over
 plain HTTP.
 
+## Versions, and knowing which build is live
+
+The sidebar footer carries the build under the line-list date — `v1.2 · a1b2c3d`
+— and `/api/version` returns the same thing as JSON, unauthenticated. That is
+what to read out when something looks wrong; "the dashboard" is not a build.
+
+**Deploy locally with `backend\scripts\deploy.ps1`, not `docker compose up
+--build`.** Both rebuild; only the script passes the commit into the image, so
+without it the build line reads `unknown` — accurate, and useless at the moment
+you need it. `deploy.ps1 -Check` says what is running now and whether the served
+page matches your working tree.
+
+An amber version with a `+` means the image was built from a working tree with
+uncommitted changes. Fine while developing; it should never be what a state
+team is looking at.
+
+### Cutting a release
+
+```powershell
+python backend\scripts\bump_version.py minor    # 1.0 -> 1.1
+python backend\scripts\bump_version.py major    # 1.4 -> 2.0
+git push && git push --tags
+```
+
+It refuses to tag a dirty tree, writes `backend/app/VERSION`, commits, and
+creates the annotated tag. Which of the two to use:
+
+| | When |
+|---|---|
+| **minor** | Anything the team will notice but nothing they must relearn — a new panel, a fixed chart, a new export column. Most releases. |
+| **major** | The meaning of a number changed, or a workflow did — a new indicator definition, a different cohort rule, a page that moves or disappears. **If a state team's briefing note would now be wrong, it is major.** |
+
+The tags are the record: `git tag` lists the releases, `git log v1.1..v1.2`
+says what changed between two of them.
+
 ## Security checklist (do this first — the app is public once deployed)
 - [ ] **Strong `JWT_SECRET`** — a long random string. On Render the blueprint
       generates one automatically.
