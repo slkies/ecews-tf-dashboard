@@ -281,8 +281,11 @@ export default function WorklistsPage() {
         <Alert variant="destructive"><AlertDescription>{err}</AlertDescription></Alert>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <nav aria-label="Worklists" className="flex flex-col gap-4">
+      {/* The lists sit beside the table only on very wide screens. On a laptop
+          the table needs the full width: with both viral loads and their dates
+          it is about 1,500px, and beside the lists half of it was off-screen. */}
+      <div className="grid items-start gap-4 2xl:grid-cols-[18rem_minmax(0,1fr)]">
+        <nav aria-label="Worklists" className="grid gap-4 md:grid-cols-2 2xl:flex 2xl:flex-col">
           {(['Needs action', 'Context and data checks'] as const).map((group) => (
             <div key={group} className="flex flex-col gap-1">
               <span className="px-2 text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
