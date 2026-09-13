@@ -404,7 +404,7 @@ def _load(u: dict, f: Filters, upload_id: int | None = None) -> pd.DataFrame:
               "eac_trunc_pre", "eac_trunc_mid"):
         if b in df:
             df[b] = df[b].fillna(False).astype(bool)
-    for d in ("idx_date", "fu_date"):
+    for d in ("idx_date", "fu_date", "fu_samp"):
         if d in df:
             df[d] = pd.to_datetime(df[d], errors="coerce")
     for n in ("idx_vl", "fu_vl", "age", "months_unsuppressed", "time_to_eac",
@@ -637,7 +637,7 @@ FLAGS = {
 }
 CLIENT_COLS = ["sn", "state", "lga", "facility", "sex", "age", "art_status",
                "idx_vl", "recv_date", "idx_samp", "idx_date",
-               "sessions", "eac_completed", "fu_vl",
+               "sessions", "eac_completed", "fu_vl", "fu_samp", "fu_date",
                "still_unsuppressed", "switched", "months_unsuppressed",
                "treatment_plan"]
 
@@ -669,6 +669,8 @@ EXPORT_HEADERS = {
     "sessions": "EAC sessions",
     "eac_completed": "EAC completed",
     "fu_vl": "Follow-up VL (copies/mL)",
+    "fu_samp": "Follow-up VL sample collected",
+    "fu_date": "Follow-up VL received at facility",
     "still_unsuppressed": "Still unsuppressed",
     "switched": "Switched regimen",
     "months_unsuppressed": "Months unsuppressed",

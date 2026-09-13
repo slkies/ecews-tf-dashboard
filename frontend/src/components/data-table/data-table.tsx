@@ -84,7 +84,8 @@ export function DataTable<TData extends RowData>({
   const selected = table.getFilteredSelectedRowModel().rows.map((r) => r.original)
   const filtered = table.getFilteredRowModel().rows.length
   const { pageIndex, pageSize } = table.state.pagination
-  const hideable = table.getAllColumns().filter((c) => c.getCanHide())
+  // Leaf columns: a group heading is not itself something to show or hide.
+  const hideable = table.getAllLeafColumns().filter((c) => c.getCanHide())
   const search = searchColumn ? table.getColumn(searchColumn) : undefined
 
   return (
@@ -132,7 +133,9 @@ export function DataTable<TData extends RowData>({
                 {group.headers.map((header) => {
                   const s = header.column.getIsSorted()
                   return (
-                    <TableHead key={header.id}
+                    <TableHead key={header.id} colSpan={header.colSpan}
+                               // A group heading spans its columns and is centred over them.
+                               className={cn(header.subHeaders.length > 0 && 'border-b text-center')}
                                aria-sort={s === 'asc' ? 'ascending' : s === 'desc' ? 'descending' : undefined}>
                       {header.isPlaceholder ? null : <table.FlexRender header={header} />}
                     </TableHead>

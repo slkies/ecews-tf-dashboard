@@ -56,6 +56,10 @@ export interface ClientRow {
   sessions: number | null
   eac_completed: boolean | null
   fu_vl: number | null
+  /** Follow-up VL sample collected. */
+  fu_samp: string | null
+  /** Follow-up VL result received at the facility. */
+  fu_date: string | null
   still_unsuppressed: boolean | null
   switched: boolean | null
   months_unsuppressed: number | null
@@ -64,12 +68,18 @@ export interface ClientRow {
 
 const LABELS: Record<string, string> = {
   sn: 'Client', facility: 'Facility', state: 'State', sex: 'Sex', age: 'Age',
-  art_status: 'ART status', idx_vl: 'Index VL', recv_date: 'Result received',
-  sessions: 'EAC sessions', fu_vl: 'Follow-up VL', months_unsuppressed: 'Months unsuppressed',
+  art_status: 'ART status', idx_vl: 'Index VL', idx_samp: 'Index VL sample collected',
+  recv_date: 'Index VL result received', sessions: 'EAC sessions', fu_vl: 'Follow-up VL',
+  fu_samp: 'Follow-up VL sample collected', fu_date: 'Follow-up VL result received',
+  months_unsuppressed: 'Months unsuppressed',
   treatment_plan: 'Plan',
 }
 
 const col = createColumnHelper<DataTableFeatures, ClientRow>()
+
+function DateCell({ value }: { value: string | null }) {
+  return <span className="whitespace-nowrap tabular-nums">{fmtDate(value)}</span>
+}
 
 function useColumns() {
   return useMemo(() => col.columns([
@@ -113,32 +123,62 @@ function useColumns() {
       header: ({ column }) => <SortableHeader column={column} title="Age" align="right" />,
       cell: ({ getValue }) => <span className="block text-right tabular-nums">{getValue() ?? DASH}</span>,
     }),
-    col.accessor('idx_vl', {
-      header: ({ column }) => <SortableHeader column={column} title="Index VL" align="right" />,
-      cell: ({ getValue }) => <span className="block text-right tabular-nums">{fmt(getValue())}</span>,
-    }),
-    col.accessor('recv_date', {
-      header: ({ column }) => <SortableHeader column={column} title="Result received" />,
-      // The date the result reached the facility, not the day blood was drawn:
-      // every quarter and trend is bucketed on this one, a median 15 days later.
-      cell: ({ row }) => (
-        <span className="tabular-nums" title={`Sample collected ${fmtDate(row.original.idx_samp)}`}>
-          {fmtDate(row.original.recv_date ?? row.original.idx_date)}
-        </span>
-      ),
+    // The index VL and the follow-up VL side by side, each with the day the
+    // sample was drawn and the day the result reached the facility, so staff
+    // can check a list against their records without opening the line list.
+    col.group({
+      id: 'index_vl',
+      header: 'Index VL',
+      columns: col.columns([
+        col.accessor('idx_vl', {
+          header: ({ column }) => <SortableHeader column={column} title="Copies/mL" align="right" />,
+          cell: ({ getValue }) => <span className="block text-right tabular-nums">{fmt(getValue())}</span>,
+        }),
+        col.accessor('idx_samp', {
+          header: ({ column }) => <SortableHeader column={column} title="Sample collected" />,
+          cell: ({ getValue }) => <DateCell value={getValue()} />,
+        }),
+        col.accessor('recv_date', {
+          header: ({ column }) => <SortableHeader column={column} title="Result received" />,
+          // Every quarter and trend is bucketed on this date, not the sample date.
+          cell: ({ row }) => <DateCell value={row.original.recv_date ?? row.original.idx_date} />,
+        }),
+      ]),
     }),
     col.accessor('sessions', {
       header: ({ column }) => <SortableHeader column={column} title="Sessions" align="right" />,
       cell: ({ getValue }) => <span className="block text-right tabular-nums">{getValue() ?? 0}</span>,
     }),
-    col.accessor('fu_vl', {
-      header: ({ column }) => <SortableHeader column={column} title="Follow-up VL" align="right" />,
-      cell: ({ row }) => (
-        <span className={cn('block text-right tabular-nums', row.original.still_unsuppressed && 'font-medium text-bad')}>
-          {fmt(row.original.fu_vl)}
-          {row.original.still_unsuppressed && <span className="sr-only"> (still unsuppressed)</span>}
-        </span>
-      ),
+    col.group({
+      id: 'follow_up_vl',
+      header: 'Follow-up VL',
+      columns: col.columns([
+        col.accessor('fu_vl', {
+          header: ({ column }) => <SortableHeader column={column} title="Copies/mL" align="right" />,
+          cell: ({ row }) => {
+            const r = row.original
+            // Sample drawn, laboratory not yet reported: a lab follow-up, not a
+            // missing test, and it reads differently from a blank.
+            if (r.fu_vl == null && r.fu_samp) {
+              return <span className="block text-right whitespace-nowrap text-muted-foreground">Awaiting result</span>
+            }
+            return (
+              <span className={cn('block text-right tabular-nums', r.still_unsuppressed && 'font-medium text-bad')}>
+                {fmt(r.fu_vl)}
+                {r.still_unsuppressed && <span className="sr-only"> (still unsuppressed)</span>}
+              </span>
+            )
+          },
+        }),
+        col.accessor('fu_samp', {
+          header: ({ column }) => <SortableHeader column={column} title="Sample collected" />,
+          cell: ({ getValue }) => <DateCell value={getValue()} />,
+        }),
+        col.accessor('fu_date', {
+          header: ({ column }) => <SortableHeader column={column} title="Result received" />,
+          cell: ({ getValue }) => <DateCell value={getValue()} />,
+        }),
+      ]),
     }),
     col.accessor('months_unsuppressed', {
       header: ({ column }) => <SortableHeader column={column} title="Months" align="right" />,

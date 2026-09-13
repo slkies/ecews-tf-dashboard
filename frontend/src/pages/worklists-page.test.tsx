@@ -18,7 +18,7 @@ const row = (i: number, extra: Partial<ClientRow> = {}): ClientRow => ({
   episode: `0.10000000000${i}|2026-01-15`, sn: `0.10000000000${i}`, state: 'Delta', lga: 'Delta LGA 1',
   facility: `Delta Facility ${i}`, sex: 'Female', age: 30 + i, art_status: 'Active', idx_vl: 5000 + i,
   recv_date: '2026-01-30', idx_samp: '2026-01-15', idx_date: '2026-01-15', sessions: 1,
-  eac_completed: false, fu_vl: null, still_unsuppressed: null, switched: null,
+  eac_completed: false, fu_vl: null, fu_samp: null, fu_date: null, still_unsuppressed: null, switched: null,
   months_unsuppressed: 8, treatment_plan: 'Repeat EAC', ...extra,
 })
 
@@ -35,7 +35,10 @@ function mockApi(role: 'admin' | 'viewer') {
     if (url.startsWith('/api/worklists')) {
       return json(WORKLISTS.map((w) => ({ flag: w.flag, n: w.flag === 'eac_incomplete' ? 3 : 0 })))
     }
-    if (url.startsWith('/api/clients')) return json([row(1), row(2), row(3, { still_unsuppressed: true, fu_vl: 4200 })])
+    if (url.startsWith('/api/clients')) {
+      return json([row(1), row(2, { fu_samp: '2026-03-02' }),
+                   row(3, { still_unsuppressed: true, fu_vl: 4200, fu_samp: '2026-02-20', fu_date: '2026-03-05' })])
+    }
     if (url.startsWith('/api/export')) {
       return { ok: true, status: 200, json: async () => ({}), blob: async () => new Blob(['csv']),
                headers: new Headers({ 'Content-Disposition': 'attachment; filename="x.csv"' }) }
@@ -83,6 +86,22 @@ describe('Worklists page', () => {
     mockApi('viewer')
     draw()
     expect(await screen.findByText('(still unsuppressed)')).toBeInTheDocument()
+  })
+
+  it('shows the index and follow-up VL each with its sample and received dates', async () => {
+    mockApi('viewer')
+    draw()
+    await screen.findByText('Delta Facility 1')
+    for (const group of ['Index VL', 'Follow-up VL']) {
+      expect(screen.getByRole('columnheader', { name: group })).toHaveAttribute('colspan', '3')
+    }
+    expect(screen.getAllByRole('button', { name: 'Sample collected' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: 'Result received' })).toHaveLength(2)
+    // Row 2 has a repeat sample out at the lab; row 3 has its result back.
+    expect(screen.getByText('Awaiting result')).toBeInTheDocument()
+    const back = screen.getByText('Delta Facility 3').closest('tr')!
+    expect(within(back).getByText('4,200')).toBeInTheDocument()
+    expect(within(back).getByText(/Mar 2026/)).toBeInTheDocument()
   })
 
   it('offers no export to a viewer', async () => {

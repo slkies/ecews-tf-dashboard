@@ -751,3 +751,14 @@ def test_a_selected_export_is_audited(client, admin_h, cohort):
     actions = {a["action"] for a in
                client.get("/api/audit", headers=admin_h).json()["actions"]}
     assert "export.csv" in actions
+
+
+def test_worklist_rows_carry_both_viral_loads_with_their_dates(client, admin_h, cohort):
+    """Facility staff read the index VL and the repeat VL side by side - value,
+    sample date and received date for each - without opening the line list."""
+    row = client.get("/api/clients", headers=admin_h).json()[0]
+    for key in ("idx_vl", "idx_samp", "recv_date", "fu_vl", "fu_samp", "fu_date"):
+        assert key in row, key
+    header = client.get("/api/export", headers=admin_h).text.splitlines()[0]
+    assert "Follow-up VL sample collected" in header
+    assert "Follow-up VL received at facility" in header

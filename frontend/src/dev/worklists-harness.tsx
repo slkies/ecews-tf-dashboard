@@ -35,6 +35,9 @@ const ROWS: ClientRow[] = Array.from({ length: 137 }, (_, i) => {
     idx_vl: 1000 + ((i * 7919) % 250000), recv_date: `2026-0${1 + (i % 8)}-${String(10 + (i % 18)).padStart(2, '0')}`,
     idx_samp: `2026-0${1 + (i % 8)}-05`, idx_date: `2026-0${1 + (i % 8)}-05`, sessions: i % 4,
     eac_completed: i % 4 === 3, fu_vl: unsupp ? 1200 + i * 31 : i % 3 ? null : 40,
+    // a repeat sample on some rows; on rows without a value it is still at the lab
+    fu_samp: unsupp || i % 3 === 0 || i % 7 === 0 ? `2026-0${2 + (i % 7)}-11` : null,
+    fu_date: unsupp || i % 3 === 0 ? `2026-0${2 + (i % 7)}-25` : null,
     still_unsuppressed: unsupp, switched: false, months_unsuppressed: 3 + (i % 14),
     treatment_plan: ['Repeat EAC', 'Refer to DTC', 'Continue current regimen'][i % 3]!,
   }

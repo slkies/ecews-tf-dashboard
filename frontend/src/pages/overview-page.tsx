@@ -670,10 +670,8 @@ function Sources({ data, asofLong }: { data: Ov; asofLong: string }) {
             </div>
           ))}
         </dl>
+        {/* The table leads so its first row lines up with "The unit of analysis". */}
         <div className="flex flex-col gap-3">
-          <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm">
-            Line list as of {asofLong}. This date sets the fiscal quarter and the follow-up window.
-          </p>
           {data.sources?.length ? (
             <Table>
               <TableHeader>
@@ -699,6 +697,9 @@ function Sources({ data, asofLong }: { data: Ov; asofLong: string }) {
               </TableBody>
             </Table>
           ) : <p className="text-sm text-muted-foreground">The sheet list is unavailable for this upload.</p>}
+          <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm">
+            Line list as of {asofLong}. This date sets the fiscal quarter and the follow-up window.
+          </p>
         </div>
       </CardContent>
     </Card>
