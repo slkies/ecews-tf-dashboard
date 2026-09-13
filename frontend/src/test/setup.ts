@@ -17,6 +17,15 @@ if (!window.matchMedia) {
   }) as unknown as MediaQueryList
 }
 
+// Base UI's checkbox re-dispatches a click as a PointerEvent, which jsdom lacks.
+globalThis.PointerEvent ??= class PointerEventStub extends MouseEvent {
+  pointerType: string
+  constructor(type: string, init: PointerEventInit = {}) {
+    super(type, init)
+    this.pointerType = init.pointerType ?? 'mouse'
+  }
+} as unknown as typeof PointerEvent
+
 Element.prototype.scrollIntoView ??= function scrollIntoView() {}
 Element.prototype.hasPointerCapture ??= () => false
 Element.prototype.releasePointerCapture ??= () => {}

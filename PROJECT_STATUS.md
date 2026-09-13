@@ -332,9 +332,13 @@ provisional or it will report a collapse from 95% to 37% that is arithmetic.
    IBM Plex self-hosted. **Overview is rebuilt** in it: sidebar and sticky header, a
    searchable multi-select filter bar (facilities and LGAs grouped by state), tiles with
    quarterly sparklines and a trend against the previous line list, and every card the
-   original carries. Every other page still says "not rebuilt yet" and links to `/`.
-   Next in the agreed order: Data Table for the worklists, then the remaining pages;
-   Chart.js versus Recharts is decided last.
+   original carries; the filter band can be pinned or left to scroll, and every trend
+   line is smoothed (monotone, so no overshoot). **Worklists are rebuilt** as a data
+   table (TanStack Table v9): twelve lists with counts from one `/api/worklists` call,
+   sorting, facility search, a Columns menu, pagination, row selection, and export of
+   the whole active list or only the chosen episodes, both through the audited server
+   export. Every other page still says "not rebuilt yet" and links to `/`. Next: the
+   remaining pages; Chart.js versus Recharts is decided last.
 
 **Open asks to the HI/EMR team (blocking better analysis):**
 - **Switch date / "reason not switched"** — highest-value missing fields; unlock

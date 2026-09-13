@@ -1,4 +1,4 @@
-import { CircleAlert, X } from 'lucide-react'
+import { CircleAlert, Pin, PinOff, X } from 'lucide-react'
 import { useMemo, type ReactElement } from 'react'
 import { cn } from 'cn'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -14,6 +14,7 @@ import {
   useFilters, visibleOptions, type FilterKey, type FilterOptions,
 } from '@/core/filters'
 import { fmt, fmtMonYY } from '@/core/format'
+import { usePinnedFilters } from '@/core/use-pinned-filters'
 
 interface Group { value: string; items: string[] }
 
@@ -127,6 +128,25 @@ function MultiFilter({ label, title, search, items, groups, value, onChange, sho
   )
 }
 
+/**
+ * Pin or release the filter bar. Only offered where pinning applies (large
+ * screens); the label says what clicking will do, and the pressed state says
+ * what is true now.
+ */
+export function PinFiltersToggle() {
+  const [pinned, setPinned] = usePinnedFilters()
+  return (
+    <Button variant="outline" size="sm" aria-pressed={pinned} onClick={() => setPinned(!pinned)}
+            className="hidden lg:inline-flex"
+            title={pinned
+              ? 'The filters stay in view as you scroll. Click to let them scroll away.'
+              : 'The filters scroll away with the page. Click to keep them in view.'}>
+      {pinned ? <PinOff /> : <Pin />}
+      {pinned ? 'Unpin filters' : 'Pin filters'}
+    </Button>
+  )
+}
+
 export default function FilterBar() {
   const { options, error, selection, get, set, reset, active } = useFilters()
 
@@ -153,6 +173,7 @@ function Bar({ options, selection, get, set, reset, active }: {
   active: number
 }) {
   const avail = visibleOptions(options, selection)
+  const [pinned] = usePinnedFilters()
 
   // Months arrive newest first as YYYY-MM. Shown as 'Aug-26 (312)', but the
   // VALUE stays YYYY-MM, which is what the API filters on. The count is there
@@ -200,11 +221,13 @@ function Bar({ options, selection, get, set, reset, active }: {
                               text: f.key === 'month' ? monthLabel(v) : v })))
 
   return (
-    // Sticky below the header on wider screens, because filters are changed
-    // while reading far down the page - asked for in review, and kept. The band
-    // sits flush under the 4rem header and carries its own translucent ground:
-    // pinned with a gap, the tiles scrolled visibly through the space between.
-    <div className="z-20 -mx-4 px-4 lg:sticky lg:top-16 lg:-mx-6 lg:bg-background/85 lg:px-6 lg:py-3 lg:backdrop-blur-md">
+    // When pinned (the reader's choice, see use-pinned-filters), the bar sticks
+    // below the header on large screens. The band sits flush under the 4rem
+    // header and carries its own translucent ground: pinned with a gap, the
+    // tiles scrolled visibly through the space between.
+    <div className={cn('z-20 -mx-4 px-4 lg:-mx-6 lg:px-6',
+                       pinned && 'lg:sticky lg:top-16 lg:bg-background/85 lg:py-3 lg:backdrop-blur-md')}
+         data-pinned={pinned}>
     <Card size="sm">
       <CardContent className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

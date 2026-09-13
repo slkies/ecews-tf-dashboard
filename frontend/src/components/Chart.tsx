@@ -43,6 +43,12 @@ export default function Chart({ config, height = 290, ariaLabel }: {
     ChartJS.defaults.font.family =
       "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif"
     ChartJS.defaults.font.size = 11
+    // Every line in the app is a smooth monotone curve. Monotone rather than a
+    // tension spline because it never overshoots between points: a rate that
+    // peaks at 100% is never drawn above it, and a zero never dips below.
+    ChartJS.defaults.elements.line.cubicInterpolationMode = 'monotone'
+    ChartJS.defaults.elements.point.radius = 0
+    ChartJS.defaults.elements.point.hoverRadius = 4
 
     chart.current?.destroy()
     chart.current = new ChartJS(el, config)

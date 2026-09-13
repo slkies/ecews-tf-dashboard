@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import indicators as ind
 from .ingest import COHORT_COLS, cohort_records, ingest_workbook
@@ -397,7 +397,11 @@ def _load(u: dict, f: Filters, upload_id: int | None = None) -> pd.DataFrame:
     for b in ("eac1", "eac2", "eac3", "eac_extended", "eac_completed", "post_sample",
               "post_result", "resuppressed", "undetectable", "llv", "eac_valid",
               "still_unsuppressed", "switched", "eac_prior_cycle", "eac_truncated",
-              "dtc_review", "paed"):
+              "dtc_review", "paed",
+              # worklist flags read straight from the cohort; missing from this
+              # list, a NULL in any of them made that worklist fail outright
+              "post_eac_vl", "awaiting_switch", "prior_switch",
+              "eac_trunc_pre", "eac_trunc_mid"):
         if b in df:
             df[b] = df[b].fillna(False).astype(bool)
     for d in ("idx_date", "fu_date"):
@@ -677,6 +681,14 @@ def _json_safe(df: pd.DataFrame) -> list[dict]:
     return df.astype(object).where(pd.notna(df), None).to_dict("records")
 
 
+def _flag_mask(df: pd.DataFrame, flag: str) -> pd.Series:
+    """Which rows a worklist holds. A rule over a nullable column yields NA for
+    a missing value; NA is "not on the list", not an error. The counts and the
+    list share this, so the number beside a list is the number in it."""
+    return (pd.Series(FLAGS[flag](df), index=df.index)
+            .astype("boolean").fillna(False).astype(bool))
+
+
 def _clients(u: dict, f: Filters, flag: str | None, limit: int,
              active_only: bool = False) -> pd.DataFrame:
     df = _load(u, f)
@@ -685,7 +697,7 @@ def _clients(u: dict, f: Filters, flag: str | None, limit: int,
     if flag:
         if flag not in FLAGS:
             raise HTTPException(400, f"Unknown flag. Try: {', '.join(FLAGS)}")
-        df = df[FLAGS[flag](df)]
+        df = df[_flag_mask(df, flag)]
     if active_only and "art_status" in df.columns:
         # Only clients a team can actually act on. Half the treatment list is
         # not: 18% LTFU, 10% transferred out, 10% discontinued care, 5% died,
@@ -694,7 +706,10 @@ def _clients(u: dict, f: Filters, flag: str | None, limit: int,
         # and every wasted call makes the next list less likely to be worked.
         df = df[df["art_status"].astype("string").str.strip()
                 .str.casefold().eq("active")]
-    return df[CLIENT_COLS].head(limit)
+    # The episode key rides along so a row in a worklist table can be selected
+    # and exported exactly - S/N alone is not unique, a client can fail twice.
+    # It is dropped from the CSV, which keeps its readable headings.
+    return df[["episode", *CLIENT_COLS]].head(limit)
 
 
 def _access_note(f: Filters, flag: str | None, n: int) -> str:
@@ -717,8 +732,28 @@ def get_clients(u: U, f: F, request: Request, flag: str | None = Query(None),
     return [] if df.empty else _json_safe(df)
 
 
-@app.get("/api/export")
-def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
+@app.get("/api/worklists")
+def worklist_counts(u: U, f: F):
+    """How many episodes each worklist holds, under the current filters.
+
+    Counts only: no client row leaves the server here, so this is not an
+    audited access - opening a list (/api/clients) is. The original dashboard
+    fetched up to 5,000 rows per list, ten times over, just to count them.
+    """
+    df = _load(u, f)
+    return [{"flag": key, "n": 0 if df.empty else int(_flag_mask(df, key).sum())}
+            for key in FLAGS]
+
+
+class ExportSelection(BaseModel):
+    """Episodes chosen in a worklist table. Sent as a body rather than a query
+    string, because a few hundred episode keys do not fit in a URL."""
+    flag: str | None = None
+    episodes: list[str] = Field(min_length=1, max_length=5000)
+
+
+def _export(u: dict, f: Filters, request: Request, flag: str | None,
+            episodes: list[str] | None = None) -> StreamingResponse:
     # Bulk extraction of patient-level records. Restricted to admin/analyst:
     # a scoped viewer reads the dashboard, but pulling the line list out of it
     # is a different act and is logged as such.
@@ -735,17 +770,38 @@ def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
     # account of everyone, not a list of who to ring.
     everyone = _clients(u, f, flag, 100_000)
     df = _clients(u, f, flag, 100_000, active_only=True)
+    chosen = ""
+    if episodes is not None:
+        # A selection narrows the same scoped, filtered, active-only list - it
+        # can never reach a row the user could not have exported anyway. A key
+        # that matches nothing (outside scope, another snapshot, stale) is not
+        # an error, but it is recorded.
+        wanted = set(episodes)
+        everyone = everyone[everyone["episode"].isin(wanted)]
+        df = df[df["episode"].isin(wanted)]
+        chosen = f"; selection of {len(wanted)}, {len(wanted) - len(everyone)} not found"
     dropped = len(everyone) - len(df)
     _audit("export.csv", user_id=u["id"], email=u["email"], request=request,
            detail=f"{_access_note(f, flag, len(df))}; "
-                  f"{dropped} non-active excluded")
+                  f"{dropped} non-active excluded{chosen}")
     buf = io.StringIO()
-    df.rename(columns=EXPORT_HEADERS).to_csv(buf, index=False)
+    df.drop(columns=["episode"]).rename(columns=EXPORT_HEADERS).to_csv(buf, index=False)
     buf.seek(0)
-    name = f"ecews_tf_{flag or 'cohort'}_active_{dt.date.today()}.csv"
+    part = "selected_active" if episodes is not None else "active"
+    name = f"ecews_tf_{flag or 'cohort'}_{part}_{dt.date.today()}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/export")
+def export_csv(u: U, f: F, request: Request, flag: str | None = Query(None)):
+    return _export(u, f, request, flag)
+
+
+@app.post("/api/export")
+def export_selected(body: ExportSelection, u: U, f: F, request: Request):
+    return _export(u, f, request, body.flag, body.episodes)
 
 
 @app.get("/api/risk")

@@ -265,3 +265,30 @@ top of `filter-bar.test.tsx` so nobody re-adds the popup tests expecting them to
 **Lesson.** A component library's interactive layer can outrun the test
 environment. When it does, test the logic where it can be tested, check the
 interaction where it actually runs, and say which is which.
+
+## 14. A worklist with a blank flag value failed to open
+**13 Sep 2026** — Writing a test that the new worklist counts match the lists
+themselves, the list request failed for a flag whose column held an empty
+value. Five columns the worklists read directly (`post_eac_vl`,
+`awaiting_switch`, `prior_switch`, `eac_trunc_pre`, `eac_trunc_mid`) were missing
+from the list that turns database NULLs into False. When any row had a NULL in
+one of them, that whole worklist returned an error instead of its clients.
+
+**What changed.** The five columns are coerced with the others, and the counts
+and the list now share one function (`_flag_mask`), which treats a missing value
+as "not on this list". The number beside a worklist is, by construction, the
+number of rows in it.
+
+**Lesson.** A count and the list it describes must come from the same code, or
+they will drift apart - and a test that compares them finds more than drift.
+
+## 15. Exporting chosen rows stays a server export
+**13 Sep 2026** — The worklists table lets a team select rows. The quick way to
+export them would be to build the CSV in the browser from rows already on
+screen. That would skip the role check, the scope, the active-clients rule and
+the audit record. Instead `POST /api/export` takes the chosen episode keys and
+narrows the same scoped, filtered, active-only list the full export uses, so a
+selection can never reach a row its user could not already export. The audit
+entry records the size of the selection and how many keys matched nothing.
+Episode keys (`S/N|index date`), not S/N, identify rows, because one client can
+fail more than once.

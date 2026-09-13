@@ -6,7 +6,7 @@ import {
 import { useMemo, useState } from 'react'
 import { cn } from 'cn'
 import Chart from '@/components/Chart'
-import FilterBar from '@/components/filter-bar'
+import FilterBar, { PinFiltersToggle } from '@/components/filter-bar'
 import { KpiTile } from '@/components/kpi-tile'
 import { StatusBadge, type Tone } from '@/components/status-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -75,7 +75,10 @@ export default function OverviewPage({ data, times, trend, loading }: {
             {since && <> · trends compare with the list of {since}</>}
           </p>
         </div>
-        {canExport && hasData && <ExportButton query={query} />}
+        <div className="flex items-start gap-2">
+          <PinFiltersToggle />
+          {canExport && hasData && <ExportButton query={query} />}
+        </div>
       </div>
 
       <FilterBar />
@@ -158,7 +161,7 @@ function Headline({ data, trend, since }: { data: Ov; trend: Trend | null; since
       <KpiTile icon={Microscope} label="Follow-up VL done" value={pc(data.retest_pct)}
                sparkline={series('retest_pct')} sparkLabel={span('retest_pct', 'Follow-up VL done')}
                trend={tv?.retest} since={since}
-               note={`${fmt(data.awaiting_retest)} episodes with no later VL`}
+               note={`${fmt(data.retested)} of ${fmt(data.n)} · ${fmt(data.awaiting_retest)} with no later VL`}
                status={badge(rateTone(data.retest_pct, 50, 'bad'))}
                definition="Episodes with any viral load sampled after the index result was received, over all episodes. Taken from the clinical line lists, never the EAC sheet." />
       <KpiTile icon={Activity} label="Re-suppressed" value={pc(data.resupp_pct)}
@@ -264,8 +267,10 @@ function NarrativeRow({ data }: { data: Ov }) {
           <CardDescription className="text-xs font-medium tracking-[0.08em] uppercase">Programme narrative</CardDescription>
           <CardTitle className="text-lg font-semibold text-balance">Treatment-failure cohort, {period}</CardTitle>
         </CardHeader>
-        {/* Plain prose: no inline emphasis. The numbers carry themselves. */}
-        <CardContent className="flex max-w-[78ch] flex-col gap-3 text-[15px] leading-7 text-foreground/80 text-pretty">
+        {/* Plain prose: no inline emphasis. The numbers carry themselves. It
+            runs the full width of the card with the card's own padding each
+            side; a capped measure left dead space to the right. */}
+        <CardContent className="flex flex-col gap-3 text-[15px] leading-7 text-foreground/80 text-pretty">
           <p>
             In {period}, {fmt(data.n)} treatment-failure episodes were recorded across{' '}
             {fmt(data.clients)} clients ({fmt(data.repeat_clients)} unsuppressed more than once).
@@ -343,7 +348,7 @@ function ChartsRow({ data }: { data: Ov }) {
     if (!w?.months?.length) return null
     const line = (label: string, values: number[], color: string) => ({
       label, data: values, borderColor: color, backgroundColor: color, borderWidth: 2,
-      pointRadius: 0, pointHoverRadius: 4, tension: 0.3,
+      pointRadius: 0, pointHoverRadius: 4,
     })
     return {
       type: 'line',
@@ -459,7 +464,7 @@ function ResuppressionAndCascade({ data }: { data: Ov }) {
     // and mostly not yet re-suppressed, so the rate is provisional.
     const line = (label: string, values: (number | null)[], color: string) => ({
       label, data: values, borderColor: color, backgroundColor: color, borderWidth: 2,
-      pointRadius: 0, pointHoverRadius: 4, tension: 0.3, spanGaps: true,
+      pointRadius: 0, pointHoverRadius: 4, spanGaps: true,
       segment: {
         borderColor: (c: ScriptableLineSegmentContext) => (c.p1DataIndex === lastIdx ? grey : color),
         borderDash: (c: ScriptableLineSegmentContext) => (c.p1DataIndex === lastIdx ? [5, 4] : undefined),
@@ -645,7 +650,8 @@ function Sources({ data, asofLong }: { data: Ov; asofLong: string }) {
     ['The cohort', 'a quarterly open cohort drawn from the Total Unsuppressed register.'],
     ['Viral loads', 'index and follow-up both come from the clinical line lists, never the EAC sheet.'],
     ['The follow-up VL', 'the next VL sampled after the index result was received.'],
-    ['EAC completed', 'sessions 1-3 recorded plus at least 30 days since session 3. Post-EAC VL is sessions 1-3 plus a sample on or after session 3.'],
+    ['EAC completed', 'sessions 1-3 recorded plus at least 30 days since session 3.'],
+    ['Post-EAC VL', 'sessions 1-3 recorded and a viral load sample collected on or after session 3, irrespective of the 30-day rule, over episodes that completed EAC. A different indicator from the follow-up VL, which is any VL sampled after the index result.'],
   ]
   return (
     <Card>

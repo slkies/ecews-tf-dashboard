@@ -670,3 +670,84 @@ def test_version_never_reports_app_version_again(client):
     """The old key read an env var that was never set anywhere, so it answered
     'not set' in every environment this project has ever run in."""
     assert "app_version" not in client.get("/api/version").json()
+
+
+# ── worklists ─────────────────────────────────────────────────────────
+def test_client_rows_carry_their_episode_key(client, admin_h, cohort):
+    """S/N alone is not unique - a client can fail twice - so a worklist row
+    needs the episode key to be selected and exported exactly."""
+    rows = client.get("/api/clients", headers=admin_h).json()
+    assert rows and all(r["episode"].startswith(f"{r['sn']}|") for r in rows)
+
+
+def test_worklist_counts_cover_every_flag_and_match_the_lists(client, admin_h, cohort):
+    from app.main import FLAGS
+    counts = {c["flag"]: c["n"] for c in client.get("/api/worklists", headers=admin_h).json()}
+    assert set(counts) == set(FLAGS)
+    for flag in ("no_eac", "eac_incomplete", "awaiting_switch"):
+        listed = client.get(f"/api/clients?flag={flag}&limit=5000", headers=admin_h).json()
+        assert counts[flag] == len(listed), flag
+
+
+def test_worklist_counts_respect_scope(client, admin_h, cohort):
+    everyone = {c["flag"]: c["n"] for c in client.get("/api/worklists", headers=admin_h).json()}
+    h = _scoped_viewer(client, admin_h, "Delta")
+    delta = {c["flag"]: c["n"] for c in client.get("/api/worklists", headers=h).json()}
+    assert all(delta[k] <= everyone[k] for k in everyone if everyone[k] is not None)
+
+
+def test_admin_can_export_only_the_selected_episodes(client, admin_h, cohort):
+    rows = client.get("/api/clients", headers=admin_h).json()
+    chosen = [r["episode"] for r in rows[:2]]
+    r = client.post("/api/export", headers=admin_h, json={"episodes": chosen})
+    assert r.status_code == 200
+    lines = r.text.strip().splitlines()
+    assert len(lines) == 3                                   # header + 2 selected
+    assert "episode" not in lines[0].lower(), "the key is internal, not a CSV column"
+    assert "selected" in r.headers["content-disposition"]
+
+
+def test_viewer_cannot_export_a_selection(client, admin_h, viewer_h, cohort):
+    rows = client.get("/api/clients", headers=admin_h).json()
+    r = client.post("/api/export", headers=viewer_h, json={"episodes": [rows[0]["episode"]]})
+    assert r.status_code == 403
+
+
+def test_an_empty_selection_is_refused(client, admin_h, cohort):
+    assert client.post("/api/export", headers=admin_h, json={"episodes": []}).status_code == 422
+
+
+def test_a_selection_cannot_reach_outside_the_users_scope(client, admin_h, cohort):
+    everyone = client.get("/api/clients", headers=admin_h).json()
+    osun = [r["episode"] for r in everyone if r["state"] == "Osun"]
+    client.post("/api/users", headers=admin_h,
+                json={"username": "d.analyst2", "email": "d-analyst2@ecews.org",
+                      "password": "Scoped-Pass-1", "role": "analyst", "scope_state": "Delta"})
+    h = hdr(client, ("d.analyst2", "Scoped-Pass-1"))
+    csv = client.post("/api/export", headers=h, json={"episodes": osun}).text
+    assert len(csv.strip().splitlines()) == 1, "header only: Osun rows are out of scope"
+
+
+def test_selected_export_still_excludes_clients_who_cannot_be_actioned(client, admin_h, cohort):
+    from app.main import pool
+    with pool.connection() as c:
+        c.execute(
+            "INSERT INTO cohort (upload_id,sn,episode,state,lga,facility,"
+            "sex,age,age_band,art_status,idx_vl,idx_date,fy_quarter,"
+            "enrol_quarter,fy,eac1,post_result,resuppressed) VALUES "
+            "(%s,'0.800000000001','0.800000000001|2026-01-15','Delta','Warri','Clinic A',"
+            "'Female',30,'25-34','Death',5000,'2026-01-15','FY26Q2','FY26Q2','FY26',"
+            "TRUE,FALSE,FALSE)", (cohort,))
+    active = next(r["episode"] for r in client.get("/api/clients", headers=admin_h).json()
+                  if r["art_status"] and r["art_status"].lower() == "active")
+    csv = client.post("/api/export", headers=admin_h,
+                      json={"episodes": [active, "0.800000000001|2026-01-15"]}).text
+    assert len(csv.strip().splitlines()) == 2, "header + the one active client"
+
+
+def test_a_selected_export_is_audited(client, admin_h, cohort):
+    rows = client.get("/api/clients", headers=admin_h).json()
+    client.post("/api/export", headers=admin_h, json={"episodes": [rows[0]["episode"]]})
+    actions = {a["action"] for a in
+               client.get("/api/audit", headers=admin_h).json()["actions"]}
+    assert "export.csv" in actions
