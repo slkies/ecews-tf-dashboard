@@ -582,7 +582,9 @@ function FacilityTable({ rows }: { rows: FacilityRow[] | undefined }) {
 
 function FacilityRow({ data }: { data: Ov }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    // Side by side only from xl: at laptop widths two half-width tables pushed
+    // "EAC completed" off the edge behind a scrollbar.
+    <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Top 10 facilities by volume</CardTitle>
@@ -651,7 +653,9 @@ function Sources({ data, asofLong }: { data: Ov; asofLong: string }) {
         <CardTitle>Methodology and data sources</CardTitle>
         <CardDescription>How the numbers on this page are built, and the line lists they rest on.</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-8 lg:grid-cols-2">
+      {/* Two columns only from xl: split earlier, the definitions wrapped into a
+          tall narrow column and the sources table hid its censored badge. */}
+      <CardContent className="grid gap-8 xl:grid-cols-2">
         <dl className="flex flex-col gap-3 text-sm">
           {rules.map(([term, text]) => (
             <div key={term} className="grid gap-0.5 sm:grid-cols-[10rem_1fr] sm:gap-4">
