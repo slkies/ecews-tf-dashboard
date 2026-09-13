@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import ErrorBoundary from '../components/ErrorBoundary'
 import FilterBar from '../components/FilterBar'
 import { api } from '../core/api'
 import { useFilters } from '../core/filters'
 import { fmt, fmtDate } from '../core/format'
-import type { Overview as Ov } from '../core/overview'
+import type { Overview as Ov, TimeMetrics } from '../core/overview'
 import { useSession } from '../core/session'
 import { useTheme } from '../core/theme'
 import type { Summary } from '../core/types'
@@ -18,6 +19,7 @@ export default function Shell() {
   const [view, setView] = useState('overview')
   const [summary, setSummary] = useState<Summary | null>(null)
   const [overview, setOverview] = useState<Ov | null>(null)
+  const [times, setTimes] = useState<TimeMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
@@ -32,10 +34,11 @@ export default function Shell() {
     Promise.all([
       api<Summary>(`/summary${query}`),
       api<Ov>(`/overview${query}`),
+      api<TimeMetrics>(`/time-metrics${query}`),
     ])
-      .then(([s, o]) => {
+      .then(([s, o, t]) => {
         if (cancelled) return
-        setSummary(s); setOverview(o); setErr(null)
+        setSummary(s); setOverview(o); setTimes(t); setErr(null)
       })
       .catch((e: unknown) => {
         if (!cancelled) setErr(e instanceof Error ? e.message : 'Could not load')
@@ -104,7 +107,7 @@ export default function Shell() {
           {err && <div className="notice warn"><h3>Could not load</h3>{err}</div>}
           {loading && <div className="spin" />}
           {view === 'overview'
-            ? <Overview data={overview} />
+            ? <ErrorBoundary name="Overview"><Overview data={overview} times={times} /></ErrorBoundary>
             : <Placeholder view={view} />}
         </main>
       </div></div>

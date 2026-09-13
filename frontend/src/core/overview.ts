@@ -1,4 +1,4 @@
-/** The /api/overview payload. Only the parts the page renders are declared. */
+/** The /api/overview and /api/time-metrics payloads, as the page consumes them. */
 
 export interface ProgressRow {
   quarter: string
@@ -24,14 +24,13 @@ export interface StateRow {
   resupp_pct: number | null
 }
 
-export interface VolumeRow {
-  facility: string
-  state?: string
+export interface FacilityRow {
+  facility: string | null
   n: number
-  eac1?: number
-  completed?: number
-  completed_pct?: number | null
-  eac1_pct?: number | null
+  eac1: number
+  completed: number
+  eac1_pct: number | null
+  completed_pct: number | null
 }
 
 export interface Demo {
@@ -47,6 +46,13 @@ export interface Demo {
 }
 
 export interface ResuppCell { n: number; resupp: number; pct: number | null }
+
+export interface Source {
+  name: string
+  kind: 'total' | 'treatment' | 'eac' | (string & {})
+  rows: number
+  censored?: boolean
+}
 
 export interface Overview {
   n: number
@@ -84,7 +90,34 @@ export interface Overview {
     state: Record<string, ResuppCell>
   }
   by_state: StateRow[]
-  by_volume: VolumeRow[]
+  by_volume: FacilityRow[]
+  /** Top facilities by EAC completion, among those with at least min_vol episodes. */
+  best: FacilityRow[]
+  min_vol: number
+  /** Facilities carrying real volume with no EAC session on record. */
+  zero_eac: { facility: string | null; n: number }[]
+  sources?: Source[] | null
   filename?: string
-  sources?: unknown
+}
+
+/** One time-to-event distribution from /api/time-metrics. */
+export interface Dist {
+  n: number
+  median: number
+  q1: number
+  q3: number
+  mean: number
+  min: number
+  max: number
+  wlo: number
+  whi: number
+}
+
+export interface TimeMetrics {
+  time_to_eac?: Dist | null
+  eac_lead_time?: Dist | null
+  time_to_resuppression?: Dist | null
+  months_unsuppressed?: Dist | null
+  time_to_first_vl?: Dist | null
+  time_to_first_unsupp?: Dist | null
 }
