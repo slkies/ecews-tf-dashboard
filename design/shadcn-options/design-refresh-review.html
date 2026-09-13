@@ -1,0 +1,678 @@
+<title>TF Monitor Design Refresh</title>
+<meta name="description" content="Component-by-component review of shadcn/ui and the Clinova reference for the TF Monitor refresh, with three options.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* ── tokens: TF Monitor's own system (brand green, IBM Plex), three-state theme ── */
+:root{
+  --ground:#F8F8F5; --card:#FFFFFF; --ink:#14191A; --ink-2:#565F5C; --ink-3:#7C8581;
+  --rule:#E4E5DF; --rule-2:#EEEFEA; --wash:#F1F2EE;
+  --accent:#08684E; --accent-ink:#06573F; --accent-tint:#E4F0EA;
+  --good:#08684E; --warn:#94650A; --bad:#B03A28; --info:#3E6C86;
+  --good-tint:#E4F0EA; --warn-tint:#FBF0DA; --bad-tint:#F9E7E3; --info-tint:#E6EFF4;
+  --focus:#08684E;
+  /* option specimens: each direction's own neutrals, light */
+  --calm-ground:#FAF9F5; --calm-card:#FFFFFF; --calm-side:#F3F2EC; --calm-rule:#E6E5DD; --calm-mfg:#6E6C60; --calm-tint:#E3EFE9; --calm-ink:#07573F;
+  --soft-ground:#F5F7F8; --soft-card:#FFFFFF; --soft-side:#EEF2F4; --soft-rule:#E1E7EA; --soft-mfg:#65727A; --soft-fill:#EDF1F3; --soft-tint:#E2EFEA; --soft-ink:#07573F;
+  --inst-ground:#FFFFFF; --inst-card:#FFFFFF; --inst-side:#FAFAFA; --inst-rule:#E5E5E5; --inst-mfg:#737373; --inst-tint:#EEF5F2; --inst-ink:#07573F;
+  --spark:#08684E;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1111; --card:#151919; --ink:#ECEFEE; --ink-2:#AAB3B0; --ink-3:#88918E;
+    --rule:#262C2B; --rule-2:#1F2423; --wash:#1A1F1E;
+    --accent:#2BD39C; --accent-ink:#7FE3C0; --accent-tint:rgba(43,211,156,.12);
+    --good:#2BD39C; --warn:#E7B23C; --bad:#F2705A; --info:#7FB3CC;
+    --good-tint:rgba(43,211,156,.12); --warn-tint:rgba(231,178,60,.12); --bad-tint:rgba(242,112,90,.12); --info-tint:rgba(127,179,204,.12);
+    --focus:#2BD39C;
+    --calm-ground:#121210; --calm-card:#1A1A17; --calm-side:#161613; --calm-rule:#2D2D27; --calm-mfg:#A3A197; --calm-tint:rgba(43,211,156,.13); --calm-ink:#7FE3C0;
+    --soft-ground:#0F1214; --soft-card:#171B1E; --soft-side:#13171A; --soft-rule:#283036; --soft-mfg:#9AA6AD; --soft-fill:rgba(255,255,255,.07); --soft-tint:rgba(43,211,156,.13); --soft-ink:#7FE3C0;
+    --inst-ground:#0A0A0A; --inst-card:#141414; --inst-side:#101010; --inst-rule:#2A2A2A; --inst-mfg:#A1A1A1; --inst-tint:rgba(43,211,156,.12); --inst-ink:#7FE3C0;
+    --spark:#2BD39C;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1111; --card:#151919; --ink:#ECEFEE; --ink-2:#AAB3B0; --ink-3:#88918E;
+  --rule:#262C2B; --rule-2:#1F2423; --wash:#1A1F1E;
+  --accent:#2BD39C; --accent-ink:#7FE3C0; --accent-tint:rgba(43,211,156,.12);
+  --good:#2BD39C; --warn:#E7B23C; --bad:#F2705A; --info:#7FB3CC;
+  --good-tint:rgba(43,211,156,.12); --warn-tint:rgba(231,178,60,.12); --bad-tint:rgba(242,112,90,.12); --info-tint:rgba(127,179,204,.12);
+  --focus:#2BD39C;
+  --calm-ground:#121210; --calm-card:#1A1A17; --calm-side:#161613; --calm-rule:#2D2D27; --calm-mfg:#A3A197; --calm-tint:rgba(43,211,156,.13); --calm-ink:#7FE3C0;
+  --soft-ground:#0F1214; --soft-card:#171B1E; --soft-side:#13171A; --soft-rule:#283036; --soft-mfg:#9AA6AD; --soft-fill:rgba(255,255,255,.07); --soft-tint:rgba(43,211,156,.13); --soft-ink:#7FE3C0;
+  --inst-ground:#0A0A0A; --inst-card:#141414; --inst-side:#101010; --inst-rule:#2A2A2A; --inst-mfg:#A1A1A1; --inst-tint:rgba(43,211,156,.12); --inst-ink:#7FE3C0;
+  --spark:#2BD39C;
+}
+
+/* ── base ── */
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.6 'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased}
+.mono,code{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace}
+code{font-size:.84em;background:var(--wash);border:1px solid var(--rule-2);border-radius:4px;padding:.05em .35em;white-space:nowrap}
+a{color:var(--accent-ink)} a:hover{color:var(--accent)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+h1,h2,h3{text-wrap:balance;margin:0;color:var(--ink)}
+p{margin:0}
+.num{font-variant-numeric:tabular-nums}
+
+.page{max-width:1120px;margin:0 auto;padding:40px 28px 96px;display:flex;flex-direction:column;gap:56px}
+.col{max-width:760px}
+
+/* ── masthead ── */
+.mast{display:flex;flex-direction:column;gap:14px;padding-bottom:28px;border-bottom:1px solid var(--rule)}
+.crumbs{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.crumbs b{color:var(--accent);font-weight:600}
+.mast h1{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.02em;max-width:22ch}
+.lede{font-size:17px;line-height:1.6;color:var(--ink-2);max-width:66ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink-3)}
+
+/* ── recommendation panel: the one lifted object ── */
+.verdict{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:26px 28px;
+  display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:28px}
+.verdict h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px}
+.verdict .big{font-size:21px;line-height:1.4;font-weight:500;letter-spacing:-.01em}
+.verdict .big em{font-style:normal;color:var(--accent-ink)}
+.stack{display:flex;flex-direction:column;gap:0;border-left:1px solid var(--rule);padding-left:28px}
+.stack div{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--rule-2);font-size:14px}
+.stack div:last-child{border-bottom:0}
+.stack dt,.stack .k{color:var(--ink-3)}
+.stack .v{font-weight:500;text-align:right}
+
+/* ── section heads ── */
+section{display:flex;flex-direction:column;gap:20px}
+.sh{display:flex;flex-direction:column;gap:8px;max-width:760px}
+.sh .tag{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.sh h2{font-size:24px;line-height:1.25;font-weight:600;letter-spacing:-.015em}
+.sh p{color:var(--ink-2);max-width:68ch}
+.prose{display:flex;flex-direction:column;gap:12px;color:var(--ink-2);max-width:68ch}
+.prose strong{color:var(--ink);font-weight:600}
+
+/* ── qualities list (label / measured / TF mapping) ── */
+.qual{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.q{background:var(--card);padding:18px 20px;display:flex;flex-direction:column;gap:6px}
+.q h3{font-size:15px;font-weight:600}
+.q .m{font-size:12.5px;color:var(--ink-3)}
+.q p{font-size:14px;color:var(--ink-2)}
+.q .tf{font-size:13.5px;color:var(--ink);padding-top:8px;margin-top:2px;border-top:1px dashed var(--rule)}
+.q .tf span{color:var(--accent-ink);font-weight:600;margin-right:6px}
+
+.cautions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 28px}
+.cautions div{display:flex;gap:10px;font-size:14px;color:var(--ink-2)}
+.cautions svg{flex-shrink:0;margin-top:3px;color:var(--warn)}
+.cautions b{color:var(--ink);font-weight:600}
+
+/* ── tables ── */
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:10px;background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:500;font-size:12px;color:var(--ink-3);padding:10px 14px;border-bottom:1px solid var(--rule);white-space:nowrap;background:var(--card)}
+td{padding:10px 14px;border-bottom:1px solid var(--rule-2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.nm{font-weight:600;white-space:nowrap}
+td.pitch{color:var(--ink-2);white-space:nowrap}
+td.c,th.c{text-align:center}
+tr.pick td{background:var(--accent-tint)}
+tr.pick td.nm{color:var(--accent-ink)}
+
+/* ── component review ── */
+.group{display:flex;flex-direction:column;gap:10px}
+.group h3{font-size:16px;font-weight:600;display:flex;align-items:baseline;gap:10px}
+.group h3 small{font-size:13px;font-weight:400;color:var(--ink-3)}
+.rv td:first-child{width:170px}
+.rv td:nth-child(2){width:96px}
+.rv .cname{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap}
+.rv .today{color:var(--ink-3);font-size:12.5px;display:block;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip svg{width:12px;height:12px}
+.chip.adopt{background:var(--good-tint);color:var(--good)}
+.chip.adapt{background:var(--info-tint);color:var(--info)}
+.chip.later{background:var(--warn-tint);color:var(--warn)}
+.chip.skip{background:var(--wash);color:var(--ink-3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:8px}
+.skiplist{font-size:14px;color:var(--ink-2);max-width:78ch}
+.skiplist code{margin:0 2px}
+
+/* ── options + specimens ── */
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.opt{display:flex;flex-direction:column;gap:14px}
+.opt-h{display:flex;flex-direction:column;gap:4px}
+.opt-h .n{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.opt-h h3{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.opt-h .rec{font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:var(--accent-ink);background:var(--accent-tint);border-radius:999px;padding:2px 8px}
+.opt-h .spec{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--ink-3);line-height:1.5}
+.opt ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:13.5px;color:var(--ink-2)}
+.opt .pc{display:flex;flex-direction:column;gap:6px}
+.opt .pc b{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+
+/* specimen frame: each option paints its own slice of TF Monitor */
+.sp{border:1px solid var(--rule);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;
+  font-family:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;color:var(--ink)}
+.sp-bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--sp-rule);background:var(--sp-side)}
+.sp-nav{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;font-size:13px;color:var(--sp-mfg)}
+.sp-nav.on{background:var(--sp-tint);color:var(--sp-ink);font-weight:500}
+.sp-nav svg{width:15px;height:15px}
+.sp-body{background:var(--sp-ground);padding:12px;display:flex;flex-direction:column;gap:10px}
+.tile{background:var(--sp-card);display:flex;flex-direction:column}
+.tile-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.ichip{display:flex;align-items:center;justify-content:center;color:var(--sp-ink);background:var(--sp-tint)}
+.ichip svg{width:17px;height:17px}
+.tile .lab{color:var(--sp-mfg)}
+.tile .val{font-weight:700;letter-spacing:-.02em;color:var(--ink);line-height:1.15}
+.tile .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.trend{display:inline-flex;align-items:center;gap:3px;font-weight:600;color:var(--bad)}
+.trend svg{width:12px;height:12px}
+.tile .den{color:var(--sp-mfg)}
+.combo{background:var(--sp-card);display:flex;align-items:center;gap:5px;flex-wrap:wrap;color:var(--ink)}
+.combo .ph{color:var(--sp-mfg);margin-left:2px}
+.cchip{display:inline-flex;align-items:center;gap:3px;background:var(--sp-chipbg);color:var(--ink);font-weight:500;white-space:nowrap}
+.cchip svg{width:11px;height:11px;color:var(--sp-mfg)}
+.mini{background:var(--sp-card);overflow:hidden}
+.mini .mh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mini .mh b{font-weight:600;color:var(--ink)}
+.mini .mh a{color:var(--sp-ink);text-decoration:none;font-weight:500;white-space:nowrap}
+.mini table{font-size:inherit}
+.mini th{background:transparent;color:var(--sp-mfg);border-bottom:1px solid var(--sp-rule)}
+.mini td{border-bottom:1px solid var(--sp-rule);color:var(--ink);vertical-align:middle}
+.mini tr:last-child td{border-bottom:0}
+.st{display:inline-flex;align-items:center;gap:4px;font-weight:600;white-space:nowrap}
+.st svg{width:12px;height:12px}
+.st.bad{color:var(--bad)} .st.warn{color:var(--warn)} .st.good{color:var(--good)}
+
+/* option 1 · clinical calm (Nova geometry, olive warm neutral, Clinova anatomy) */
+.s-calm{--sp-ground:var(--calm-ground);--sp-card:var(--calm-card);--sp-side:var(--calm-side);--sp-rule:var(--calm-rule);--sp-mfg:var(--calm-mfg);--sp-tint:var(--calm-tint);--sp-ink:var(--calm-ink);--sp-chipbg:var(--calm-side)}
+.s-calm .sp-nav{border-radius:8px}
+.s-calm .tile{border:1px solid var(--sp-rule);border-radius:12px;padding:14px;gap:8px}
+.s-calm .ichip{width:34px;height:34px;border-radius:8px}
+.s-calm .lab{font-size:13px}
+.s-calm .val{font-size:24px}
+.s-calm .row,.s-calm .den{font-size:12px}
+.s-calm .combo{border:1px solid var(--sp-rule);border-radius:8px;min-height:34px;padding:4px 8px;font-size:13px}
+.s-calm .cchip{border-radius:5px;padding:2px 6px;font-size:12px}
+.s-calm .mini{border:1px solid var(--sp-rule);border-radius:12px;font-size:12.5px}
+.s-calm .mini .mh{padding:11px 12px;border-bottom:1px solid var(--sp-rule)}
+.s-calm .mini th{padding:7px 12px;font-size:11.5px}
+.s-calm .mini td{padding:8px 12px}
+
+/* option 2 · soft compact (Rhea geometry, mist cool neutral) */
+.s-soft{--sp-ground:var(--soft-ground);--sp-card:var(--soft-card);--sp-side:var(--soft-side);--sp-rule:var(--soft-rule);--sp-mfg:var(--soft-mfg);--sp-tint:var(--soft-tint);--sp-ink:var(--soft-ink);--sp-chipbg:var(--soft-fill)}
+.s-soft .sp-nav{border-radius:14px}
+.s-soft .tile{border:1px solid color-mix(in srgb,var(--ink) 5%,transparent);border-radius:24px;padding:18px;gap:8px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px -1px rgba(0,0,0,.06)}
+.s-soft .ichip{width:36px;height:36px;border-radius:999px}
+.s-soft .lab{font-size:13px}
+.s-soft .val{font-size:24px}
+.s-soft .row,.s-soft .den{font-size:12px}
+.s-soft .combo{background:var(--soft-fill);border:1px solid transparent;border-radius:18px;min-height:34px;padding:4px 10px;font-size:13px}
+.s-soft .cchip{border-radius:14px;padding:2px 7px;font-size:12px;background:var(--sp-card)}
+.s-soft .mini{border:1px solid color-mix(in srgb,var(--ink) 5%,transparent);border-radius:24px;font-size:12.5px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.s-soft .mini .mh{padding:14px 16px 8px}
+.s-soft .mini th{padding:6px 16px;font-size:11.5px}
+.s-soft .mini td{padding:8px 16px}
+
+/* option 3 · instrument (Lyra geometry, neutral) */
+.s-inst{--sp-ground:var(--inst-ground);--sp-card:var(--inst-card);--sp-side:var(--inst-side);--sp-rule:var(--inst-rule);--sp-mfg:var(--inst-mfg);--sp-tint:var(--inst-tint);--sp-ink:var(--inst-ink);--sp-chipbg:var(--inst-side)}
+.s-inst .sp-nav{border-radius:0;font-size:12px}
+.s-inst .tile{border:1px solid var(--sp-rule);border-radius:0;padding:12px;gap:6px}
+.s-inst .ichip{width:28px;height:28px;border-radius:0}
+.s-inst .ichip svg{width:15px;height:15px}
+.s-inst .lab{font-size:12px}
+.s-inst .val{font-size:22px;font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-weight:500;letter-spacing:-.03em}
+.s-inst .row,.s-inst .den{font-size:11.5px}
+.s-inst .combo{border:1px solid var(--sp-rule);border-radius:0;min-height:32px;padding:4px 8px;font-size:12px}
+.s-inst .cchip{border-radius:0;padding:2px 6px;font-size:11.5px}
+.s-inst .mini{border:1px solid var(--sp-rule);border-radius:0;font-size:12px}
+.s-inst .mini .mh{padding:9px 10px;border-bottom:1px solid var(--sp-rule)}
+.s-inst .mini th{padding:6px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.s-inst .mini td{padding:6px 10px}
+
+/* ── build sequence (a real order) ── */
+.seq{list-style:none;margin:0;padding:0;counter-reset:s;display:flex;flex-direction:column;gap:0;border-top:1px solid var(--rule);max-width:860px}
+.seq li{counter-increment:s;display:grid;grid-template-columns:44px minmax(0,1fr) minmax(0,1.1fr);gap:18px;padding:16px 0;border-bottom:1px solid var(--rule)}
+.seq li::before{content:counter(s);font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:13px;color:var(--ink-3);padding-top:2px}
+.seq h3{font-size:15px;font-weight:600}
+.seq p{font-size:14px;color:var(--ink-2)}
+
+.decide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.decide div{border-top:2px solid var(--ink);padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.decide h3{font-size:15px;font-weight:600}
+.decide p{font-size:14px;color:var(--ink-2)}
+
+.sources{font-size:13px;color:var(--ink-3);display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--rule);padding-top:20px;max-width:860px}
+.sources p{max-width:none}
+
+@media (max-width:980px){
+  .opts,.decide{grid-template-columns:minmax(0,1fr)}
+  .verdict{grid-template-columns:minmax(0,1fr)}
+  .stack{border-left:0;padding-left:0;border-top:1px solid var(--rule);padding-top:12px}
+}
+@media (max-width:700px){
+  .page{padding:28px 18px 72px;gap:44px}
+  .mast h1{font-size:27px}
+  .qual,.cautions{grid-template-columns:minmax(0,1fr)}
+  .seq li{grid-template-columns:32px minmax(0,1fr)}
+  .seq li p{grid-column:2}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-adapt" viewBox="0 0 24 24"><path d="M4 12h11M11 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-later" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.4"></circle><path d="M12 8v4.5l3 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"></path></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"></path></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5L2.5 20h19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path><path d="M12 10v4.5M12 17.5v.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="2"></rect><rect x="14" y="3" width="7" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"></rect><rect x="14" y="12" width="7" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="2"></rect><rect x="3" y="16" width="7" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"></rect></symbol>
+    <symbol id="i-funnel" viewBox="0 0 24 24"><path d="M3 4h18l-7 8v6l-4 2v-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-talk" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path><path d="M8 9.5h8M8 12.5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M7 7l10 10M17 9v8H9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"></path></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"></circle><path d="M12 7.5v5.5M12 16.5v.01" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"></path></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"></circle><path d="M8 12.5l2.7 2.7L16 9.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+  </defs>
+</svg>
+
+<main class="page">
+
+  <header class="mast">
+    <div class="crumbs"><b>TF Monitor</b><span>React frontend</span><span>Design refresh</span></div>
+    <h1>What to take from shadcn, and from Clinova</h1>
+    <p class="lede">A component-by-component read of shadcn/ui against what the dashboard actually does today, a measured look at the Clinova hospital demo, and three directions to choose between. Every shadcn value here was read from its source repository, not recalled.</p>
+    <div class="meta"><span>13 September 2026</span><span>8 shadcn styles compared</span><span>64 components reviewed</span><span>3 options</span></div>
+  </header>
+
+  <aside class="verdict" aria-label="Recommendation">
+    <div>
+      <h2>Recommendation</h2>
+      <p class="big">Build on shadcn's <em>Nova</em> style with its warm <em>olive</em> neutrals, brand green and IBM Plex Sans, and borrow Clinova's tile anatomy: icon chip, sparkline, trend, denominator. The largest single gain is not visual. It is the <em>Data Table</em>, which gives every worklist sorting, pagination, column choice and row selection the app has never had.</p>
+    </div>
+    <dl class="stack" style="margin:0">
+      <div><span class="k">Component library</span><span class="v">Base UI</span></div>
+      <div><span class="k">Style</span><span class="v">Nova</span></div>
+      <div><span class="k">Base colour</span><span class="v">Olive</span></div>
+      <div><span class="k">Primary</span><span class="v mono">#08684E</span></div>
+      <div><span class="k">Font</span><span class="v">IBM Plex Sans</span></div>
+      <div><span class="k">Radius</span><span class="v mono">0.5rem</span></div>
+      <div><span class="k">Icons</span><span class="v">Lucide</span></div>
+    </dl>
+  </aside>
+
+  <!-- ─────────────────────────────── 1 · Clinova ─────────────────────────────── -->
+  <section aria-labelledby="s-clinova">
+    <div class="sh">
+      <span class="tag">The reference you liked</span>
+      <h2 id="s-clinova">Clinova works because it is calm, and it is calm on purpose</h2>
+      <p>I measured the page rather than describing an impression. Nothing in it is loud: one hue, one border weight, no shadows on cards, and every number framed by a label, a trend and a comparison. It is built on Tailwind with the same token names shadcn uses, which is why almost all of it transfers.</p>
+    </div>
+
+    <div class="qual">
+      <div class="q">
+        <h3>A warm ground, not a white one</h3>
+        <span class="m mono">bg oklch(98.5% .004 90) · sidebar 96.5% · border 90% .006 90</span>
+        <p>The neutrals lean faintly toward stone. It reads as paper under good light rather than a screen.</p>
+        <p class="tf"><span>For TF Monitor</span>shadcn's <code>olive</code> base colour is the nearest built-in: same low chroma, hue 106 against Clinova's 90.</p>
+      </div>
+      <div class="q">
+        <h3>One clinical hue, used sparingly</h3>
+        <span class="m mono">primary oklch(55% .09 195) · active nav 93% .02 195</span>
+        <p>Teal appears on the primary button, the active nav item, icon chips and the main chart series. Everything else is neutral.</p>
+        <p class="tf"><span>For TF Monitor</span>brand green <code>#08684E</code> sits at hue 168, next to shadcn's <code>emerald</code> at 166. Start from emerald and override its primary with the exact brand value.</p>
+      </div>
+      <div class="q">
+        <h3>Cards separated by a border, not lifted</h3>
+        <span class="m mono">rounded-xl 12px · 1px border · no shadow · p-4 16px · gap-3</span>
+        <p>No card floats above another, so the eye moves across the grid instead of stopping at elevation.</p>
+        <p class="tf"><span>For TF Monitor</span>this is almost exactly Nova's card: 16px spacing, a 1px ring, no shadow.</p>
+      </div>
+      <div class="q">
+        <h3>Tiles with an anatomy</h3>
+        <span class="m mono">36px tinted icon chip · sparkline · 24px/700 value · trend · "vs last week"</span>
+        <p>Each tile answers three questions at a glance: what is this, what is it now, and which way is it moving.</p>
+        <p class="tf"><span>For TF Monitor</span>sparklines can come from the quarterly progress already in <code>/api/overview</code>. No new endpoint.</p>
+      </div>
+      <div class="q">
+        <h3>Navigation that shows where you are</h3>
+        <span class="m mono">260px sidebar · grouped, collapsible sections · tinted active pill · user card in footer</span>
+        <p>Grouped sections collapse, the active page is a soft tint rather than a bar, and the account sits at the bottom where it is out of the way.</p>
+        <p class="tf"><span>For TF Monitor</span>shadcn <code>Sidebar</code> does all of this, plus an icon-only collapsed width of 3rem.</p>
+      </div>
+      <div class="q">
+        <h3>A header that stays, and gets out of the way</h3>
+        <span class="m mono">sticky · h-16 · 80% translucent background · border-b · ⌘K search</span>
+        <p>Search is the first control, with its shortcut shown. The header never covers content because it is translucent.</p>
+        <p class="tf"><span>For TF Monitor</span><code>Command</code> + <code>Kbd</code> for a palette that jumps to a page, a facility or an LGA.</p>
+      </div>
+    </div>
+
+    <div class="sh" style="margin-top:8px">
+      <h3 style="font-size:17px;font-weight:600">What does not carry over directly</h3>
+    </div>
+    <div class="cautions">
+      <div><svg width="16" height="16" aria-hidden="true"><use href="#i-warn"></use></svg><p><b>"vs last week" is the wrong comparison.</b> TF Monitor updates from a bi-weekly line list, so a trend means "vs the previous line list", and the Line list changes page already computes it.</p></div>
+      <div><svg width="16" height="16" aria-hidden="true"><use href="#i-warn"></use></svg><p><b>Recent quarters are still maturing.</b> A sparkline that ends on an unfinished quarter shows a false collapse. The last point needs the same dashed, provisional treatment the re-suppression trend already uses.</p></div>
+      <div><svg width="16" height="16" aria-hidden="true"><use href="#i-warn"></use></svg><p><b>Its threshold bars are colour alone.</b> Clinova's red, amber and teal department bars carry no label. In TF Monitor, status must always come with an icon and a word.</p></div>
+      <div><svg width="16" height="16" aria-hidden="true"><use href="#i-warn"></use></svg><p><b>It is a paid template.</b> Clinova is a DashboardPack product. We take its qualities, not its markup, name or layout.</p></div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 2 · Styles ─────────────────────────────── -->
+  <section aria-labelledby="s-styles">
+    <div class="sh">
+      <span class="tag">shadcn/ui, September 2026</span>
+      <h2 id="s-styles">shadcn is no longer one look. It ships eight.</h2>
+      <p>A shadcn project now picks a style that changes component geometry and density, not just colour. Base UI replaced Radix as the default component library on 2 July 2026; Radix remains fully supported. Values below are read from each style's stylesheet, in pixels at shadcn's default radius.</p>
+    </div>
+
+    <div class="tw">
+      <table class="num">
+        <thead>
+          <tr><th>Style</th><th>shadcn's own description</th><th class="c">Card corner</th><th class="c">Card padding</th><th>Card edge</th><th class="c">Text in cards</th><th class="c">Button</th><th>Inputs</th><th class="c">Table cell</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="nm">Vega</td><td class="pitch">Clean, neutral, and familiar</td><td class="c">14</td><td class="c">24</td><td>ring + faint shadow</td><td class="c">14</td><td class="c">36</td><td>outlined</td><td class="c">8</td></tr>
+          <tr class="pick"><td class="nm">Nova</td><td class="pitch">Reduced padding and margins</td><td class="c">14</td><td class="c">16</td><td>ring, no shadow</td><td class="c">14</td><td class="c">32</td><td>outlined</td><td class="c">8</td></tr>
+          <tr><td class="nm">Maia</td><td class="pitch">Rounded, with generous spacing</td><td class="c">18</td><td class="c">24</td><td>ring, no shadow</td><td class="c">14</td><td class="c">36</td><td>tinted fill</td><td class="c">12</td></tr>
+          <tr><td class="nm">Lyra</td><td class="pitch">Boxy and sharp. For mono fonts</td><td class="c">0</td><td class="c">16</td><td>ring, no shadow</td><td class="c">12</td><td class="c">32</td><td>outlined</td><td class="c">8</td></tr>
+          <tr><td class="nm">Mira</td><td class="pitch">Made for compact interfaces</td><td class="c">10</td><td class="c">16</td><td>ring, no shadow</td><td class="c">12</td><td class="c">28</td><td>tinted fill</td><td class="c">8</td></tr>
+          <tr><td class="nm">Luma</td><td class="pitch">Fluid, luminous, and soft</td><td class="c">26</td><td class="c">24</td><td>ring + medium shadow</td><td class="c">14</td><td class="c">36</td><td>filled, no border</td><td class="c">12</td></tr>
+          <tr><td class="nm">Sera</td><td class="pitch">Editorial and typographic</td><td class="c">0</td><td class="c">32</td><td>ring + small shadow</td><td class="c">14</td><td class="c">40</td><td>underline only</td><td class="c">12</td></tr>
+          <tr><td class="nm">Rhea</td><td class="pitch">Like Luma but compact</td><td class="c">24</td><td class="c">20</td><td>ring + small shadow</td><td class="c">14</td><td class="c">32</td><td>filled, no border</td><td class="c">8</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose">
+      <p><strong>Why Nova.</strong> TF Monitor carries seven headline tiles, a filter bar with ten controls and tables of up to several hundred rows. Nova and Rhea are the two styles that tighten card and control spacing while keeping 14px text; Nova does it with 14px corners, a hairline edge and no shadow. <strong>Lyra and Mira</strong> are denser still, but drop card text to 12px, too small for programme staff reading narratives and worklists on a laptop. <strong>Luma, Maia and Sera</strong> spend space the dashboard does not have. <strong>Rhea</strong> is the one real alternative: compact like Nova, but soft and rounded.</p>
+      <p><strong>Also confirmed:</strong> IBM Plex Sans is one of shadcn's built-in font choices, so the brand face needs no workaround. IBM Plex Mono is not, and stays self-hosted as it is now. Every component this review recommends exists in both Base UI and Radix, except <code>Toast</code>, which is Base UI only; Radix projects use <code>Sonner</code> instead.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 3 · Components ─────────────────────────────── -->
+  <section aria-labelledby="s-components">
+    <div class="sh">
+      <span class="tag">Component review</span>
+      <h2 id="s-components">Every shadcn component, against what TF Monitor does today</h2>
+      <p>Grouped by the job each one does in the dashboard. "Today" counts come from the current single-file app: 30 tables, 22 select menus, 24 notice banners, 20 status tags, 8 empty states, 13 hover titles, one notices drawer and one feedback modal.</p>
+    </div>
+
+    <div class="legend" role="list">
+      <span role="listitem"><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span>use as shipped</span>
+      <span role="listitem"><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span>use, with a TF-specific variant or limit</span>
+      <span role="listitem"><span class="chip later"><svg aria-hidden="true"><use href="#i-later"></use></svg>Later</span>worth it, not first</span>
+      <span role="listitem"><span class="chip skip"><svg aria-hidden="true"><use href="#i-skip"></use></svg>Skip</span>no job for it here</span>
+    </div>
+
+    <div class="group">
+      <h3>Tables and worklists <small>the biggest gain</small></h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Data Table</span><span class="today">hand-built header sorting, no pagination</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Built on TanStack Table. Gives the intervention worklist, facility league table, DTC client lists and Users &amp; access one pattern: sortable headers, a "Columns" menu, "x of y rows selected", rows-per-page and page controls. Row selection is what turns "export everything" into "export these 40 clients". shadcn's dashboard block pins the header with <code>sticky top-0</code> on a muted background, which suits long worklists.</td></tr>
+          <tr><td><span class="cname">Table</span><span class="today">cascade by quarter, top-10 lists</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>For short summary tables that never need sorting. Same visual grammar as Data Table (h-10 header, 8px cells, hover tint), so the two sit together without looking like two systems.</td></tr>
+          <tr><td><span class="cname">Scroll Area</span><span class="today">19 tables capped at 470px with native scrollbars</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>Use it where a scrollbar is part of the design: long filter option lists, the notices panel, the sidebar. Keep native overflow on data tables so the sticky header, keyboard scrolling and Ctrl+F all behave as people expect.</td></tr>
+          <tr><td><span class="cname">Pagination</span><span class="today">none</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Only through Data Table's footer. Worklists over 50 rows paginate; summary tables never do.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>Selection and filtering</h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Combobox</span><span class="today">10 hand-built checkbox menus</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>The multi-select mode shows chosen values as removable chips inside the trigger, with type-to-search, a clear button and grouped options. That is exactly what Facility, both LGA filters and Month need: facilities grouped under their state, searchable by name, instead of scrolling a list of every site. Keep the existing cascade rules; residence LGA still does not narrow by treating state.</td></tr>
+          <tr><td><span class="cname">Toggle Group</span><span class="today">none</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>For two-to-four fixed choices where every option should stay visible: Sex, and chart views such as counts versus rates. shadcn's dashboard pairs it with a Select on narrow screens.</td></tr>
+          <tr><td><span class="cname">Select</span><span class="today">admin role and state scope</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Single choice from a short list. Not for the filter bar, where every filter is a list.</td></tr>
+          <tr><td><span class="cname">Checkbox</span><span class="today">2</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Row selection in worklists, with the indeterminate header state for partial selections.</td></tr>
+          <tr><td><span class="cname">Date Picker</span> + <span class="cname">Calendar</span><span class="today">native date input for the line-list as-of date</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>The as-of date sets the fiscal quarter and follow-up window, so a wrong entry is expensive. A calendar makes the chosen date unambiguous.</td></tr>
+          <tr><td><span class="cname">Native Select</span><span class="today">&mdash;</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>Phone-width fallback for single-choice menus only.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>Cards and data display</h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Card</span><span class="today">every panel</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Header, title, description, an action slot at top right, content and footer. The action slot is where "View worklist" and chart toggles go; the small size variant suits the seven headline tiles.</td></tr>
+          <tr><td><span class="cname">Badge</span><span class="today">20 status tags</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>Add three variants of our own for on track, watch and action needed, each carrying an icon and a word. shadcn's variants are generic (default, secondary, destructive, outline) and none says "good".</td></tr>
+          <tr><td><span class="cname">Item</span><span class="today">cohort at a glance, actionable flags, upload history</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>A row with media, title, description and action. It is the shape of Clinova's activity feed, and of the Deep dive's actionable flags: a tinted icon, what the flag is, how many episodes, and a link to the worklist.</td></tr>
+          <tr><td><span class="cname">Tooltip</span><span class="today">13 hover titles</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Short labels only, such as "Month the index result reached the facility".</td></tr>
+          <tr><td><span class="cname">Hover Card</span><span class="today">none</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Indicator definitions on each headline tile: numerator, denominator and the rule, for example "post-EAC VL: sessions 1–3 plus a sample on or after session 3". Definitions currently live only on the Methodology page.</td></tr>
+          <tr><td><span class="cname">Tabs</span><span class="today">none inside pages</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>The line variant, for pages that are long because they hold parallel views: DTC review's four client panels, Advanced analytics' model outputs. Not for Overview, which is read top to bottom.</td></tr>
+          <tr><td><span class="cname">Accordion</span><span class="today">none</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Methodology definitions and the Guidelines page: long reference text people search rather than read in order.</td></tr>
+          <tr><td><span class="cname">Chart</span><span class="today">Chart.js across every page</span></td><td><span class="chip later"><svg aria-hidden="true"><use href="#i-later"></use></svg>Later</span></td><td>shadcn's charts are Recharts v3 with themed tooltips and legends. Worth it for consistency, but Chart.js already draws the survival curves and forest plot correctly, and swapping libraries mid-migration risks the numbers. Restyle Chart.js first; decide once the pages are ported.</td></tr>
+          <tr><td><span class="cname">Progress</span><span class="today">3 spinners</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>Workbook upload and parse progress, where the page currently shows only a spinner.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>Frame and navigation</h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Sidebar</span><span class="today">hand-built rail with a burger menu</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Grouped sections (Programme, Action, Reference), a collapsible icon-only mode, a mobile sheet, and a footer for line-list date, version and account, all built in.</td></tr>
+          <tr><td><span class="cname">Command</span> + <span class="cname">Kbd</span><span class="today">none</span></td><td><span class="chip later"><svg aria-hidden="true"><use href="#i-later"></use></svg>Later</span></td><td>A ⌘K palette to jump to a page, facility or LGA, with facility names searchable across all three states. Clinova leads with it. It should never search client records.</td></tr>
+          <tr><td><span class="cname">Dropdown Menu</span> + <span class="cname">Avatar</span><span class="today">sign-out button, theme button</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>One account menu: name, role and state scope, theme, change password, sign out. The same component serves as row actions in Data Table.</td></tr>
+          <tr><td><span class="cname">Breadcrumb</span><span class="today">&mdash;</span></td><td><span class="chip skip"><svg aria-hidden="true"><use href="#i-skip"></use></svg>Skip</span></td><td>Navigation is flat; every page is one click from the sidebar.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>Overlays</h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Sheet</span><span class="today">1 hand-built notices drawer</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>The data-notices panel, and a detail panel from a worklist row showing an episode's VL trajectory without leaving the list. shadcn's dashboard block opens a drawer from a table row for exactly this.</td></tr>
+          <tr><td><span class="cname">Dialog</span><span class="today">1 feedback modal</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Feedback, change password, add user.</td></tr>
+          <tr><td><span class="cname">Alert Dialog</span><span class="today">browser confirm()</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Deleting a snapshot, or pruning all previous ones. Both use the browser's plain confirm box today; the dialog should name the snapshot date and episode count before anything disappears.</td></tr>
+          <tr><td><span class="cname">Popover</span><span class="today">&mdash;</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Comes with Combobox and Date Picker; no separate use.</td></tr>
+          <tr><td><span class="cname">Drawer</span><span class="today">&mdash;</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>Bottom sheet on phones only, in place of Sheet.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="group">
+      <h3>Feedback, states and forms</h3>
+      <div class="tw"><table class="rv">
+        <tbody>
+          <tr><td><span class="cname">Empty</span><span class="today">8 "No data for this filter" lines</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>An icon, what happened, and the one action that fixes it: "No episodes match these filters. Reset filters."</td></tr>
+          <tr><td><span class="cname">Alert</span><span class="today">24 notice banners</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Censored EAC lists, ingest notes, back-dated uploads.</td></tr>
+          <tr><td><span class="cname">Toast</span><span class="today">none</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>"Line list uploaded: 4,548 episodes", "Worklist exported". Base UI only; Radix uses Sonner.</td></tr>
+          <tr><td><span class="cname">Skeleton</span><span class="today">none</span></td><td><span class="chip adapt"><svg aria-hidden="true"><use href="#i-adapt"></use></svg>Adapt</span></td><td>First load only. When a filter changes, keep the previous numbers on screen, dimmed, until the new ones arrive; flashing skeletons on every refetch makes the page jump.</td></tr>
+          <tr><td><span class="cname">Spinner</span><span class="today">3</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Inside buttons while a request runs: "Signing in", "Exporting".</td></tr>
+          <tr><td><span class="cname">Field</span>, <span class="cname">Label</span>, <span class="cname">Input</span>, <span class="cname">Input Group</span>, <span class="cname">Textarea</span><span class="today">admin, sign-in and feedback forms</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Labels, help text and errors in one structure, for user creation, the upload form, password change and the feedback message.</td></tr>
+          <tr><td><span class="cname">Button</span>, <span class="cname">Button Group</span><span class="today">export, reset, sign out</span></td><td><span class="chip adopt"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span></td><td>Button Group for export choices such as all active clients or selected rows.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <p class="skiplist"><span class="chip skip" style="margin-right:6px"><svg aria-hidden="true"><use href="#i-skip"></use></svg>Skip</span> No job in this dashboard: <code>Aspect Ratio</code> <code>Carousel</code> <code>Context Menu</code> <code>Menubar</code> <code>Navigation Menu</code> <code>Resizable</code> <code>Slider</code> <code>Radio Group</code> <code>Input OTP</code> <code>Switch</code> <code>Toggle</code> <code>Typography</code> <code>Direction</code> (right-to-left), and the chat and agent set: <code>Attachment</code> <code>Bubble</code> <code>Marker</code> <code>Message</code> <code>Message Scroller</code> <code>Questionnaire</code>.</p>
+    <p class="skiplist"><span class="chip adopt" style="margin-right:6px"><svg aria-hidden="true"><use href="#i-check"></use></svg>Adopt</span> Arrive with other components, no separate decision: <code>Separator</code> in the sidebar and header, <code>Collapsible</code> inside Accordion and the sidebar's sections.</p>
+  </section>
+
+  <!-- ─────────────────────────────── 4 · Options ─────────────────────────────── -->
+  <section aria-labelledby="s-options">
+    <div class="sh">
+      <span class="tag">Three directions</span>
+      <h2 id="s-options">The same slice of TF Monitor in each</h2>
+      <p>Navigation, a headline tile with its sparkline, the Facility filter holding two selections, and the top of a worklist. Figures are illustrative. Each specimen follows the page theme, so switch to dark to compare both.</p>
+    </div>
+
+    <div class="opts">
+
+      <!-- option 1 -->
+      <article class="opt">
+        <div class="opt-h">
+          <span class="n">Option 1</span>
+          <h3>Clinical calm <span class="rec">Recommended</span></h3>
+          <span class="spec">Nova · olive · #08684E · IBM Plex Sans · 0.5rem</span>
+        </div>
+        <div class="sp s-calm" aria-label="Specimen: Clinical calm">
+          <div class="sp-bar">
+            <span class="sp-nav on"><svg aria-hidden="true"><use href="#i-dash"></use></svg>Overview</span>
+            <span class="sp-nav"><svg aria-hidden="true"><use href="#i-funnel"></use></svg>Cascade</span>
+          </div>
+          <div class="sp-body">
+            <div class="tile">
+              <div class="tile-top">
+                <span class="ichip"><svg aria-hidden="true"><use href="#i-talk"></use></svg></span>
+                <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true"><polyline points="2,6 26,8 50,11 74,15" fill="none" stroke="var(--spark)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline><polyline points="74,15 94,24" fill="none" stroke="var(--calm-mfg)" stroke-width="2" stroke-dasharray="3 3" stroke-linecap="round"></polyline><circle cx="94" cy="24" r="3" fill="var(--calm-card)" stroke="var(--calm-mfg)" stroke-width="2"></circle></svg>
+              </div>
+              <span class="lab">Commenced EAC</span>
+              <div class="row"><span class="val">86.0%</span><span class="trend"><svg aria-hidden="true"><use href="#i-down"></use></svg>1.4 pts</span></div>
+              <span class="den">3,912 of 4,548 · vs previous line list</span>
+            </div>
+            <div class="combo" aria-label="Facility filter">
+              <span class="cchip">Delta Clinic A<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="cchip">Osun Clinic B<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="ph">Search facilities</span>
+            </div>
+            <div class="mini">
+              <div class="mh"><b>Awaiting DTC review</b><a href="#s-options">View all →</a></div>
+              <table class="num">
+                <thead><tr><th>Facility</th><th style="text-align:right">Episodes</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Delta Clinic A</td><td style="text-align:right">41</td><td><span class="st bad"><svg aria-hidden="true"><use href="#i-alert"></use></svg>Action</span></td></tr>
+                  <tr><td>Osun Clinic B</td><td style="text-align:right">18</td><td><span class="st good"><svg aria-hidden="true"><use href="#i-ok"></use></svg>On track</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <ul>
+          <li>Closest to Clinova: warm ground, bordered cards, no shadows, tinted icon chips.</li>
+          <li>14px text throughout, with tighter cards than the default style, so more of the seven tiles share a row.</li>
+          <li>Nova's card footer tints itself, a natural home for "View worklist".</li>
+        </ul>
+        <div class="pc"><b>Tradeoff</b><p style="font-size:13.5px;color:var(--ink-2)">The quietest of the three. Status has to be carried by badges and icons, because nothing else on the page raises its voice.</p></div>
+      </article>
+
+      <!-- option 2 -->
+      <article class="opt">
+        <div class="opt-h">
+          <span class="n">Option 2</span>
+          <h3>Soft compact</h3>
+          <span class="spec">Rhea · mist · #08684E · IBM Plex Sans · default</span>
+        </div>
+        <div class="sp s-soft" aria-label="Specimen: Soft compact">
+          <div class="sp-bar">
+            <span class="sp-nav on"><svg aria-hidden="true"><use href="#i-dash"></use></svg>Overview</span>
+            <span class="sp-nav"><svg aria-hidden="true"><use href="#i-funnel"></use></svg>Cascade</span>
+          </div>
+          <div class="sp-body">
+            <div class="tile">
+              <div class="tile-top">
+                <span class="ichip"><svg aria-hidden="true"><use href="#i-talk"></use></svg></span>
+                <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true"><polyline points="2,6 26,8 50,11 74,15" fill="none" stroke="var(--spark)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline><polyline points="74,15 94,24" fill="none" stroke="var(--soft-mfg)" stroke-width="2" stroke-dasharray="3 3" stroke-linecap="round"></polyline><circle cx="94" cy="24" r="3" fill="var(--soft-card)" stroke="var(--soft-mfg)" stroke-width="2"></circle></svg>
+              </div>
+              <span class="lab">Commenced EAC</span>
+              <div class="row"><span class="val">86.0%</span><span class="trend"><svg aria-hidden="true"><use href="#i-down"></use></svg>1.4 pts</span></div>
+              <span class="den">3,912 of 4,548 · vs previous line list</span>
+            </div>
+            <div class="combo" aria-label="Facility filter">
+              <span class="cchip">Delta Clinic A<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="cchip">Osun Clinic B<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="ph">Search facilities</span>
+            </div>
+            <div class="mini">
+              <div class="mh"><b>Awaiting DTC review</b><a href="#s-options">View all →</a></div>
+              <table class="num">
+                <thead><tr><th>Facility</th><th style="text-align:right">Episodes</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Delta Clinic A</td><td style="text-align:right">41</td><td><span class="st bad"><svg aria-hidden="true"><use href="#i-alert"></use></svg>Action</span></td></tr>
+                  <tr><td>Osun Clinic B</td><td style="text-align:right">18</td><td><span class="st good"><svg aria-hidden="true"><use href="#i-ok"></use></svg>On track</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <ul>
+          <li>24px rounded cards with a soft shadow; borderless, filled inputs.</li>
+          <li>Still compact: 32px controls and 8px table cells, like Nova.</li>
+          <li>The most contemporary of the three, closer to a native app.</li>
+        </ul>
+        <div class="pc"><b>Tradeoff</b><p style="font-size:13.5px;color:var(--ink-2)">Large corners eat into dense tables and filter bars, and the look is further from a clinical tool. Filled inputs are harder to read as fields at a glance.</p></div>
+      </article>
+
+      <!-- option 3 -->
+      <article class="opt">
+        <div class="opt-h">
+          <span class="n">Option 3</span>
+          <h3>Instrument</h3>
+          <span class="spec">Lyra · neutral · #08684E · Plex Sans + Plex Mono figures</span>
+        </div>
+        <div class="sp s-inst" aria-label="Specimen: Instrument">
+          <div class="sp-bar">
+            <span class="sp-nav on"><svg aria-hidden="true"><use href="#i-dash"></use></svg>Overview</span>
+            <span class="sp-nav"><svg aria-hidden="true"><use href="#i-funnel"></use></svg>Cascade</span>
+          </div>
+          <div class="sp-body">
+            <div class="tile">
+              <div class="tile-top">
+                <span class="ichip"><svg aria-hidden="true"><use href="#i-talk"></use></svg></span>
+                <svg width="96" height="30" viewBox="0 0 96 30" aria-hidden="true"><polyline points="2,6 26,8 50,11 74,15" fill="none" stroke="var(--spark)" stroke-width="2" stroke-linejoin="round"></polyline><polyline points="74,15 94,24" fill="none" stroke="var(--inst-mfg)" stroke-width="2" stroke-dasharray="3 3"></polyline><rect x="91" y="21" width="6" height="6" fill="var(--inst-card)" stroke="var(--inst-mfg)" stroke-width="2"></rect></svg>
+              </div>
+              <span class="lab">Commenced EAC</span>
+              <div class="row"><span class="val">86.0%</span><span class="trend"><svg aria-hidden="true"><use href="#i-down"></use></svg>1.4 pts</span></div>
+              <span class="den">3,912 of 4,548 · vs previous line list</span>
+            </div>
+            <div class="combo" aria-label="Facility filter">
+              <span class="cchip">Delta Clinic A<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="cchip">Osun Clinic B<svg aria-hidden="true"><use href="#i-x"></use></svg></span>
+              <span class="ph">Search facilities</span>
+            </div>
+            <div class="mini">
+              <div class="mh"><b>Awaiting DTC review</b><a href="#s-options">View all →</a></div>
+              <table class="num">
+                <thead><tr><th>Facility</th><th style="text-align:right">Episodes</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>Delta Clinic A</td><td style="text-align:right">41</td><td><span class="st bad"><svg aria-hidden="true"><use href="#i-alert"></use></svg>Action</span></td></tr>
+                  <tr><td>Osun Clinic B</td><td style="text-align:right">18</td><td><span class="st good"><svg aria-hidden="true"><use href="#i-ok"></use></svg>On track</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <ul>
+          <li>Square corners everywhere, hairline edges, figures set in Plex Mono.</li>
+          <li>The densest: most tiles and rows on one screen.</li>
+          <li>Literally "sharp", and reads like a monitoring instrument.</li>
+        </ul>
+        <div class="pc"><b>Tradeoff</b><p style="font-size:13.5px;color:var(--ink-2)">Lyra sets card and control text at 12px. Fine for analysts, hard for programme staff reading narratives and worklists on a laptop, and furthest from what you liked in Clinova.</p></div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── 5 · Sequence ─────────────────────────────── -->
+  <section aria-labelledby="s-build">
+    <div class="sh">
+      <span class="tag">If we take Option 1</span>
+      <h2 id="s-build">The order to build it in</h2>
+      <p>The React app keeps running beside the live dashboard at <code>/app</code>, as it does now. Each step leaves something usable, and nothing reaches state teams until a page matches the numbers on the current one.</p>
+    </div>
+    <ol class="seq">
+      <li><div><h3>Foundation</h3></div><p>Add Tailwind v4 and Base UI with the Nova style, olive base and brand-green primary. Self-host IBM Plex as now, so the no-external-requests rule survives.</p></li>
+      <li><div><h3>Frame</h3></div><p>Sidebar with grouped sections and the line-list footer; a sticky translucent header with the account menu. Retire the ported rail CSS.</p></li>
+      <li><div><h3>Filter bar</h3></div><p>Combobox for Facility, both LGAs and Month; Toggle Group for Sex. The existing cascade rules and their tests carry over unchanged.</p></li>
+      <li><div><h3>Overview in the new anatomy</h3></div><p>Card-based tiles with icon chips, quarterly sparklines (last quarter provisional), Hover Card definitions, Empty and Alert states.</p></li>
+      <li><div><h3>Worklists</h3></div><p>Data Table for the intervention worklist, facility league and DTC lists, with row selection feeding export and a Sheet for episode detail.</p></li>
+      <li><div><h3>Remaining pages, then charts</h3></div><p>Port page by page. Revisit Chart.js versus Recharts only once every page renders, so no number moves during the migration.</p></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s-decide">
+    <div class="sh">
+      <span class="tag">Decisions for you</span>
+      <h2 id="s-decide">Three calls to make before building</h2>
+    </div>
+    <div class="decide">
+      <div><h3>Which direction</h3><p>Option 1 is closest to Clinova and to how the dashboard is used. If Rhea's softness appeals, it can be tried on one page before committing.</p></div>
+      <div><h3>Base UI or Radix</h3><p>Base UI is shadcn's default since July 2026 and the only one with the new Toast. Radix is equally supported. I would start on Base UI.</p></div>
+      <div><h3>Sparklines on tiles</h3><p>They add the "which way is it moving" Clinova does well, but only with the provisional last quarter marked. Say if you would rather keep tiles to a number and a denominator.</p></div>
+    </div>
+  </section>
+
+  <footer class="sources">
+    <p><b style="color:var(--ink-2);font-weight:600">Sources.</b> shadcn/ui documentation at ui.shadcn.com and its repository (<span class="mono">apps/v4/registry/styles/style-*.css</span>, <span class="mono">styles.tsx</span>, <span class="mono">bases.ts</span>, <span class="mono">config.ts</span>, <span class="mono">themes.ts</span>, <span class="mono">font-definitions.ts</span>, the dashboard-01 block, and changelog entries for Luma, Sera, Rhea, Toast and Base UI as the default), read on 13 September 2026. Clinova values are computed styles measured in the browser the same day. TF Monitor counts are from the current <span class="mono">index.html</span>.</p>
+    <p>Pixel values assume shadcn's default <span class="mono">--radius</span> of 0.625rem; Option 1 proposes 0.5rem, which brings card corners to 12px as in Clinova. That is a custom value: shadcn's preset radii are 0.45rem and 0.625rem either side of it.</p>
+  </footer>
+</main>
