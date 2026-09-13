@@ -7,6 +7,7 @@ import './styles/fonts.css'
 import './styles/tokens.css'
 import './styles/shell.css'
 import './styles/components.css'
+import './styles/refine.css'      // the design pass; last, so it wins
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root is missing from index.html')

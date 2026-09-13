@@ -115,29 +115,29 @@ export default function Overview({ data }: { data: Ov | null }) {
               tone={data.awaiting_switch ? 'bad' : 'good'} />
       </div>
 
-      <div className="panel">
+      <div className="panel narr">
         <div className="panel-h">
           <div className="eyebrow">Programme narrative</div>
           <h2>Treatment-failure cohort — {period}</h2>
         </div>
         <div className="narrative">
           <p>
-            In {period}, <strong>{fmt(data.n)} treatment-failure episodes</strong> were
-            recorded across <strong>{fmt(data.clients)} clients</strong>{' '}
+            In {period}, {fmt(data.n)} treatment-failure episodes were
+            recorded across {fmt(data.clients)} clients{' '}
             ({fmt(data.repeat_clients)} unsuppressed more than once). The cohort is{' '}
-            <strong>{pc(d.female_pct)} female</strong> ({fmt(d.female)}) and {pc(d.male_pct)} male
-            {' '}({fmt(d.male)}); <strong>{pc(d.adolescents_pct)} are adolescents</strong>{' '}
+            {pc(d.female_pct)} female ({fmt(d.female)}) and {pc(d.male_pct)} male
+            {' '}({fmt(d.male)}); {pc(d.adolescents_pct)} are adolescents{' '}
             (10–19, {fmt(d.adolescents)}) and {pc(d.paeds_pct)} are children under 10
             {' '}({fmt(d.paeds)}). Median time on ART is{' '}
-            <strong>{months ? `${months} months` : '—'}{years ? ` (${years} years)` : ''}</strong>,
-            and <strong>{pc(d.first_line_pct)} are on a first-line regimen</strong>.
+            {months ? `${months} months` : '—'}{years ? ` (${years} years)` : ''},
+            and {pc(d.first_line_pct)} are on a first-line regimen.
           </p>
           <p>
-            Of these, <strong>{pc(data.eac1_pct)} commenced EAC</strong> and{' '}
+            Of these, {pc(data.eac1_pct)} commenced EAC and{' '}
             {pc(data.completed_pct)} of those completed it. A follow-up viral load exists
-            for {pc(data.retest_pct)}, of which <strong>{pc(data.resupp_pct)} re-suppressed</strong>.
+            for {pc(data.retest_pct)}, of which {pc(data.resupp_pct)} re-suppressed.
             {' '}{fmt(data.still_unsuppressed)} episodes remain at or above 1,000 copies/mL,
-            and <strong>{fmt(data.awaiting_switch)} are awaiting DTC review</strong>.
+            and {fmt(data.awaiting_switch)} are awaiting DTC review.
           </p>
         </div>
       </div>
