@@ -1,0 +1,61 @@
+{
+  "artboards": [
+    {
+      "file": "DirectionDefault.dc.html",
+      "title": "Option A — shadcn default",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 2060
+    },
+    {
+      "file": "Main.dc.html",
+      "title": "Option B — Sharp & dense",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 1560
+    },
+    {
+      "file": "DirectionBrand.dc.html",
+      "title": "Option C — Brand-tinted",
+      "x": 3080,
+      "y": 0,
+      "w": 1440,
+      "h": 1940
+    }
+  ],
+  "annotations": [
+    {
+      "id": "about",
+      "x": 0,
+      "y": -660,
+      "w": 900,
+      "text": "Three directions for the React Overview, all built from shadcn/ui's own tokens and component anatomy, keeping IBM Plex and brand green #08684E.\nFigures are illustrative, not the live cohort. Each artboard has a Dark toggle above it.\nThe chart colours are new: the current app's female/male pair fails colour-vision checks in both themes. Blue #2a78d6 / orange #eb6834 (dark #3987e5 / #d95926) pass."
+    },
+    {
+      "id": "option-a",
+      "x": 0,
+      "y": -420,
+      "w": 900,
+      "text": "Option A — shadcn default\nshadcn/ui as it ships: Neutral base, 0.625rem radius, bordered cards with a light shadow, KPI tiles in its dashboard pattern (label, large figure, outline status badge, denominator beneath).\nWhy: the most familiar modern look; every piece is an off-the-shelf component.\nTradeoff: roomy. The seven tiles take two rows and the time metrics a third, so the chart sits well below the fold on a laptop.\nReact: shadcn/ui (Tailwind v4 + Radix) — Sidebar, Card, Badge, Select with Command for multi-select, Table, Chart."
+    },
+    {
+      "id": "option-b",
+      "x": 1540,
+      "y": -420,
+      "w": 900,
+      "text": "Option B — Sharp & dense (leading)\nThe same shadcn tokens and components, tightened: 0.375rem radius, a hairline ring instead of shadows, small controls, all seven tiles on one row, time metrics as one divided strip, compact table rows.\nWhy: closest to \"professional and sharp\", and the most of the programme on one screen.\nTradeoff: smaller type; tile denominators wrap to two lines, and it asks more of a small screen.\nReact: shadcn/ui with --radius 0.375rem, Card size=\"sm\", Button and Select size=\"sm\", Table rows at h-9."
+    },
+    {
+      "id": "option-c",
+      "x": 3080,
+      "y": -420,
+      "w": 900,
+      "text": "Option C — Brand-tinted\nshadcn with ECEWS green carried into the frame: deep-green sidebar, warm Stone neutrals, the index cohort as a green hero tile, soft tinted status badges, a green-washed narrative card.\nWhy: unmistakably ECEWS rather than a generic admin template.\nTradeoff: the green sidebar and hero sit close to the green that means \"on track\", so status leans on its icon and label; dark mode needs its own tuned greens.\nReact: shadcn/ui with custom --sidebar-* tokens, the Stone base colour, and one extra Card variant for the hero tile."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
