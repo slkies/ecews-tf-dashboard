@@ -1,7 +1,7 @@
 import { FilterProvider } from './core/filters'
 import { useSession } from './core/session'
 import SignIn from './pages/SignIn'
-import Shell from './shell/Shell'
+import AppShell from './shell/app-shell'
 
 export default function App() {
   const { me, ready } = useSession()
@@ -12,5 +12,5 @@ export default function App() {
   // The filters live inside the signed-in tree: they are fetched from an
   // authenticated endpoint, so mounting them around the sign-in page would
   // fire a request that can only 401.
-  return me ? <FilterProvider><Shell /></FilterProvider> : <SignIn />
+  return me ? <FilterProvider><AppShell /></FilterProvider> : <SignIn />
 }

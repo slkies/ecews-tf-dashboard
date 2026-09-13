@@ -245,3 +245,23 @@ The refusal message is in the runbook's troubleshooting table.
 
 **Lesson.** A dangerous command sitting in a document is a dangerous command. The
 defence that worked was the one in the code, not the one in the prose.
+
+## 13. The filter popups could not be tested in jsdom
+**13 Sep 2026** — Rebuilding the filter bar on shadcn's Base UI combobox, three
+tests timed out. A probe showed that a single click on a filter's button never
+returned inside jsdom, and shadcn's own unmodified combobox crashed the test
+worker the same way. jsdom does not implement the layout and pointer behaviour
+Base UI's popups rely on. It is not a fault in the app: in a real browser the
+same filter opens, groups facilities by state, and applies a selection.
+
+**What changed.** Selection is tested through the filter context, which is the
+same path a popup choice takes, and the popups themselves are checked in a real
+browser. Two development-only pages exist for that, served by `npm run dev` and
+never part of the production build: `/app/harness.html` (the filter bar alone)
+and `/app/harness-overview.html` (the whole frame and Overview with illustrative
+figures, `?theme=dark` for the dark palette). The limitation is written at the
+top of `filter-bar.test.tsx` so nobody re-adds the popup tests expecting them to pass.
+
+**Lesson.** A component library's interactive layer can outrun the test
+environment. When it does, test the logic where it can be tested, check the
+interaction where it actually runs, and say which is which.

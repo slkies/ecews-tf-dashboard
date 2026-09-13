@@ -325,8 +325,16 @@ provisional or it will report a collapse from 95% to 37% that is arithmetic.
 2. **Interactive cards** (click-to-filter → global re-slice; click bar → worklist).
    Recommended, deferred to build alongside the v4 redesign so handlers aren't wired twice.
 3. **Contiguous-state map context** ✅ done (grey neighbours behind the LGA choropleth).
-4. Roll the new design language (sidebar layout from the approved v4 prototype) into the
-   real frontend — deferred until per-page indicators are settled so we don't restyle twice.
+4. **React frontend on shadcn/ui — in progress** (branch `react`, served at `/app` beside
+   the unchanged dashboard at `/`). Es chose Option 1, "Clinical calm", on 13 Sep 2026
+   from `design/shadcn-options/design-refresh-review.html`: Base UI, the Nova style, olive
+   neutrals warmed toward the Clinova reference, brand green `#08684E`, 0.5rem radius,
+   IBM Plex self-hosted. **Overview is rebuilt** in it: sidebar and sticky header, a
+   searchable multi-select filter bar (facilities and LGAs grouped by state), tiles with
+   quarterly sparklines and a trend against the previous line list, and every card the
+   original carries. Every other page still says "not rebuilt yet" and links to `/`.
+   Next in the agreed order: Data Table for the worklists, then the remaining pages;
+   Chart.js versus Recharts is decided last.
 
 **Open asks to the HI/EMR team (blocking better analysis):**
 - **Switch date / "reason not switched"** — highest-value missing fields; unlock

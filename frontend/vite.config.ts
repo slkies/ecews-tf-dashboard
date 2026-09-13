@@ -1,3 +1,5 @@
+import { fileURLToPath, URL } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -6,7 +8,14 @@ import react from '@vitejs/plugin-react'
 // is in weekly use by state teams; it does not come down for a rewrite. When
 // the React app reaches parity the two swap, and this base becomes '/'.
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind v4 runs as a Vite plugin at build time and emits plain CSS, so it
+  // adds no runtime request - the no-external-requests rule is untouched.
+  plugins: [react(), tailwindcss()],
+  // shadcn components import from "@/components/ui/...". One alias, mirrored
+  // in tsconfig.json so the editor and the bundler agree.
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   base: '/app/',
   build: {
     outDir: '../backend/static_app',
@@ -23,6 +32,11 @@ export default defineConfig({
     // real data rather than fixtures.
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
+      // The self-hosted fonts and the logo are served by the app, not by this
+      // build, so the dev server borrows them - otherwise every page in
+      // development renders in a fallback face and a missing logo.
+      '/vendor': { target: 'http://localhost:8080', changeOrigin: true },
+      '/brand': { target: 'http://localhost:8080', changeOrigin: true },
     },
   },
   test: {

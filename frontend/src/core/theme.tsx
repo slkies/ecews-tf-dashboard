@@ -29,6 +29,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(initial)
 
   useEffect(() => {
+    // shadcn keys dark mode off a `.dark` class; `data-theme` is kept for
+    // anything still reading the attribute.
+    document.documentElement.classList.toggle('dark', theme === 'dark')
     document.documentElement.setAttribute('data-theme', theme)
     try { localStorage.setItem(STORAGE_KEY, theme) } catch { /* not fatal */ }
   }, [theme])

@@ -32,14 +32,17 @@ export default function Chart({ config, height = 290, ariaLabel }: {
     const el = canvas.current
     if (!el) return
 
+    // Axis text and gridlines follow the shadcn tokens, so a chart reads as
+    // part of the card it sits in, in either theme.
     const css = getComputedStyle(document.documentElement)
-    const ink3 = css.getPropertyValue('--ink-3').trim() || '#8E9A94'
-    const rule = css.getPropertyValue('--rule').trim() || '#E4E8E5'
+    const tick = css.getPropertyValue('--muted-foreground').trim() || '#7a796c'
+    const grid = css.getPropertyValue('--border').trim() || '#e6e5dd'
 
-    ChartJS.defaults.color = ink3
-    ChartJS.defaults.borderColor = rule
+    ChartJS.defaults.color = tick
+    ChartJS.defaults.borderColor = grid
     ChartJS.defaults.font.family =
-      "'IBM Plex Sans', system-ui, sans-serif"
+      "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif"
+    ChartJS.defaults.font.size = 11
 
     chart.current?.destroy()
     chart.current = new ChartJS(el, config)

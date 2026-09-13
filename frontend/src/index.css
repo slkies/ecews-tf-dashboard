@@ -1,0 +1,200 @@
+/* TF Monitor on shadcn/ui - Option 1, "Clinical calm".
+ *
+ *   component library  Base UI
+ *   style              Nova (components.json: base-nova)
+ *   base colour        Olive, with the ground warmed toward Clinova's
+ *   primary            brand green #08684E  = oklch(0.460 0.091 167.7)
+ *   radius             0.5rem  -> cards 12px, controls 8px, as in Clinova
+ *   font               IBM Plex Sans / Mono, self-hosted (styles/fonts.css)
+ *
+ * Neutral values start from shadcn's olive theme (registry/themes.ts) and are
+ * adjusted in three places, each for a measured reason:
+ *   - the page ground is a warm off-white rather than olive's pure white,
+ *     because Clinova's is (oklch 98.5% .004 90) and that is most of its calm;
+ *   - muted-foreground is darker than olive's 0.58, which falls short of 4.5:1
+ *     for small text on the warm ground;
+ *   - accent and sidebar-accent carry a brand-green tint, so hover and the
+ *     active navigation item read as TF Monitor rather than grey.
+ *
+ * Status colours (good / warn / bad / info) are deliberately separate tokens.
+ * Brand green is the accent; "on track" is a status and must not depend on it.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: var(--font-sans);
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* status: text colour and its tint, for badges, icon chips and trends */
+  --color-good: var(--good);
+  --color-good-tint: var(--good-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
+  /* the brand tint used behind icon chips */
+  --color-brand-tint: var(--brand-tint);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.004 100);
+  --foreground: oklch(0.153 0.006 107.1);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.153 0.006 107.1);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.153 0.006 107.1);
+
+  --primary: oklch(0.46 0.091 167.7);
+  --primary-foreground: oklch(0.988 0.003 106.5);
+  --secondary: oklch(0.966 0.005 106.5);
+  --secondary-foreground: oklch(0.228 0.013 107.4);
+  --muted: oklch(0.966 0.005 106.5);
+  --muted-foreground: oklch(0.52 0.024 107);
+  --accent: oklch(0.955 0.018 167.7);
+  --accent-foreground: oklch(0.36 0.07 167.7);
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: oklch(0.915 0.007 106.5);
+  --input: oklch(0.915 0.007 106.5);
+  --ring: oklch(0.6 0.08 167.7);
+
+  /* brand first, then the colour-vision-validated series pair */
+  --chart-1: oklch(0.46 0.091 167.7);
+  --chart-2: #2a78d6;
+  --chart-3: #eb6834;
+  --chart-4: oklch(0.72 0.12 80);
+  --chart-5: oklch(0.52 0.024 107);
+
+  --sidebar: oklch(0.97 0.005 106.5);
+  --sidebar-foreground: oklch(0.3 0.012 107.4);
+  --sidebar-primary: oklch(0.46 0.091 167.7);
+  --sidebar-primary-foreground: oklch(0.988 0.003 106.5);
+  --sidebar-accent: oklch(0.93 0.03 167.7);
+  --sidebar-accent-foreground: oklch(0.38 0.08 167.7);
+  --sidebar-border: oklch(0.915 0.007 106.5);
+  --sidebar-ring: oklch(0.6 0.08 167.7);
+
+  --good: oklch(0.47 0.1 155);
+  --good-tint: oklch(0.95 0.035 155);
+  --warn: oklch(0.52 0.11 70);
+  --warn-tint: oklch(0.96 0.045 85);
+  --bad: oklch(0.52 0.18 28);
+  --bad-tint: oklch(0.955 0.03 28);
+  --info: oklch(0.5 0.08 240);
+  --info-tint: oklch(0.955 0.02 240);
+  --brand-tint: oklch(0.46 0.091 167.7 / 0.12);
+}
+
+.dark {
+  --background: oklch(0.155 0.006 107);
+  --foreground: oklch(0.975 0.004 106.5);
+  --card: oklch(0.195 0.008 107);
+  --card-foreground: oklch(0.975 0.004 106.5);
+  --popover: oklch(0.21 0.009 107);
+  --popover-foreground: oklch(0.975 0.004 106.5);
+
+  --primary: oklch(0.772 0.154 164.9);
+  --primary-foreground: oklch(0.2 0.035 165);
+  --secondary: oklch(0.26 0.012 107.4);
+  --secondary-foreground: oklch(0.975 0.004 106.5);
+  --muted: oklch(0.26 0.012 107.4);
+  --muted-foreground: oklch(0.74 0.02 107);
+  --accent: oklch(0.27 0.03 167.7);
+  --accent-foreground: oklch(0.88 0.08 165);
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.6 0.1 165);
+
+  --chart-1: oklch(0.772 0.154 164.9);
+  --chart-2: #3987e5;
+  --chart-3: #d95926;
+  --chart-4: oklch(0.8 0.12 80);
+  --chart-5: oklch(0.74 0.02 107);
+
+  --sidebar: oklch(0.175 0.007 107);
+  --sidebar-foreground: oklch(0.86 0.01 107);
+  --sidebar-primary: oklch(0.772 0.154 164.9);
+  --sidebar-primary-foreground: oklch(0.2 0.035 165);
+  --sidebar-accent: oklch(0.28 0.045 166);
+  --sidebar-accent-foreground: oklch(0.88 0.11 165);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.6 0.1 165);
+
+  --good: oklch(0.8 0.14 158);
+  --good-tint: oklch(0.8 0.14 158 / 0.13);
+  --warn: oklch(0.83 0.13 85);
+  --warn-tint: oklch(0.83 0.13 85 / 0.13);
+  --bad: oklch(0.74 0.15 30);
+  --bad-tint: oklch(0.74 0.15 30 / 0.14);
+  --info: oklch(0.78 0.08 235);
+  --info-tint: oklch(0.78 0.08 235 / 0.13);
+  --brand-tint: oklch(0.772 0.154 164.9 / 0.14);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  /* Digits line up wherever they sit in columns. Hero figures opt out with
+     `proportional-nums`, because equal-width digits look loose at display size. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
