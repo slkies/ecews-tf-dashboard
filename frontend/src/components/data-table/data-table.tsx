@@ -125,7 +125,8 @@ export function DataTable<TData extends RowData>({
       </div>
 
       <div className="overflow-hidden rounded-lg border">
-        <Table>
+        {/* 12px: at the body's 14px a worklist of fifteen columns read as crowded. */}
+        <Table className="text-xs">
           {caption && <caption className="sr-only">{caption}</caption>}
           <TableHeader className="bg-muted/50">
             {table.getHeaderGroups().map((group) => (
@@ -234,7 +235,7 @@ export function SortableHeader<TData extends RowData, TValue>({
   const Icon = s === 'asc' ? ArrowUp : s === 'desc' ? ArrowDown : ArrowUpDown
   return (
     <Button variant="ghost" size="sm" onClick={() => column.toggleSorting(s === 'asc')}
-            className={cn('-mx-2 h-8 gap-1 px-2 font-medium', align === 'right' && 'ml-auto flex')}>
+            className={cn('-mx-2 h-7 gap-1 px-2 text-xs font-medium', align === 'right' && 'ml-auto flex')}>
       {title}
       <Icon className={cn('size-3.5', s ? 'text-foreground' : 'text-muted-foreground')} />
     </Button>

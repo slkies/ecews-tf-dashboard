@@ -15,6 +15,7 @@ import { fmt, fmtDate } from '@/core/format'
 import type { Overview as Ov, TimeMetrics } from '@/core/overview'
 import type { Summary } from '@/core/types'
 import { useTrend } from '@/core/use-trend'
+import CascadePage from '@/pages/cascade-page'
 import OverviewPage from '@/pages/overview-page'
 import WorklistsPage from '@/pages/worklists-page'
 import { NAV } from './nav'
@@ -22,6 +23,10 @@ import { NAV } from './nav'
 export default function AppShell() {
   const { query, options } = useFilters()
   const [view, setView] = useState('overview')
+  // Which worklist to open when arriving from another page (a cascade step).
+  const [worklistFlag, setWorklistFlag] = useState<string | null>(null)
+  const navigate = (v: string) => { setWorklistFlag(null); setView(v); window.scrollTo(0, 0) }
+  const openWorklist = (flag: string) => { setWorklistFlag(flag); setView('worklists'); window.scrollTo(0, 0) }
   const [summary, setSummary] = useState<Summary | null>(null)
   const [overview, setOverview] = useState<Ov | null>(null)
   const [times, setTimes] = useState<TimeMetrics | null>(null)
@@ -55,7 +60,7 @@ export default function AppShell() {
 
   return (
     <SidebarProvider>
-      <AppSidebar view={view} onNavigate={setView}
+      <AppSidebar view={view} onNavigate={navigate}
                   asof={fmtDate(summary?.as_of)} episodes={fmt(summary?.n)}
                   clients={fmt(summary?.clients)} />
       <SidebarInset>
@@ -72,9 +77,13 @@ export default function AppShell() {
             <ErrorBoundary name="Overview">
               <OverviewPage data={overview} times={times} trend={trend} loading={loading} />
             </ErrorBoundary>
+          ) : view === 'cascade' ? (
+            <ErrorBoundary name="Cascade">
+              <CascadePage onOpenWorklist={openWorklist} />
+            </ErrorBoundary>
           ) : view === 'worklists' ? (
             <ErrorBoundary name="Worklists">
-              <WorklistsPage />
+              <WorklistsPage key={worklistFlag ?? 'default'} initialFlag={worklistFlag} />
             </ErrorBoundary>
           ) : <NotPorted label={label} />}
         </div>

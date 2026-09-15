@@ -134,22 +134,25 @@
   --brand-tint: oklch(0.46 0.091 167.7 / 0.12);
 }
 
+/* Dark text is neutral: white to mid-grey, no hue. The olive warmth that is
+   invisible on a light page tinted every line of text green on a dark one.
+   Green stays for filled controls, badges and the chart accent - never text. */
 .dark {
   --background: oklch(0.155 0.006 107);
-  --foreground: oklch(0.975 0.004 106.5);
+  --foreground: oklch(0.975 0 0);
   --card: oklch(0.195 0.008 107);
-  --card-foreground: oklch(0.975 0.004 106.5);
+  --card-foreground: oklch(0.975 0 0);
   --popover: oklch(0.21 0.009 107);
-  --popover-foreground: oklch(0.975 0.004 106.5);
+  --popover-foreground: oklch(0.975 0 0);
 
   --primary: oklch(0.772 0.154 164.9);
   --primary-foreground: oklch(0.2 0.035 165);
   --secondary: oklch(0.26 0.012 107.4);
-  --secondary-foreground: oklch(0.975 0.004 106.5);
+  --secondary-foreground: oklch(0.975 0 0);
   --muted: oklch(0.26 0.012 107.4);
-  --muted-foreground: oklch(0.74 0.02 107);
+  --muted-foreground: oklch(0.72 0 0);
   --accent: oklch(0.27 0.03 167.7);
-  --accent-foreground: oklch(0.88 0.08 165);
+  --accent-foreground: oklch(0.975 0 0);
   --destructive: oklch(0.704 0.191 22.216);
 
   --border: oklch(1 0 0 / 10%);
@@ -163,11 +166,11 @@
   --chart-5: oklch(0.74 0.02 107);
 
   --sidebar: oklch(0.175 0.007 107);
-  --sidebar-foreground: oklch(0.86 0.01 107);
+  --sidebar-foreground: oklch(0.86 0 0);
   --sidebar-primary: oklch(0.772 0.154 164.9);
   --sidebar-primary-foreground: oklch(0.2 0.035 165);
   --sidebar-accent: oklch(0.28 0.045 166);
-  --sidebar-accent-foreground: oklch(0.88 0.11 165);
+  --sidebar-accent-foreground: oklch(0.975 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.6 0.1 165);
 

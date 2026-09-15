@@ -337,8 +337,12 @@ provisional or it will report a collapse from 95% to 37% that is arithmetic.
    table (TanStack Table v9): twelve lists with counts from one `/api/worklists` call,
    sorting, facility search, a Columns menu, pagination, row selection, and export of
    the whole active list or only the chosen episodes, both through the audited server
-   export. Every other page still says "not rebuilt yet" and links to `/`. Next: the
-   remaining pages; Chart.js versus Recharts is decided last.
+   export; each row shows the index and follow-up VL with sample and result dates.
+   **Cascade is rebuilt**: every step against the whole cohort with its own rate and
+   denominator, an optional split by sex, where the cohort is lost, and the follow-up VL
+   outcome, with each gap opening its worklist. Dark mode text is neutral white and grey.
+   Every other page still says "not rebuilt yet" and links to `/`. Next: Deep dive,
+   then the remaining pages; Chart.js versus Recharts is decided last.
 
 **Open asks to the HI/EMR team (blocking better analysis):**
 - **Switch date / "reason not switched"** — highest-value missing fields; unlock

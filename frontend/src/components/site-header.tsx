@@ -45,7 +45,7 @@ export function SiteHeader({ title }: { title: string }) {
           <DropdownMenuTrigger
             render={<Button variant="ghost" size="icon" className="rounded-full" aria-label="Account" />}>
             <Avatar size="sm">
-              <AvatarFallback className="bg-brand-tint text-xs font-semibold text-primary">
+              <AvatarFallback className="bg-brand-tint text-xs font-semibold text-primary dark:text-foreground">
                 {initialsOf(display)}
               </AvatarFallback>
             </Avatar>

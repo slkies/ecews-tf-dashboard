@@ -198,14 +198,15 @@ function useColumns() {
   ]), [])
 }
 
-export default function WorklistsPage() {
+/** `initialFlag` opens a particular list, e.g. when arriving from a cascade step. */
+export default function WorklistsPage({ initialFlag = null }: { initialFlag?: string | null } = {}) {
   const { query, options } = useFilters()
   const { me } = useSession()
   const canExport = me?.role === 'admin' || me?.role === 'analyst'
   const columns = useColumns()
 
   const [counts, setCounts] = useState<Record<string, number | null> | null>(null)
-  const [flag, setFlag] = useState<string | null>(null)
+  const [flag, setFlag] = useState<string | null>(initialFlag)
   const [rows, setRows] = useState<ClientRow[] | null>(null)
   const [loadingRows, setLoadingRows] = useState(false)
   const [err, setErr] = useState<string | null>(null)

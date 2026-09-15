@@ -292,3 +292,13 @@ selection can never reach a row its user could not already export. The audit
 entry records the size of the selection and how many keys matched nothing.
 Episode keys (`S/N|index date`), not S/N, identify rows, because one client can
 fail more than once.
+
+## 16. Dark mode text carries no colour
+**15 Sep 2026** — Es noticed dark mode read green. The Option 1 palette warms its
+neutrals toward olive; at a light page's contrast that is invisible, but white
+text on a dark ground showed it, and the brighter dark-mode green was also used
+for link text and the active menu item. Dark mode text is now neutral: white for
+body and headings, mid-grey for secondary text, no hue in either. Green stays
+for filled buttons, badges, bars and chart accents, never text. Status colours
+(red for still unsuppressed, amber for warnings) are unchanged, because they
+carry meaning and always sit beside a label.
