@@ -302,3 +302,16 @@ body and headings, mid-grey for secondary text, no hue in either. Green stays
 for filled buttons, badges, bars and chart accents, never text. Status colours
 (red for still unsuppressed, amber for warnings) are unchanged, because they
 carry meaning and always sit beside a label.
+
+## 17. The dry run picked Excel's lock file
+**16 Sep 2026** — The dry run stopped with "Permission denied" on a file named
+`~$ECEWS_Treatment Linelist_12th September 2026.xlsx`. Excel creates that hidden
+lock file beside any workbook that is open. It matched the treatment pattern, and
+being the newest match it was chosen over the real export. Nothing was written.
+
+**What changed.** `input_files()` in `deidentify.py` finds inputs for both the
+treatment export and the EAC lists, and skips Excel (`~$`) and LibreOffice
+(`.~lock.`) lock files. Checked against synthetic empty files: the newest real
+export is chosen and lock files are never candidates.
+
+**Lesson.** A pattern that says "newest file" must say what counts as a file.

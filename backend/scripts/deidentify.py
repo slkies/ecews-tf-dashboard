@@ -111,6 +111,19 @@ def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
             + pep.astype("string").str.strip())
 
 
+def input_files(pattern: str) -> list[Path]:
+    """Files matching an input pattern, without office lock files.
+
+    Excel writes a hidden `~$<name>.xlsx` beside any workbook that is open, and
+    LibreOffice a `.~lock.<name>#`. Both match `*Treatment*.xls*`, and the lock
+    file is always the newest - so with the export open in Excel the run
+    picked the lock file and stopped on "Permission denied" (16 Sep 2026).
+    """
+    p = Path(pattern)
+    return [f for f in p.parent.glob(p.name)
+            if f.is_file() and not f.name.startswith(("~$", ".~lock."))]
+
+
 def is_encrypted(path: Path) -> bool:
     """True if this workbook is password-protected.
 
@@ -736,7 +749,7 @@ def main() -> int:
     # nothing to edit. The chosen file is always logged.
     tpath = Path(P["treatment"])
     if any(ch in P["treatment"] for ch in "*?["):
-        found = sorted(tpath.parent.glob(tpath.name),
+        found = sorted(input_files(P["treatment"]),
                        key=lambda p: p.stat().st_mtime, reverse=True)
         if not found:
             raise SystemExit(f"no treatment export matched {P['treatment']}")
@@ -798,7 +811,7 @@ def main() -> int:
     # so the dashboard unions every sheet it is given and the pipeline has to
     # carry them all forward, not just the newest. `eac` may therefore be a
     # single file or a glob.
-    eac_paths = sorted(Path(P["eac"]).parent.glob(Path(P["eac"]).name)) \
+    eac_paths = sorted(input_files(P["eac"])) \
         if any(ch in P["eac"] for ch in "*?[") else [Path(P["eac"])]
     if not eac_paths:
         raise SystemExit(f"no EAC list matched {P['eac']}")
