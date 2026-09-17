@@ -248,8 +248,11 @@ def split_key(pep_datim: str | None, datim_pep: str | None) -> str | None:
     b = (datim_pep or "").strip()
     if not a or not b or len(a) != len(b):
         return None
+    # Compared without case: keys are matched upper-cased everywhere else
+    # (norm_key), so a pair differing only in case is the same pair.
+    au, bu = a.upper(), b.upper()
     for i in range(1, len(a)):
-        if a[i:] + a[:i] == b:
+        if au[i:] + au[:i] == bu:
             return a[:i]
     return None
 
@@ -292,6 +295,7 @@ class Vault:
                 "guess which mapping is right.")
         self.lookup = dict(zip(self.df["_k"], self.df[KEY]))
         self.added: list[dict] = []
+        self.path = path
         # The bare PEPID, so a facility can join S/N straight onto their own
         # list. Both stored orderings are concatenations with no separator, so
         # neither can be split alone - but together they determine the cut.
@@ -311,9 +315,45 @@ class Vault:
                      f"{self.backfilled:,}")
             if unresolved:
                 log.warning("vault: %s row(s) where the two key orderings do "
-                            "not agree, so the PEPID cannot be recovered - "
-                            "left blank rather than guessed", f"{unresolved:,}")
+                            "not agree, so the PEPID cannot be recovered from "
+                            "them - the export is tried next", f"{unresolved:,}")
         log.info("vault: %s existing mappings", f"{len(self.lookup):,}")
+
+    def fill_pepid_from_export(self, datim: pd.Series, pep: pd.Series,
+                               write_report: bool = True) -> None:
+        """Fill a blank bare PEPID from the treatment export itself.
+
+        Where the vault's two stored orderings disagree, the key pair cannot
+        say where the PEPID ends. The export can: it carries the DATIM code and
+        the PEPID as separate columns, so for any client in it the PEPID is
+        simply read. Matched on the current key (DATIM code + PEPID), which is
+        how the client is looked up anyway, so this cannot attach a PEPID to
+        the wrong row. Clients no longer in the export stay blank, and are
+        listed in <vault>-PEPID-BLANK.csv beside the vault - on this machine
+        only, like the ambiguity report - so they can be completed by hand.
+        """
+        if VAULT_PEP not in self.df.columns:
+            return
+        blank = self.df[VAULT_PEP].isna() | \
+            self.df[VAULT_PEP].astype("string").str.strip().eq("")
+        if not blank.any():
+            return
+        by_key = dict(zip(norm_key(build_key(datim, pep)), pep.astype("string").str.strip()))
+        found = self.df.loc[blank, "_k"].map(by_key)
+        self.df.loc[found.dropna().index, VAULT_PEP] = found.dropna()
+        still = self.df[VAULT_PEP].isna() | \
+            self.df[VAULT_PEP].astype("string").str.strip().eq("")
+        log.info("vault: %s blank PEPID(s) filled from the treatment export, "
+                 "%s still blank", f"{int(found.notna().sum()):,}", f"{int(still.sum()):,}")
+        if still.any() and not write_report:
+            log.info("vault: (dry run - the list of the %s still blank is written "
+                     "on a real run)", f"{int(still.sum()):,}")
+        elif still.any():
+            report = self.path.parent / f"{self.path.stem}-PEPID-BLANK.csv"
+            self.df.loc[still].drop(columns=["_k"]).to_csv(report, index=False)
+            log.warning("vault: the %s still blank are listed in %s - these "
+                        "clients are not in this export, so fill their PEPID "
+                        "in the vault by hand", f"{int(still.sum()):,}", report.name)
 
     def resolve(self, datim: pd.Series, pep: pd.Series) -> pd.Series:
         """Existing clients keep their S/N; unseen ones get a new one.
@@ -488,11 +528,44 @@ def check_key_collisions(df: pd.DataFrame) -> None:
         return
     g = df.dropna(subset=["pepId"]).groupby("pepId")["datimCode"].nunique()
     shared = int((g > 1).sum())
-    if shared:
-        log.warning("%s PEPID(s) appear under more than one DATIM code - the "
-                    "facility code is REQUIRED in the key", f"{shared:,}")
-    else:
+    if not shared:
         log.info("no PEPID appears under two DATIM codes in this export")
+        return
+    log.warning("%s PEPID(s) appear under more than one DATIM code - the "
+                "facility code is REQUIRED in the key", f"{shared:,}")
+
+    # Two very different things produce a shared PEPID, and they call for
+    # different handling: one person seen at two facilities (a transfer, a
+    # re-registration), or two people who were given the same number by two
+    # facilities that number clients independently. Sex and date of birth
+    # separate them well enough to size each. COUNTS ONLY - no value is logged.
+    by = {norm_col(c): c for c in df.columns}
+    dob_c, sex_c = by.get("dob"), by.get("sex")
+    if dob_c is None or sex_c is None:
+        log.info("  (no date of birth or sex column, so shared PEPIDs cannot be "
+                 "split into transfers and different people)")
+        return
+    sub = df[df["pepId"].isin(g[g > 1].index)]
+    ti_c = by.get("datetransferedin") or by.get("datetransferredin")
+    per = pd.DataFrame({
+        "pep": sub["pepId"],
+        "dob": pd.to_datetime(sub[dob_c], errors="coerce").dt.date,
+        "sex": sub[sex_c].astype("string").str.strip().str.lower(),
+        "ti": sub[ti_c].notna() if ti_c else False,
+    }).groupby("pep").agg(dobs=("dob", "nunique"), sexes=("sex", "nunique"),
+                          gaps=("dob", lambda s: s.isna().any() or False),
+                          sex_gap=("sex", lambda s: s.isna().any() or False),
+                          ti=("ti", "any"))
+    incomplete = per["gaps"] | per["sex_gap"]
+    same = (~incomplete) & per["dobs"].eq(1) & per["sexes"].eq(1)
+    differ = per["dobs"].gt(1) | per["sexes"].gt(1)
+    log.info("  of these, %s have the same sex and date of birth at every site "
+             "(probably one person at two facilities; %s of them with a "
+             "transfer-in recorded), %s differ in sex or date of birth "
+             "(different people sharing a facility-assigned number), and %s "
+             "cannot be compared because a date of birth or sex is blank",
+             f"{int(same.sum()):,}", f"{int((same & per['ti']).sum()):,}",
+             f"{int(differ.sum()):,}", f"{int((~same & ~differ).sum()):,}")
 
 
 def code_shape(v: object) -> str:
@@ -562,7 +635,7 @@ def check_key_format(treat: pd.DataFrame, known: set[str]) -> None:
 # ── register: newly unsuppressed clients ──────────────────────────────
 def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
                             vl_threshold: int = 1000,
-                            include_late: bool = False) -> tuple[pd.DataFrame, int]:
+                            include_late: bool = True) -> tuple[pd.DataFrame, int]:
     """
     Add active clients whose viral load came back at or above the threshold
     AFTER the register's current coverage date.
@@ -600,9 +673,10 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
     log.info("register covers results received up to %s",
              watermark.date() if pd.notna(watermark) else "(empty register)")
 
-    # Normally only results received after the register's cut-off. With
-    # --include-late, everything unsuppressed is considered and the episode
-    # key alone decides what is new, which sweeps up late-reported results.
+    # Late-reported results are included by default (agreed 17 Sep 2026):
+    # everything unsuppressed is considered, and what is already in the
+    # register - by episode, and by client and result date - decides what is
+    # new. --exclude-late restores the old cut-off-only behaviour.
     if include_late or pd.isna(watermark):
         fresh = got.notna()
     else:
@@ -662,22 +736,41 @@ def append_new_unsuppressed(register: pd.DataFrame, treat: pd.DataFrame,
         stale = treat[unsuppressed & got.notna() & (got <= watermark)]
         missed = int((~episode(stale).isin(have)).sum()) if len(stale) else 0
         if missed and include_late:
-            # Telling someone to pass a flag they have already passed reads as
-            # though it was ignored. With the flag on these ARE being added.
             log.info("%s late-reported result(s) dated on or before the "
-                     "cut-off are being included (--include-late)",
-                     f"{missed:,}")
+                     "cut-off are absent from the register, and are candidates "
+                     "to add (checked for duplicates below)", f"{missed:,}")
         elif missed:
             log.warning("%s unsuppressed result(s) dated on or before the "
                         "cut-off are absent from the register - late facility "
-                        "reporting. Outside the agreed cut-off, so NOT "
-                        "appended; use --include-late to add them.",
+                        "reporting. NOT appended (--exclude-late).",
                         f"{missed:,}")
 
     if cand.empty:
         return register, 0
 
+    before = len(cand)
     cand = cand[~episode(cand).isin(have)]
+    # A second, looser guard. The episode key includes the VALUE, so a result
+    # already in the register whose value was later corrected at the facility
+    # would read as a new episode and be added twice. Same client, same result
+    # date is the same test, whatever the value now says.
+    if len(register) and len(cand):
+        def client_day(d: pd.DataFrame) -> pd.Series:
+            return (d[KEY].astype(str) + "|"
+                    + pd.to_datetime(col_ci(d, "dateofCurrentViralLoad"), errors="coerce")
+                    .dt.strftime("%Y-%m-%d").fillna("NA"))
+        seen = set(client_day(register))
+        dup = client_day(cand).isin(seen) & ~client_day(cand).str.endswith("|NA")
+        if dup.any():
+            log.info("%s candidate(s) share client and result date with a "
+                     "register row (a corrected value, not a new test) - not "
+                     "appended", f"{int(dup.sum()):,}")
+        cand = cand[~dup]
+    late_added = int((pd.to_datetime(col_ci(cand, date_col), errors="coerce")
+                      <= watermark).sum()) if pd.notna(watermark) and len(cand) else 0
+    log.info("register: %s candidate(s), %s already present, %s new "
+             "(%s of them late-reported)", f"{before:,}",
+             f"{before - len(cand):,}", f"{len(cand):,}", f"{late_added:,}")
     if cand.empty:
         return register, 0
 
@@ -759,10 +852,13 @@ def main() -> int:
     ap.add_argument("--config", required=True, type=Path)
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would happen; write nothing, upload nothing")
+    ap.add_argument("--exclude-late", action="store_true",
+                    help="do NOT append unsuppressed results dated on or before "
+                         "the register's cut-off. Late-reported results are "
+                         "included by default, checked against the register "
+                         "so nothing is added twice.")
     ap.add_argument("--include-late", action="store_true",
-                    help="also append unsuppressed results dated on or before "
-                         "the register's cut-off that are missing from it - "
-                         "late facility reporting")
+                    help="accepted for older scripts; this is now the default")
     ap.add_argument("--migrate-keys", action="store_true",
                     help="ONE TIME: issue every existing client a new secure key. "
                          "The old key is kept in S/N_legacy, which is then required "
@@ -853,6 +949,8 @@ def main() -> int:
                         "datimCode+pepId - using the value we built",
                         f"{mismatch:,}", VAULT_NEW)
     treat[KEY] = vault.resolve(treat["datimCode"], treat["pepId"])
+    vault.fill_pepid_from_export(treat["datimCode"], treat["pepId"],
+                                 write_report=not a.dry_run)
 
     # The EAC list is not cumulative - clients drop out once a cycle closes -
     # so the dashboard unions every sheet it is given and the pipeline has to
@@ -951,7 +1049,7 @@ def main() -> int:
                             "cannot be linked and need investigating",
                             label, f"{int(stale.sum()):,}")
     register, added = append_new_unsuppressed(register, treat,
-                                             include_late=a.include_late)
+                                             include_late=not a.exclude_late)
     log.info("register: %s newly unsuppressed episode(s) appended, %s total",
              f"{added:,}", f"{len(register):,}")
 

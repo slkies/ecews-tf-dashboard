@@ -338,3 +338,29 @@ The 17 Sep dry run restored all 30 headers and passed validation.
 
 **Lesson.** Tolerating one kind of drift (case) invites the next (punctuation).
 Match on the letters, and say out loud what was renamed.
+
+## 19. Late results included by default; blank PEPIDs; shared PEPIDs sized
+**17 Sep 2026** — Three changes to `deidentify.py`, agreed with Es.
+
+**Late-reported results are appended by default.** An unsuppressed result dated
+on or before the register's cut-off, reported late by a facility, used to need
+`--include-late`. It is now the default (`--exclude-late` restores the old
+behaviour). Two guards stop duplication: an episode already in the register
+(S/N, result date, value) is never added, and neither is a result sharing a
+client and result date with a register row, which catches a value corrected at
+the facility after it was first registered. The run logs candidates, how many
+were already present, and how many new rows were late-reported.
+
+**Blank PEPIDs in the vault.** The bare PEPID column is recovered by fitting the
+two stored key orderings together. 23 rows' orderings did not fit. The fit now
+ignores case, and any PEPID still blank is read from the treatment export, matched
+on the client's current key. Anything still blank (clients no longer in the
+export) is listed on a real run in `SN_Key-PEPID-BLANK.csv` beside the vault, on
+Es's machine only, to complete by hand. S/N assignment never depended on this
+column; it is for facilities joining S/N onto their own lists.
+
+**Shared PEPIDs.** The run now splits the PEPIDs found under more than one DATIM
+code into: same sex and date of birth at every site (likely one person at two
+facilities, with the number that have a transfer-in recorded), different sex or
+date of birth (different people given the same facility-assigned number), and
+those that cannot be compared. Counts only.
