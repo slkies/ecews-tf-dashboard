@@ -180,6 +180,19 @@ def _col(df: pd.DataFrame, name: str) -> pd.Series:
     return s
 
 
+def col_key(name: object) -> str:
+    """A column name reduced to lower-case letters and digits.
+
+    Exports rename columns between cycles. Case alone was handled (lga -> LGA,
+    24 Jul), but the 12 Sep 2026 treatment list moved to a different style
+    altogether - outcomesDate -> Outcomes_Date, currentAge -> Current_Age,
+    lgaOfResidence -> LGA_of_Residence - and a lower-case match missed every
+    one: age, exit dating and the residence map would have read "not
+    recorded" for every client, with nothing on screen to say why.
+    """
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
 def _pick(df: pd.DataFrame, *names: str) -> str | None:
     """
     Find a column regardless of casing.
@@ -189,9 +202,9 @@ def _pick(df: pd.DataFrame, *names: str) -> str | None:
     `dateofCurrentViralLoad`. Matching case-sensitively silently yields an
     all-null column and a cohort of zero, which is worse than crashing.
     """
-    lower = {str(c).strip().lower(): c for c in df.columns}
+    lower = {col_key(c): c for c in df.columns}
     for n in names:
-        hit = lower.get(n.strip().lower())
+        hit = lower.get(col_key(n))
         if hit is not None:
             return hit
     return None
@@ -419,10 +432,12 @@ def build_cohort(
     # earlier one shipped "lga" - and an exact-match lookup drops the column
     # silently, leaving the geography blank with nothing on screen to say why.
     # First match wins, so a sheet carrying both spellings still resolves once.
-    _lower = {str(c).strip().lower(): c for c in t.columns}
+    # Matched on letters and digits alone (col_key), so underscores and spaces
+    # do not drop a column either.
+    _lower = {col_key(c): c for c in t.columns}
     resolved: dict[str, str] = {}
     for src, dest in tcols.items():
-        hit = _lower.get(src.lower())
+        hit = _lower.get(col_key(src))
         if hit is not None and hit not in resolved:
             resolved[hit] = dest
     keep = ["sn"] + list(resolved)

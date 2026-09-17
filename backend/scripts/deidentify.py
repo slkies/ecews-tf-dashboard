@@ -111,6 +111,52 @@ def build_key(datim: pd.Series, pep: pd.Series) -> pd.Series:
             + pep.astype("string").str.strip())
 
 
+# The treatment columns this pipeline and the dashboard read, in the spelling
+# they read them. Kept in step with app/ingest.py EXPECTED_COLS["treatment"].
+TREATMENT_HEADERS = [
+    "pepId", "datimCode",
+    "state", "lga", "facilityName", "sex", "currentAge", "currentArtStatus",
+    "currentRegimenLine", "currentArtRegimen", "artStartDate", "daysOnArt",
+    "dsdModel", "currentViralLoad", "dateofCurrentViralLoad",
+    "dateResultReceivedFacility", "lastDateOfSampleCollection",
+    "maritalStatus", "jobStatus", "educationallevel", "firstCd4", "cd4LfaResult",
+    "currentPregnancyStatus", "whostage", "bmi", "outcomesDate",
+    "pharmacyLastPickupdate", "daysOfArvRefill", "lgaOfResidence",
+    "stateOfResidence",
+]
+
+
+def restore_headers(df: pd.DataFrame, expected: list[str] = TREATMENT_HEADERS) -> pd.DataFrame:
+    """Rename columns back to the spelling downstream code expects.
+
+    The 12 Sep 2026 export changed naming style - pepId -> PepID, datimCode ->
+    Datim_Code, outcomesDate -> Outcomes_Date - and the run stopped on "needs
+    both 'pepId' and 'datimCode'". Matching on letters alone (norm_col) finds
+    them. A name matched by two columns is left alone and reported: guessing
+    between them could put the wrong field under a trusted name.
+    Only column NAMES are logged, never a value.
+    """
+    by_norm: dict[str, list] = {}
+    for c in df.columns:
+        by_norm.setdefault(norm_col(c), []).append(c)
+    renames, ambiguous = {}, []
+    for name in expected:
+        if name in df.columns:
+            continue
+        hits = by_norm.get(norm_col(name), [])
+        if len(hits) == 1:
+            renames[hits[0]] = name
+        elif len(hits) > 1:
+            ambiguous.append(f"{name} ({', '.join(map(str, hits))})")
+    if renames:
+        log.info("treatment headers: %d restored to the expected spelling - %s",
+                 len(renames), ", ".join(f"{a} -> {b}" for a, b in renames.items()))
+    if ambiguous:
+        log.warning("treatment headers: more than one column could be %s - left "
+                    "as they are", "; ".join(ambiguous))
+    return df.rename(columns=renames)
+
+
 def input_files(pattern: str) -> list[Path]:
     """Files matching an input pattern, without office lock files.
 
@@ -772,6 +818,7 @@ def main() -> int:
 
     treat = read_excel_any(tpath, S.get("treatment_password"), dtype=str)
     log.info("treatment list: %s rows x %d cols", f"{len(treat):,}", len(treat.columns))
+    treat = restore_headers(treat)
     check_key_collisions(treat)
 
     if not {"pepId", "datimCode"} <= set(treat.columns):

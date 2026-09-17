@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .indicators import VL_UNDETECTABLE, build_cohort, norm_state
+from .indicators import VL_UNDETECTABLE, build_cohort, col_key, norm_state
 
 log = logging.getLogger(__name__)
 
@@ -204,14 +204,16 @@ def _col_audit(df: pd.DataFrame, kind: str, sheet: str, add) -> None:
     if not exp:
         return
     have = set(df.columns)
-    lower = {str(c).strip().lower(): c for c in df.columns}
+    # Letters and digits only, the same rule the resolver uses, so a column
+    # renamed with underscores is reported as drift rather than as missing.
+    lower = {col_key(c): c for c in df.columns}
     tolerant = CASE_INSENSITIVE.get(kind, set())
 
     missing, ignored, tolerated = [], [], []
     for col, purpose in exp.items():
         if col in have:
             continue
-        hit = lower.get(col.lower())
+        hit = lower.get(col_key(col))
         if hit is None:
             missing.append(f"{col} ({purpose})")
         elif col in tolerant:

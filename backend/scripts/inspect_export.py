@@ -32,7 +32,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 sys.path.insert(0, str(Path(__file__).parent))
 from deidentify import (EAC_PII_COLUMNS, PII_COLUMNS,  # noqa: E402
-                        SENSITIVE_COLUMNS, norm_col, read_excel_any)
+                        SENSITIVE_COLUMNS, input_files, norm_col,
+                        read_excel_any)
 
 # Anything matching these is described by presence only - never counted,
 # never sampled. Broader than the removal list on purpose: this is about what
@@ -89,7 +90,7 @@ def main() -> int:
     spec = P[a.which]
     pw_key = f"{a.which}_password"
 
-    paths = sorted(Path(spec).parent.glob(Path(spec).name),
+    paths = sorted(input_files(spec),                # skips Excel ~$ lock files
                    key=lambda p: p.stat().st_mtime, reverse=True) \
         if any(c in spec for c in "*?[") else [Path(spec)]
     if not paths:

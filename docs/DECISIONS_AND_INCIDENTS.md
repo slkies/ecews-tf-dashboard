@@ -315,3 +315,26 @@ treatment export and the EAC lists, and skips Excel (`~$`) and LibreOffice
 export is chosen and lock files are never candidates.
 
 **Lesson.** A pattern that says "newest file" must say what counts as a file.
+
+## 18. The 12 September export renamed its columns
+**16 Sep 2026** — The dry run stopped with "treatment list needs both 'pepId'
+and 'datimCode'". A header-only inspection (`inspect_export.py`, no cell values)
+showed the export had changed naming style: `PepID`, `Datim_Code`,
+`Outcomes_Date`, `Current_Age`, `LGA_of_Residence` and more. Identifier
+removal was never at risk, because it already matched on letters alone. The
+dashboard was: it matched treatment columns case-insensitively but not across
+underscores, so age, exit dating, pickup dates, DSD model, CD4 LFA and the
+residence map would have read "not recorded" for every client, silently.
+
+**What changed.**
+- `deidentify.py` restores the 30 expected treatment headers straight after
+  reading (`restore_headers`), matching on letters and digits and logging each
+  rename by name. A name two columns could match is left alone and reported.
+- The dashboard's resolver and the upload audit match the same way
+  (`indicators.col_key`), so an upload that skipped the pipeline is still read.
+- `inspect_export.py` skips Excel lock files, as the pipeline now does.
+
+The 17 Sep dry run restored all 30 headers and passed validation.
+
+**Lesson.** Tolerating one kind of drift (case) invites the next (punctuation).
+Match on the letters, and say out loud what was renamed.

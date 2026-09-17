@@ -524,3 +524,29 @@ def test_eac_before_index_counts_as_not_yet_commenced():
     assert len(c.df) == 1, "prior-cycle episode was dropped from the cohort"
     assert bool(c.df.loc[0, "eac1"]) is False
     assert bool(c.df.loc[0, "eac_prior_cycle"]) is True
+
+
+# ── column names that drift between exports ───────────────────────────
+def test_columns_resolve_whatever_style_the_export_uses():
+    """The 12 Sep 2026 export moved to underscores and capitals. A lower-case
+    match missed these, and age, exit dates and residence went blank."""
+    from app.indicators import _pick, col_key
+    df = pd.DataFrame(columns=["Outcomes_Date", "Current_Age", "LGA_of_Residence",
+                               "DSD_Model", "Pharmacy_LastPickupdate"])
+    assert _pick(df, "outcomesDate") == "Outcomes_Date"
+    assert _pick(df, "currentAge") == "Current_Age"
+    assert _pick(df, "lgaOfResidence") == "LGA_of_Residence"
+    assert _pick(df, "dsdModel") == "DSD_Model"
+    assert col_key("Pharmacy_LastPickupdate") == col_key("pharmacyLastPickupdate")
+
+
+def test_audit_reports_an_underscored_rename_as_drift_not_missing():
+    from app.ingest import EXPECTED_COLS, _col_audit
+    cols = {c: [] for c in EXPECTED_COLS["treatment"]}
+    cols["Outcomes_Date"] = cols.pop("outcomesDate")
+    found = []
+    _col_audit(pd.DataFrame(cols), "treatment", "t",
+               lambda sheet, check, sev, n, text: found.append((check, n, text)))
+    assert next(f for f in found if f[0] == "Expected column missing")[1] == 0
+    drift = [f for f in found if f[0] == "Header casing drift (tolerated)"]
+    assert drift and "Outcomes_Date should be outcomesDate" in drift[0][2]
