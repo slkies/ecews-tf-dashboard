@@ -539,26 +539,12 @@ def check_key_collisions(df: pd.DataFrame) -> None:
     # re-registration), or two people who were given the same number by two
     # facilities that number clients independently. Sex and date of birth
     # separate them well enough to size each. COUNTS ONLY - no value is logged.
-    by = {norm_col(c): c for c in df.columns}
-    dob_c, sex_c = by.get("dob"), by.get("sex")
-    if dob_c is None or sex_c is None:
+    f = _shared_pepid_frame(df)
+    if f is None:
         log.info("  (no date of birth or sex column, so shared PEPIDs cannot be "
                  "split into transfers and different people)")
         return
-    sub = df[df["pepId"].isin(g[g > 1].index)]
-    ti_c = by.get("datetransferedin") or by.get("datetransferredin")
-    per = pd.DataFrame({
-        "pep": sub["pepId"],
-        "dob": pd.to_datetime(sub[dob_c], errors="coerce").dt.date,
-        "sex": sub[sex_c].astype("string").str.strip().str.lower(),
-        "ti": sub[ti_c].notna() if ti_c else False,
-    }).groupby("pep").agg(dobs=("dob", "nunique"), sexes=("sex", "nunique"),
-                          gaps=("dob", lambda s: s.isna().any() or False),
-                          sex_gap=("sex", lambda s: s.isna().any() or False),
-                          ti=("ti", "any"))
-    incomplete = per["gaps"] | per["sex_gap"]
-    same = (~incomplete) & per["dobs"].eq(1) & per["sexes"].eq(1)
-    differ = per["dobs"].gt(1) | per["sexes"].gt(1)
+    per, same, differ = _classify_shared(f)
     log.info("  of these, %s have the same sex and date of birth at every site "
              "(probably one person at two facilities; %s of them with a "
              "transfer-in recorded), %s differ in sex or date of birth "
@@ -566,6 +552,104 @@ def check_key_collisions(df: pd.DataFrame) -> None:
              "cannot be compared because a date of birth or sex is blank",
              f"{int(same.sum()):,}", f"{int((same & per['ti']).sum()):,}",
              f"{int(differ.sum()):,}", f"{int((~same & ~differ).sum()):,}")
+
+    # Es's rule for the likely-same-person group (17 Sep 2026): keep the
+    # record with ART status Active; the other should be transferred out or
+    # otherwise inactive. Checked here before anything acts on it.
+    if f["status"].isna().all():
+        log.info("  (no ART status column, so the Active record cannot be checked)")
+        return
+    s = f[f["pep"].isin(per.index[same])]
+    active = s["status"].str.lower().eq("active")
+    n_active = active.groupby(s["pep"]).sum()
+    one, none, many = n_active.eq(1), n_active.eq(0), n_active.gt(1)
+    log.info("  ART status in the %s likely the same person: %s have exactly one "
+             "Active record, %s have none Active, %s have more than one Active",
+             f"{int(same.sum()):,}", f"{int(one.sum()):,}", f"{int(none.sum()):,}",
+             f"{int(many.sum()):,}")
+    in_one = s["pep"].isin(n_active.index[one])
+    others = s.loc[in_one & ~active, "status"].fillna("(blank)").value_counts()
+    log.info("    where one is Active, the other record(s) are: %s",
+             ", ".join(f"{k} {v:,}" for k, v in others.head(8).items()) or "none")
+    act_rows = s[in_one & active]
+    log.info("    and the Active record carries the transfer-in in %s of %s "
+             "(it is the receiving facility)", f"{int(act_rows['ti'].sum()):,}",
+             f"{len(act_rows):,}")
+    if none.any():
+        st = s.loc[s["pep"].isin(n_active.index[none]), "status"].fillna("(blank)").value_counts()
+        log.info("    where none is Active, the records are: %s",
+                 ", ".join(f"{k} {v:,}" for k, v in st.head(8).items()))
+
+
+def _shared_pepid_frame(df: pd.DataFrame) -> pd.DataFrame | None:
+    """Rows whose PEPID appears under more than one DATIM code, reduced to what
+    the shared-PEPID checks compare. Stays in memory; never logged or written."""
+    by = {norm_col(c): c for c in df.columns}
+    dob_c, sex_c = by.get("dob"), by.get("sex")
+    if dob_c is None or sex_c is None or not {"pepId", "datimCode"} <= set(df.columns):
+        return None
+    d = df.dropna(subset=["pepId"])
+    d = d[d.groupby("pepId")["datimCode"].transform("nunique") > 1]
+    ti_c = by.get("datetransferedin") or by.get("datetransferredin")
+    st_c = by.get("currentartstatus")
+    return pd.DataFrame({
+        "pep": d["pepId"],
+        "dob": pd.to_datetime(d[dob_c], errors="coerce").dt.date,
+        "sex": d[sex_c].astype("string").str.strip().str.lower(),
+        "ti": d[ti_c].notna() if ti_c else False,
+        "status": d[st_c].astype("string").str.strip() if st_c
+        else pd.Series(pd.NA, index=d.index, dtype="string"),
+    }, index=d.index)
+
+
+def _classify_shared(f: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Per shared PEPID: same person (one sex, one date of birth, none blank),
+    different people (more than one of either), or not comparable."""
+    per = f.groupby("pep").agg(dobs=("dob", "nunique"), sexes=("sex", "nunique"),
+                               gaps=("dob", lambda s: bool(s.isna().any())),
+                               sex_gap=("sex", lambda s: bool(s.isna().any())),
+                               ti=("ti", "any"))
+    incomplete = per["gaps"] | per["sex_gap"]
+    same = (~incomplete) & per["dobs"].eq(1) & per["sexes"].eq(1)
+    differ = per["dobs"].gt(1) | per["sexes"].gt(1)
+    return per, same, differ
+
+
+def transfer_footprint(treat: pd.DataFrame, register: pd.DataFrame,
+                       eac_sheets: dict[str, pd.DataFrame]) -> None:
+    """How far the likely-same-person PEPIDs reach into the published data.
+
+    Each facility registration has its own key, so one person seen at two
+    facilities holds two S/Ns. That only matters where both S/Ns - or one in
+    the register and the other in an EAC list - are in the data the dashboard
+    reads: an episode split across two clients, or one person counted twice.
+    Counts only.
+    """
+    f = _shared_pepid_frame(treat)
+    if f is None or KEY not in treat.columns:
+        return
+    per, same, _ = _classify_shared(f)
+    s = f[f["pep"].isin(per.index[same])].assign(
+        sn=treat.loc[f.index, KEY].astype("string"))
+    # Built directly: groupby().agg() with a set-returning function does not
+    # reliably keep the sets.
+    sns = pd.Series({p: set(g.dropna()) for p, g in s.groupby("pep")["sn"]},
+                    dtype=object)
+    reg = set(register[KEY].astype("string")) if KEY in register.columns else set()
+    eac: set = set()
+    for df in eac_sheets.values():
+        if KEY in df.columns:
+            eac |= set(df[KEY].astype("string").dropna())
+    in_reg = sns.map(lambda x: len(x & reg))
+    in_eac = sns.map(lambda x: len(x & eac))
+    split = sns.map(lambda x: bool(x & reg) and bool((x - reg) & eac))
+    log.info("transfers: of %s likely-same-person PEPIDs, %s have an S/N in the "
+             "register (%s with BOTH S/Ns there - counted twice), %s have an S/N "
+             "in an EAC list (%s with both), and %s have the register episode "
+             "under one S/N and EAC under the other (the episode is split)",
+             f"{len(sns):,}", f"{int(in_reg.gt(0).sum()):,}",
+             f"{int(in_reg.gt(1).sum()):,}", f"{int(in_eac.gt(0).sum()):,}",
+             f"{int(in_eac.gt(1).sum()):,}", f"{int(split.sum()):,}")
 
 
 def code_shape(v: object) -> str:
@@ -1052,6 +1136,7 @@ def main() -> int:
                                              include_late=not a.exclude_late)
     log.info("register: %s newly unsuppressed episode(s) appended, %s total",
              f"{added:,}", f"{len(register):,}")
+    transfer_footprint(treat, register, eac_sheets)
 
     # Drop by name, case-insensitively, and apply the SAME list everywhere.
     # Matching on the exact spelling let 'DOB' through where the list said
