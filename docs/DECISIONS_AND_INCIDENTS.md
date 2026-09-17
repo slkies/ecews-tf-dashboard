@@ -364,3 +364,27 @@ code into: same sex and date of birth at every site (likely one person at two
 facilities, with the number that have a transfer-in recorded), different sex or
 date of birth (different people given the same facility-assigned number), and
 those that cannot be compared. Counts only.
+
+## 20. One person at two facilities is published under one S/N
+**17 Sep 2026** — The key is facility code + PEPID, so a client who transfers
+gets a second S/N at the receiving facility. Of 5,862 PEPIDs found under more
+than one facility code, 3,524 have one sex and date of birth throughout. In
+those, 3,016 have exactly one Active record, the other almost always
+Transferred out, and 98% of the Active records carry the transfer-in. 19
+unsuppressed episodes had their EAC under the other S/N and read as "no EAC".
+
+**Rule (agreed with Es).** Keep the Active record's S/N. Where none is Active
+(495), keep the record with the transfer-in, or failing that the latest
+pharmacy pickup. Where more than one is Active (13), do not link: that is for
+the HI team to correct, and the list is written beside the vault on a real run
+(`SN_Key-TWO-ACTIVE.csv`). The 2,338 with differing sex or date of birth are
+different people and are never linked.
+
+**How.** The vault records the link in `S/N_linked_to` on the superseded S/N;
+clearing that cell undoes it. On publishing, register and EAC rows move to the
+kept S/N, the superseded treatment row is dropped, and where a person now has
+two rows in one EAC list the one with the latest session 1 is placed first,
+because the dashboard reads the first. Nothing is deleted from the EAC lists.
+
+**Note.** Line list changes compares S/Ns between uploads, so the first upload
+after this shows the linked people's episodes moving to their kept S/N.

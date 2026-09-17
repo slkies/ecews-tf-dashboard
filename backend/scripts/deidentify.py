@@ -76,6 +76,8 @@ VAULT_OLD = "PEPID_Datim"      # retained for historical continuity
 VAULT_PEP = "PEPID"            # the bare PEPID, so a facility can map S/N
                                # to their own list without splitting a key
 LEGACY = "S/N_legacy"          # the pre-migration key - see migrate_keys()
+LINKED = "S/N_linked_to"       # one person at two facilities: the S/N kept for
+                               # them - see link_transfers()
 
 
 def norm_key(s: pd.Series) -> pd.Series:
@@ -296,6 +298,7 @@ class Vault:
         self.lookup = dict(zip(self.df["_k"], self.df[KEY]))
         self.added: list[dict] = []
         self.path = path
+        self.links_changed = 0
         # The bare PEPID, so a facility can join S/N straight onto their own
         # list. Both stored orderings are concatenations with no separator, so
         # neither can be split alone - but together they determine the cut.
@@ -341,6 +344,8 @@ class Vault:
         by_key = dict(zip(norm_key(build_key(datim, pep)), pep.astype("string").str.strip()))
         found = self.df.loc[blank, "_k"].map(by_key)
         self.df.loc[found.dropna().index, VAULT_PEP] = found.dropna()
+        # Counted with the key-pair recoveries, so save() persists them.
+        self.backfilled += int(found.notna().sum())
         still = self.df[VAULT_PEP].isna() | \
             self.df[VAULT_PEP].astype("string").str.strip().eq("")
         log.info("vault: %s blank PEPID(s) filled from the treatment export, "
@@ -383,6 +388,34 @@ class Vault:
             out = k.map(self.lookup)
             log.info("vault: %s new client(s) assigned a key", f"{len(self.added):,}")
         return out
+
+    def links(self) -> dict[str, str]:
+        """S/N -> the S/N kept for the same person, for every stored link."""
+        if LINKED not in self.df.columns:
+            return {}
+        v = self.df[LINKED].astype("string").str.strip()
+        ok = v.notna() & v.ne("")
+        return dict(zip(self.df.loc[ok, KEY].astype("string").str.strip(), v[ok]))
+
+    def set_links(self, new: dict[str, str]) -> None:
+        """Record links in the vault. Only ever adds or updates; a link is
+        removed by clearing the cell by hand, which undoes the merge."""
+        if not new:
+            return
+        if LINKED not in self.df.columns:
+            self.df[LINKED] = None
+        sn = self.df[KEY].astype("string").str.strip()
+        target = sn.map(new)
+        current = self.df[LINKED].astype("string").str.strip()
+        change = target.notna() & (current.isna() | current.ne(target))
+        self.df.loc[change, LINKED] = target[change]
+        n = int(change.sum())
+        for row in self.added:                    # clients keyed this run
+            if row[KEY] in new and row.get(LINKED) != new[row[KEY]]:
+                row[LINKED] = new[row[KEY]]
+                n += 1
+        self.links_changed += n
+        log.info("transfers: %s link(s) new or changed in the vault", f"{n:,}")
 
     def legacy_map(self) -> dict[str, str]:
         """
@@ -444,7 +477,7 @@ class Vault:
         # Backfilling the PEPID is a change worth persisting even on a run that
         # adds no clients - otherwise it would be recomputed every week and
         # never actually reach the file the team opens.
-        if not self.added and not self.backfilled:
+        if not self.added and not self.backfilled and not self.links_changed:
             log.info("vault: unchanged, nothing to write")
             return
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -650,6 +683,137 @@ def transfer_footprint(treat: pd.DataFrame, register: pd.DataFrame,
              f"{len(sns):,}", f"{int(in_reg.gt(0).sum()):,}",
              f"{int(in_reg.gt(1).sum()):,}", f"{int(in_eac.gt(0).sum()):,}",
              f"{int(in_eac.gt(1).sum()):,}", f"{int(split.sum()):,}")
+
+
+def link_transfers(treat: pd.DataFrame, report: Path | None = None) -> dict[str, str]:
+    """Decide, for one person held under two facility registrations, which S/N
+    is kept. Returns {other S/N: kept S/N}.
+
+    Agreed with Es, 17 Sep 2026, after the counts confirmed the pattern (3,016
+    of 3,524 have exactly one Active record, the other almost always
+    Transferred out; the Active one carries the transfer-in 98% of the time):
+
+      - exactly one record Active   -> keep the Active one
+      - none Active                 -> keep the one with the transfer-in (the
+                                       receiving facility); failing that, the
+                                       latest pharmacy pickup
+      - more than one Active        -> not linked; a conflict for the HI team
+                                       to correct at source, never guessed
+
+    "Same person" means one sex and one date of birth at every site (see
+    _classify_shared). Counts are logged; the conflict list is written only on
+    a real run, beside the vault, like the other vault reports.
+    """
+    f = _shared_pepid_frame(treat)
+    if f is None or KEY not in treat.columns:
+        return {}
+    per, same, _ = _classify_shared(f)
+    by = {norm_col(c): c for c in treat.columns}
+    pick_c = by.get("pharmacylastpickupdate")
+    s = f[f["pep"].isin(per.index[same])].copy()
+    s["sn"] = treat.loc[s.index, KEY].astype("string").str.strip()
+    s["pickup"] = (pd.to_datetime(treat.loc[s.index, pick_c], errors="coerce")
+                   if pick_c else pd.NaT)
+    s["active"] = s["status"].str.lower().eq("active").fillna(False).astype(bool)
+
+    links: dict[str, str] = {}
+    n = {"active": 0, "ti": 0, "pickup": 0, "two_active": 0, "unclear": 0}
+    conflicts = []
+    for _, g in s.dropna(subset=["sn"]).groupby("pep"):
+        if g["sn"].nunique() < 2:
+            continue
+        act = g[g["active"]]
+        if len(act) > 1:
+            n["two_active"] += 1
+            conflicts.append(g.index)
+            continue
+        if len(act) == 1:
+            keep, how = act["sn"].iloc[0], "active"
+        else:
+            ti = g[g["ti"].astype(bool)]
+            if ti["sn"].nunique() == 1:
+                keep, how = ti["sn"].iloc[0], "ti"
+            else:
+                pool = (ti if len(ti) else g).dropna(subset=["pickup"])
+                latest = pool[pool["pickup"].eq(pool["pickup"].max())] if len(pool) else pool
+                if latest["sn"].nunique() != 1:
+                    n["unclear"] += 1
+                    continue
+                keep, how = latest["sn"].iloc[0], "pickup"
+        n[how] += 1
+        for other in set(g["sn"]) - {keep}:
+            links[other] = keep
+
+    log.info("transfers: %s person(s) held under two facility S/Ns are linked - "
+             "%s kept by Active status, %s by transfer-in, %s by latest pickup; "
+             "not linked: %s Active at more than one facility, %s undecidable",
+             f"{n['active'] + n['ti'] + n['pickup']:,}", f"{n['active']:,}",
+             f"{n['ti']:,}", f"{n['pickup']:,}", f"{n['two_active']:,}",
+             f"{n['unclear']:,}")
+    if conflicts and report is not None:
+        idx = [i for ix in conflicts for i in ix]
+        cols = [c for c in ("datimCode", "pepId", "facilityName", "currentArtStatus", KEY)
+                if c in treat.columns]
+        treat.loc[idx, cols].to_csv(report, index=False)
+        log.warning("transfers: the %s Active at more than one facility are listed "
+                    "in %s, for the HI team", f"{n['two_active']:,}", report.name)
+    return links
+
+
+def apply_links(links: dict[str, str], treat: pd.DataFrame, register: pd.DataFrame,
+                eac_sheets: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Publish each linked person under the S/N kept for them.
+
+    Register and EAC rows move to the kept S/N, so an unsuppressed result at
+    one facility meets the EAC delivered at the other. The other facility's
+    treatment row is dropped: the dashboard reads one treatment row per S/N,
+    and it must be the record that is current.
+
+    Within an EAC list a person can now have two rows. The dashboard keeps the
+    first per S/N, so the row with the latest session 1 is put first, and on a
+    tie the row that was already under the kept S/N. Nothing is deleted from
+    the EAC lists. Returns the treatment frame; the others change in place.
+    """
+    if not links:
+        return treat
+
+    def moved(frame: pd.DataFrame) -> pd.Series:
+        sn = frame[KEY].astype("string").str.strip()
+        hit = sn.isin(links)
+        frame.loc[hit, KEY] = sn[hit].map(links)
+        return hit
+
+    reg_n = int(moved(register).sum()) if KEY in register.columns and len(register) else 0
+    eac_n = 0
+    for name, df in list(eac_sheets.items()):
+        if KEY not in df.columns or df.empty:
+            continue
+        hit = moved(df)
+        if not hit.any():
+            continue
+        eac_n += int(hit.sum())
+        s1 = next((c for c in df.columns if norm_col(c) == "session1date"), None)
+        order = pd.DataFrame({
+            "sn": df[KEY].astype("string"),
+            "s1": pd.to_datetime(df[s1], errors="coerce") if s1 else pd.NaT,
+            "moved": hit.astype(int),
+        }, index=df.index)
+        dup = order["sn"].duplicated(keep=False)
+        # Only people with two rows are reordered; everyone else keeps their place.
+        pos = pd.Series(range(len(df)), index=df.index, dtype="float")
+        grp = order[dup].sort_values(["sn", "s1", "moved"], ascending=[True, False, True],
+                                     na_position="last")
+        first_pos = pos[dup].groupby(order.loc[dup, "sn"]).transform("min")
+        pos.loc[grp.index] = first_pos.loc[grp.index] + \
+            grp.groupby("sn").cumcount().to_numpy() / 1000
+        eac_sheets[name] = df.loc[pos.sort_values(kind="mergesort").index] \
+            .reset_index(drop=True)
+
+    gone = treat[KEY].astype("string").str.strip().isin(links)
+    log.info("transfers: published under the kept S/N - %s register row(s), %s EAC "
+             "row(s) moved; %s superseded treatment row(s) dropped",
+             f"{reg_n:,}", f"{eac_n:,}", f"{int(gone.sum()):,}")
+    return treat[~gone]
 
 
 def code_shape(v: object) -> str:
@@ -1132,11 +1296,19 @@ def main() -> int:
                             "current nor the legacy mapping - these clients "
                             "cannot be linked and need investigating",
                             label, f"{int(stale.sum()):,}")
+    # One person at two facilities: measure the split, decide which S/N is
+    # kept, record the link, then publish under it. Before the register append,
+    # so new episodes are checked for duplicates under the kept S/N.
+    transfer_footprint(treat, register, eac_sheets)
+    vault.set_links(link_transfers(
+        treat, report=None if a.dry_run else
+        Path(P["vault"]).parent / f"{Path(P['vault']).stem}-TWO-ACTIVE.csv"))
+    treat = apply_links(vault.links(), treat, register, eac_sheets)
+
     register, added = append_new_unsuppressed(register, treat,
                                              include_late=not a.exclude_late)
     log.info("register: %s newly unsuppressed episode(s) appended, %s total",
              f"{added:,}", f"{len(register):,}")
-    transfer_footprint(treat, register, eac_sheets)
 
     # Drop by name, case-insensitively, and apply the SAME list everywhere.
     # Matching on the exact spelling let 'DOB' through where the list said
