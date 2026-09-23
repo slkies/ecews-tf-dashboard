@@ -341,8 +341,11 @@ provisional or it will report a collapse from 95% to 37% that is arithmetic.
    **Cascade is rebuilt**: every step against the whole cohort with its own rate and
    denominator, an optional split by sex, where the cohort is lost, and the follow-up VL
    outcome, with each gap opening its worklist. Dark mode text is neutral white and grey.
-   Every other page still says "not rebuilt yet" and links to `/`. Next: Deep dive,
-   then the remaining pages; Chart.js versus Recharts is decided last.
+   **Deep dive is rebuilt**: six headline tiles, Who / What / Care outcome / When / Where
+   as labelled distribution rows, monthly arrivals and exits, the LGA residence map (plain
+   SVG over the bundled boundaries), the facility league table and the flags, which open
+   Worklists. Charts stay on Chart.js (decided 23 Sep 2026). Every other page still says
+   "not rebuilt yet" and links to `/`. Next: DTC review, Time metrics, Line list changes.
 
 **Open asks to the HI/EMR team (blocking better analysis):**
 - **Switch date / "reason not switched"** — highest-value missing fields; unlock

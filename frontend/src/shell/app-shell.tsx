@@ -16,6 +16,7 @@ import type { Overview as Ov, TimeMetrics } from '@/core/overview'
 import type { Summary } from '@/core/types'
 import { useTrend } from '@/core/use-trend'
 import CascadePage from '@/pages/cascade-page'
+import DeepDivePage from '@/pages/deep-dive-page'
 import OverviewPage from '@/pages/overview-page'
 import WorklistsPage from '@/pages/worklists-page'
 import { NAV } from './nav'
@@ -76,6 +77,10 @@ export default function AppShell() {
           {view === 'overview' ? (
             <ErrorBoundary name="Overview">
               <OverviewPage data={overview} times={times} trend={trend} loading={loading} />
+            </ErrorBoundary>
+          ) : view === 'deep' ? (
+            <ErrorBoundary name="Deep dive">
+              <DeepDivePage onOpenWorklist={openWorklist} />
             </ErrorBoundary>
           ) : view === 'cascade' ? (
             <ErrorBoundary name="Cascade">

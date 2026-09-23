@@ -1,7 +1,28 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+/**
+ * Development only: serve the map boundary files straight from backend/static.
+ * The backend serves them at the site root in production; in development that
+ * would need Docker running just to draw the map. Public geography, no data.
+ */
+function boundaryFiles(): Plugin {
+  const files = ['nga_lga_3states.geojson', 'nga_context_states.geojson']
+  return {
+    name: 'boundary-files',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const name = files.find((f) => req.url?.split('?')[0] === `/${f}`)
+        if (!name) return next()
+        res.setHeader('Content-Type', 'application/geo+json')
+        res.end(readFileSync(fileURLToPath(new URL(`../backend/static/${name}`, import.meta.url))))
+      })
+    },
+  }
+}
 
 // The React app is built into its own directory and served at /app while the
 // existing single-file dashboard keeps serving / unchanged. The live dashboard
@@ -10,7 +31,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   // Tailwind v4 runs as a Vite plugin at build time and emits plain CSS, so it
   // adds no runtime request - the no-external-requests rule is untouched.
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), boundaryFiles()],
   // shadcn components import from "@/components/ui/...". One alias, mirrored
   // in tsconfig.json so the editor and the bundler agree.
   resolve: {
