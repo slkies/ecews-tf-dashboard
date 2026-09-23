@@ -71,7 +71,7 @@ describe('Deep dive page', () => {
   it('shows the headline figures and every section', async () => {
     mock(P)
     draw()
-    const tile = (await screen.findByText('900 distinct clients', {}, { timeout: 4000 })).closest('[data-slot=card]')!
+    const tile = (await screen.findByText('900 distinct clients')).closest('[data-slot=card]')!
     expect(within(tile as HTMLElement).getByText('1,000')).toBeInTheDocument()
     expect(screen.getByText('38 yr')).toBeInTheDocument()
     for (const t of [/people behind/, /treatment and clinical/, /Left care/, /Timing/, /Geography/,
@@ -115,6 +115,6 @@ describe('Deep dive page', () => {
   it('says so when the selection is empty', async () => {
     mock({ n: 0 } as Profile)
     draw()
-    expect(await screen.findByText('No episodes in this selection', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(await screen.findByText('No episodes in this selection')).toBeInTheDocument()
   })
 })

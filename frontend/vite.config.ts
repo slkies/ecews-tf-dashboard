@@ -64,5 +64,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Above the 5 s find/wait ceiling in setup.ts, so a slow render fails on
+    // the assertion that names what was missing, not on a bare timeout.
+    testTimeout: 15000,
   },
 })

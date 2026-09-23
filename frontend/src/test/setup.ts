@@ -1,4 +1,11 @@
 import '@testing-library/jest-dom/vitest'
+import { configure } from '@testing-library/react'
+
+// With eleven page suites rendering in parallel, a page's first render can
+// outrun the default 1 s wait for findBy/waitFor, and a different test failed
+// on each run (23 Sep 2026). A longer ceiling only costs time when a test is
+// already failing.
+configure({ asyncUtilTimeout: 5000 })
 
 // Base UI positions popups and tracks element sizes with browser APIs that
 // jsdom does not implement. Minimal stand-ins, so components mount in tests.

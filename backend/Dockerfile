@@ -21,7 +21,8 @@ RUN npm run build          # writes ../backend/static_app, i.e. /backend/static_
 # ── stage 2: the application image ────────────────────────────────────
 FROM python:3.12-slim
 WORKDIR /srv
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+# A slow link to PyPI timed out a rebuild (23 Sep 2026); pip's default is 15 s.
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=5
 COPY backend/requirements.txt .
 RUN pip install -r requirements.txt
 COPY backend/app ./app

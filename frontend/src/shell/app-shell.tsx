@@ -17,6 +17,7 @@ import type { Summary } from '@/core/types'
 import { useTrend } from '@/core/use-trend'
 import CascadePage from '@/pages/cascade-page'
 import DeepDivePage from '@/pages/deep-dive-page'
+import DtcPage from '@/pages/dtc-page'
 import OverviewPage from '@/pages/overview-page'
 import WorklistsPage from '@/pages/worklists-page'
 import { NAV } from './nav'
@@ -81,6 +82,10 @@ export default function AppShell() {
           ) : view === 'deep' ? (
             <ErrorBoundary name="Deep dive">
               <DeepDivePage onOpenWorklist={openWorklist} />
+            </ErrorBoundary>
+          ) : view === 'dtc' ? (
+            <ErrorBoundary name="DTC review">
+              <DtcPage onOpenWorklist={openWorklist} />
             </ErrorBoundary>
           ) : view === 'cascade' ? (
             <ErrorBoundary name="Cascade">
